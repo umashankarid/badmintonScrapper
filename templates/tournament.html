@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1 id="tournament-name">Tournament</h1>
+    <a href="/">← Back to tournaments</a>
+
+    <!-- Not logged in message -->
+    <div id="login-prompt" style="display:none;">
+        <p style="color:#cc3333;font-weight:bold;">You must be logged in to register for this tournament. <a href="/">Go to homepage to login</a></p>
+    </div>
+
+    <!-- Registration form (only visible when logged in) -->
+    <div id="register-section" style="display:none;">
+        <h2>Register for Tournament</h2>
+        <p>Registering as: <strong id="logged-player-name"></strong> <span id="logged-license" style="color:#666;"></span></p>
+        <p>Club: <strong id="logged-player-club"></strong></p>
+        <p>Gender: <span id="logged-gender"></span> | Email: <span id="logged-email"></span> | Phone: <span id="logged-phone"></span></p>
+        <form id="register-form">
+            <div id="levels-container"></div>
+            <div id="doubles-partner-container" style="position:relative;display:none;">
+                <input type="text" id="doubles-partner" placeholder="Doubles partner" autocomplete="off">
+                <div id="doubles-partner-results" class="partner-results"></div>
+            </div>
+            <div id="mixed-partner-container" style="position:relative;display:none;">
+                <input type="text" id="mixed-partner" placeholder="Mixed partner" autocomplete="off">
+                <div id="mixed-partner-results" class="partner-results"></div>
+            </div>
+            <input type="hidden" id="edit-player-id" value="">
+            <button type="submit" id="submit-btn">Register</button>
+            <button type="button" id="cancel-edit-btn" style="display:none;background:#666;" onclick="cancelEdit()">Cancel</button>
+        </form>
+    </div>
+
+    <!-- Admin edit form (shown when admin is logged in) -->
+    <div id="admin-edit-section" style="display:none;">
+        <h2 id="admin-form-title">Add / Edit Player (Admin)</h2>
+        <form id="admin-edit-form">
+            <input type="hidden" id="admin-edit-id">
+            <label>Player Name</label>
+            <div style="position:relative;">
+                <input type="text" id="admin-edit-name" placeholder="Search player..." autocomplete="off" required>
+                <div id="admin-search-results" class="partner-results"></div>
+            </div>
+            <label>License ID</label>
+            <input type="text" id="admin-edit-license">
+            <label>Club</label>
+            <input type="text" id="admin-edit-club" required>
+            <select id="admin-edit-gender" style="display:none;">
+                <option value="">Gender</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+            </select>
+            <div id="admin-levels-container"></div>
+            <div id="admin-doubles-partner-container" style="position:relative;display:none;">
+                <label>Doubles Partner</label>
+                <input type="text" id="admin-doubles-partner" autocomplete="off">
+                <div id="admin-doubles-partner-results" class="partner-results"></div>
+            </div>
+            <div id="admin-mixed-partner-container" style="position:relative;display:none;">
+                <label>Mixed Partner</label>
+                <input type="text" id="admin-mixed-partner" autocomplete="off">
+                <div id="admin-mixed-partner-results" class="partner-results"></div>
+            </div>
+            <button type="submit" id="admin-submit-btn">Add Player</button>
+            <button type="button" onclick="cancelAdminEdit()" style="background:#666;">Clear</button>
+        </form>
+    </div>
+
+    <h2 id="players-heading">Registered Players</h2>
+    <div id="admin-player-search" style="display:none;margin-bottom:10px;">
+        <input type="text" id="search-registered" placeholder="Search registered player to edit..." autocomplete="off" style="margin-bottom:0;">
+    </div>
+    <table id="players-table">
+        <thead>
+            <tr>
+                <th>Name</th><th>License ID</th><th>Club</th><th>Gender</th><th>Email</th><th>Phone</th><th>Singles</th><th>Doubles</th><th>Mixed</th><th>Actions</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="pagination"></div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        let dbFile = params.get("db");
+        const tournamentUrl = params.get("url");
+        let currentPage = 1;
+        let loggedInPlayer = null;
+        let isAdmin = false;
+
+        // If we have a URL but no db, ensure the tournament exists
+        async function ensureTournament() {
+            if (dbFile) return;
+            if (!tournamentUrl) { alert("No tournament specified"); return; }
+            const res = await fetch("/api/ensure-tournament", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({url: tournamentUrl})
+            });
+            const data = await res.json();
+            if (data.success) {
+                dbFile = data.db;
+            } else {
+                alert(data.error || "Failed to load tournament");
+            }
+        }
+
+        async function checkLogin() {
+            const res = await fetch("/api/bwf-status");
+            const data = await res.json();
+            if (data.is_admin) {
+                isAdmin = true;
+                document.getElementById("register-section").style.display = "none";
+                document.getElementById("login-prompt").style.display = "none";
+                document.getElementById("admin-edit-section").style.display = "block";
+                document.getElementById("admin-player-search").style.display = "block";
+            } else if (data.logged_in) {
+                loggedInPlayer = data;
+                document.getElementById("register-section").style.display = "block";
+                document.getElementById("login-prompt").style.display = "none";
+                document.getElementById("logged-player-name").textContent = data.player_name;
+                document.getElementById("logged-license").textContent = data.license_id ? `(${data.license_id})` : "";
+                document.getElementById("logged-player-club").textContent = data.club || "";
+                document.getElementById("logged-gender").textContent = data.gender === "F" ? "Female" : data.gender === "M" ? "Male" : "";
+                document.getElementById("logged-email").textContent = data.email || "";
+                document.getElementById("logged-phone").textContent = data.phone || "";
+            } else {
+                document.getElementById("register-section").style.display = "none";
+                document.getElementById("login-prompt").style.display = "block";
+            }
+        }
+
+        async function loadTournamentInfo() {
+            const res = await fetch(`/api/tournament?dbFile=${dbFile}`);
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById("tournament-name").textContent = data.tournament.name;
+                window.tournamentCompDate = data.tournament.competition_date || "";
+            }
+            // Fetch event classes from Badminton Sweden
+            const evRes = await fetch(`/api/tournament-events?dbFile=${dbFile}`);
+            const evData = await evRes.json();
+            if (evData.success) {
+                const container = document.getElementById("levels-container");
+                container.innerHTML = "<p>Singles (HS/DS):</p>" +
+                    `<select class="singles-level"><option value="">-- None --</option>` +
+                    evData.singles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    `</select>` +
+                    "<p>Doubles (HD/DD):</p>" +
+                    `<select class="doubles-level"><option value="">-- None --</option>` +
+                    evData.doubles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    `</select>` +
+                    "<p>Mixed (MD):</p>" +
+                    `<select class="mixed-level"><option value="">-- None --</option>` +
+                    evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    `</select>`;
+            }
+        }
+
+        async function loadPlayers() {
+            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=${currentPage}&pageSize=20`);
+            const data = await res.json();
+            if (!data.success) return;
+
+            let players = data.players;
+
+            // For logged-in players, only show their own entries
+            if (loggedInPlayer && !isAdmin) {
+                players = players.filter(p => p.player_name === loggedInPlayer.player_name);
+                document.getElementById("players-heading").textContent = "My Registration";
+            }
+
+            const tbody = document.querySelector("#players-table tbody");
+            tbody.innerHTML = players.map(p => {
+                let rankingHtml = "";
+                try {
+                    const ranking = p.ranking ? JSON.parse(p.ranking) : {};
+                    rankingHtml = Object.entries(ranking).map(([cat, info]) =>
+                        `${cat}: #${info.rank} (${info.points}pts)`
+                    ).join("\n");
+                } catch(e) {}
+                return `
+                <tr>
+                    <td>${p.player_name}</td>
+                    <td>${p.license_id || ""}</td>
+                    <td>${p.club || ""}</td>
+                    <td>${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
+                    <td>${p.email || ""}</td>
+                    <td>${p.phone || ""}</td>
+                    <td>${p.singles_levels || ""}</td>
+                    <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
+                    <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
+                    <td>
+                        ${isAdmin ?
+                            `<button onclick="viewRanking(${p.player_id})">Points</button>
+                             <button onclick="adminEditPlayer(${p.player_id})">Edit</button>
+                             <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
+                        (loggedInPlayer && loggedInPlayer.player_name === p.player_name ?
+                            `<button onclick="viewRanking(${p.player_id})">Points</button>
+                             <button onclick="editPlayer(${p.player_id})">Edit</button>
+                             <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>` :
+                            "")}
+                    </td>
+                </tr>
+            `}).join("");
+
+            if (loggedInPlayer && !isAdmin && players.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">You are not registered yet. Use the form above to register.</td></tr>';
+            }
+        }
+
+        document.getElementById("register-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const singlesLevels = document.querySelector(".singles-level").value;
+            const doublesLevels = document.querySelector(".doubles-level").value;
+            const mixedLevels = document.querySelector(".mixed-level").value;
+
+            if (!singlesLevels && !doublesLevels && !mixedLevels) {
+                alert("Please select at least one category/level.");
+                return;
+            }
+
+            const editId = document.getElementById("edit-player-id").value;
+            const club = loggedInPlayer.club || document.getElementById("logged-player-club").textContent;
+            const player = {
+                player_name: loggedInPlayer.player_name,
+                club: club,
+                license_id: loggedInPlayer.license_id || "",
+                gender: loggedInPlayer.gender || "",
+                email: loggedInPlayer.email || "",
+                phone: loggedInPlayer.phone || "",
+                dob: loggedInPlayer.dob || "",
+                age: loggedInPlayer.age || "",
+                ranking: JSON.stringify(loggedInPlayer.ranking || {}),
+                singles_levels: singlesLevels,
+                doubles_levels: doublesLevels,
+                mixed_levels: mixedLevels,
+                doubles_partner: document.getElementById("doubles-partner").value,
+                mixed_partner: document.getElementById("mixed-partner").value,
+            };
+            if (editId) player.player_id = parseInt(editId);
+
+            const res = await fetch("/api/add-player", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({dbFile, player})
+            });
+            const result = await res.json();
+            if (!result.success) {
+                alert(result.error || "Registration failed");
+                return;
+            }
+            cancelEdit();
+            loadPlayers();
+        });
+
+        async function editPlayer(id) {
+            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+            const data = await res.json();
+            const player = data.players.find(p => p.player_id === id);
+            if (!player) return;
+
+            document.getElementById("edit-player-id").value = player.player_id;
+            document.getElementById("doubles-partner").value = player.doubles_partner || "";
+            document.getElementById("mixed-partner").value = player.mixed_partner || "";
+
+            const singlesLevels = (player.singles_levels || "").split(",").filter(Boolean);
+            const doublesLevels = (player.doubles_levels || "").split(",").filter(Boolean);
+            const mixedLevels = (player.mixed_levels || "").split(",").filter(Boolean);
+
+            document.querySelector(".singles-level").value = singlesLevels[0] || "";
+            document.querySelector(".doubles-level").value = doublesLevels[0] || "";
+            document.querySelector(".mixed-level").value = mixedLevels[0] || "";
+
+            document.getElementById("doubles-partner-container").style.display = doublesLevels.length ? "block" : "none";
+            document.getElementById("mixed-partner-container").style.display = mixedLevels.length ? "block" : "none";
+
+            document.getElementById("submit-btn").textContent = "Update";
+            document.getElementById("cancel-edit-btn").style.display = "block";
+            document.getElementById("register-form").scrollIntoView({behavior: "smooth"});
+        }
+
+        function cancelEdit() {
+            document.getElementById("register-form").reset();
+            document.getElementById("edit-player-id").value = "";
+            document.getElementById("submit-btn").textContent = "Register";
+            document.getElementById("cancel-edit-btn").style.display = "none";
+            document.getElementById("doubles-partner-container").style.display = "none";
+            document.getElementById("mixed-partner-container").style.display = "none";
+            if (document.querySelector(".singles-level")) document.querySelector(".singles-level").value = "";
+            if (document.querySelector(".doubles-level")) document.querySelector(".doubles-level").value = "";
+            if (document.querySelector(".mixed-level")) document.querySelector(".mixed-level").value = "";
+        }
+
+        async function deletePlayer(id) {
+            const res = await fetch("/api/delete-player", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({dbFile, playerId: id})
+            });
+            const data = await res.json();
+
+            if (data.needsConfirm) {
+                const msg = data.warnings.join("\n") + "\n\nStill withdraw from the tournament?";
+                if (!confirm(msg)) return;
+                await fetch("/api/delete-player", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({dbFile, playerId: id, confirm: true})
+                });
+            } else if (!data.success) {
+                if (!confirm("Withdraw from this tournament?")) return;
+                await fetch("/api/delete-player", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({dbFile, playerId: id, confirm: true})
+                });
+            }
+            loadPlayers();
+        }
+
+        function setupLiveSearch(inputId, resultsId, onSelect) {
+            let timeout;
+            let results = [];
+            const input = document.getElementById(inputId);
+            const container = document.getElementById(resultsId);
+
+            input.addEventListener("input", (e) => {
+                clearTimeout(timeout);
+                const q = e.target.value.trim();
+                if (q.length < 2) { container.innerHTML = ""; return; }
+                timeout = setTimeout(async () => {
+                    const res = await fetch(`/api/search-players?q=${encodeURIComponent(q)}`);
+                    results = await res.json();
+                    container.innerHTML = results.map((p, i) =>
+                        `<div class="search-item" data-index="${i}">${p.name} - ${p.club || "No club"}</div>`
+                    ).join("");
+                    container.querySelectorAll(".search-item").forEach(el => {
+                        el.addEventListener("click", () => {
+                            onSelect(results[el.getAttribute("data-index")]);
+                            container.innerHTML = "";
+                        });
+                    });
+                }, 300);
+            });
+        }
+
+        // Show/hide partner fields and validate points on level selection
+        document.getElementById("levels-container").addEventListener("change", async () => {
+            const doublesSelected = document.querySelector(".doubles-level") && document.querySelector(".doubles-level").value;
+            const mixedSelected = document.querySelector(".mixed-level") && document.querySelector(".mixed-level").value;
+            document.getElementById("doubles-partner-container").style.display = doublesSelected ? "block" : "none";
+            document.getElementById("mixed-partner-container").style.display = mixedSelected ? "block" : "none";
+
+            if (!loggedInPlayer || !loggedInPlayer.ranking) return;
+            const ranking = loggedInPlayer.ranking;
+
+            // Validate each selected event class (e.g. "DS A" -> category="DS", level="A")
+            const selectors = [".singles-level", ".doubles-level", ".mixed-level"];
+            for (const sel of selectors) {
+                const select = document.querySelector(sel);
+                if (!select || !select.value) continue;
+                const eventClass = select.value; // e.g. "DS A", "HD U13"
+                const parts = eventClass.split(" ");
+                const category = parts[0]; // HS, DS, HD, DD, MD
+                const level = parts.slice(1).join(" "); // A, B, C, Elit, U13, etc.
+                const catRanking = ranking[category];
+                const points = catRanking ? parseInt(catRanking.points) : null;
+
+                const res = await fetch("/api/validate-registration", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({level, category, points, age: loggedInPlayer.age, dob: loggedInPlayer.dob, competition_date: window.tournamentCompDate || ""})
+                });
+                const data = await res.json();
+                if (!data.allowed) {
+                    if (data.age_restriction) {
+                        // Age restriction - allow with dispense
+                        if (!confirm(data.message + "\n\nDo you have dispense (special permission) to play in this category?")) {
+                            select.value = "";
+                        }
+                    } else {
+                        // Point restriction - block completely
+                        alert(data.message);
+                        select.value = "";
+                    }
+                } else if (data.warning) {
+                    // Just show warning, don't block
+                }
+            }
+        });
+
+        setupLiveSearch("doubles-partner", "doubles-partner-results", (player) => {
+            document.getElementById("doubles-partner").value = player.name || "";
+        });
+
+        setupLiveSearch("mixed-partner", "mixed-partner-results", (player) => {
+            document.getElementById("mixed-partner").value = player.name || "";
+        });
+
+        setupLiveSearch("admin-doubles-partner", "admin-doubles-partner-results", (player) => {
+            document.getElementById("admin-doubles-partner").value = player.name || "";
+        });
+
+        setupLiveSearch("admin-mixed-partner", "admin-mixed-partner-results", (player) => {
+            document.getElementById("admin-mixed-partner").value = player.name || "";
+        });
+
+        setupLiveSearch("admin-edit-name", "admin-search-results", (player) => {
+            document.getElementById("admin-edit-name").value = player.name || "";
+            document.getElementById("admin-edit-club").value = player.club || "";
+        });
+
+        async function loadAdminLevels() {
+            const evRes = await fetch(`/api/tournament-events?dbFile=${dbFile}`);
+            const evData = await evRes.json();
+            if (evData.success) {
+                const container = document.getElementById("admin-levels-container");
+                container.innerHTML = "<p>Singles (HS/DS):</p>" +
+                    `<select class="admin-singles-level"><option value="">-- None --</option>` +
+                    evData.singles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    `</select>` +
+                    "<p>Doubles (HD/DD):</p>" +
+                    `<select class="admin-doubles-level"><option value="">-- None --</option>` +
+                    evData.doubles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    `</select>` +
+                    "<p>Mixed (MD):</p>" +
+                    `<select class="admin-mixed-level"><option value="">-- None --</option>` +
+                    evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    `</select>`;
+
+                // Show/hide partner fields based on admin level selection
+                container.addEventListener("change", () => {
+                    const doublesSelected = document.querySelector(".admin-doubles-level") && document.querySelector(".admin-doubles-level").value;
+                    const mixedSelected = document.querySelector(".admin-mixed-level") && document.querySelector(".admin-mixed-level").value;
+                    document.getElementById("admin-doubles-partner-container").style.display = doublesSelected ? "block" : "none";
+                    document.getElementById("admin-mixed-partner-container").style.display = mixedSelected ? "block" : "none";
+                });
+            }
+        }
+
+        async function viewRanking(id) {
+            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+            const data = await res.json();
+            const player = data.players.find(p => p.player_id === id);
+            if (!player) return;
+
+            let msg = `Ranking for ${player.player_name}:\n\n`;
+            try {
+                const ranking = player.ranking ? JSON.parse(player.ranking) : {};
+                if (Object.keys(ranking).length === 0) {
+                    msg += "No ranking data available.";
+                } else {
+                    for (const [cat, info] of Object.entries(ranking)) {
+                        msg += `${cat}: Rank #${info.rank} | Points: ${info.points}\n`;
+                    }
+                }
+            } catch(e) {
+                msg += "No ranking data available.";
+            }
+            alert(msg);
+        }
+
+        async function adminEditPlayer(id) {
+            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+            const data = await res.json();
+            const player = data.players.find(p => p.player_id === id);
+            if (!player) return;
+
+            document.getElementById("admin-form-title").textContent = "Edit Player (Admin)";
+            document.getElementById("admin-submit-btn").textContent = "Update";
+            document.getElementById("admin-edit-id").value = player.player_id;
+            document.getElementById("admin-edit-name").value = player.player_name || "";
+            document.getElementById("admin-edit-license").value = player.license_id || "";
+            document.getElementById("admin-edit-club").value = player.club || "";
+            document.getElementById("admin-edit-gender").value = player.gender || "";
+            document.getElementById("admin-doubles-partner").value = player.doubles_partner || "";
+            document.getElementById("admin-mixed-partner").value = player.mixed_partner || "";
+
+            await loadAdminLevels();
+
+            const singlesLevels = (player.singles_levels || "").split(",").filter(Boolean);
+            const doublesLevels = (player.doubles_levels || "").split(",").filter(Boolean);
+            const mixedLevels = (player.mixed_levels || "").split(",").filter(Boolean);
+            document.querySelector(".admin-singles-level").value = singlesLevels[0] || "";
+            document.querySelector(".admin-doubles-level").value = doublesLevels[0] || "";
+            document.querySelector(".admin-mixed-level").value = mixedLevels[0] || "";
+
+            document.getElementById("admin-doubles-partner-container").style.display = doublesLevels.length ? "block" : "none";
+            document.getElementById("admin-mixed-partner-container").style.display = mixedLevels.length ? "block" : "none";
+
+            document.getElementById("admin-edit-section").scrollIntoView({behavior: "smooth"});
+        }
+
+        function cancelAdminEdit() {
+            document.getElementById("admin-edit-form").reset();
+            document.getElementById("admin-edit-id").value = "";
+            document.getElementById("admin-form-title").textContent = "Add / Edit Player (Admin)";
+            document.getElementById("admin-submit-btn").textContent = "Add Player";
+            if (document.querySelector(".admin-singles-level")) document.querySelector(".admin-singles-level").value = "";
+            if (document.querySelector(".admin-doubles-level")) document.querySelector(".admin-doubles-level").value = "";
+            if (document.querySelector(".admin-mixed-level")) document.querySelector(".admin-mixed-level").value = "";
+            document.getElementById("admin-doubles-partner-container").style.display = "none";
+            document.getElementById("admin-mixed-partner-container").style.display = "none";
+        }
+
+        document.getElementById("admin-edit-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const singlesLevels = document.querySelector(".admin-singles-level").value;
+            const doublesLevels = document.querySelector(".admin-doubles-level").value;
+            const mixedLevels = document.querySelector(".admin-mixed-level").value;
+
+            const editId = document.getElementById("admin-edit-id").value;
+            const player = {
+                player_name: document.getElementById("admin-edit-name").value,
+                license_id: document.getElementById("admin-edit-license").value,
+                club: document.getElementById("admin-edit-club").value,
+                gender: document.getElementById("admin-edit-gender").value,
+                singles_levels: singlesLevels,
+                doubles_levels: doublesLevels,
+                mixed_levels: mixedLevels,
+                doubles_partner: document.getElementById("admin-doubles-partner").value,
+                mixed_partner: document.getElementById("admin-mixed-partner").value,
+            };
+            if (editId) player.player_id = parseInt(editId);
+
+            const res = await fetch("/api/add-player", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({dbFile, player})
+            });
+            const result = await res.json();
+            if (!result.success) {
+                alert(result.error || "Operation failed");
+                return;
+            }
+            cancelAdminEdit();
+            loadPlayers();
+        });
+
+        // Initialize
+        async function init() {
+            try {
+                await ensureTournament();
+            } catch(e) { console.error("ensureTournament error:", e); }
+            await checkLogin();
+            if (!dbFile) {
+                document.getElementById("tournament-name").textContent = "Error: Could not load tournament";
+                return;
+            }
+            try {
+                await loadTournamentInfo();
+            } catch(e) { console.error("loadTournamentInfo error:", e); }
+            if (isAdmin) {
+                await loadAdminLevels();
+                document.getElementById("search-registered").addEventListener("input", (e) => {
+                    const q = e.target.value.trim().toLowerCase();
+                    const rows = document.querySelectorAll("#players-table tbody tr");
+                    rows.forEach(row => {
+                        const name = row.cells[0].textContent.toLowerCase();
+                        row.style.display = (!q || name.includes(q)) ? "" : "none";
+                    });
+                });
+            }
+            await loadPlayers();
+        }
+        init();
+    </script>
+</body>
+</html>

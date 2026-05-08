@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Tournaments</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>Admin Dashboard</h1>
+    <a href="/">← Home</a>
+
+    <h2>Tournaments with Registrations</h2>
+    <div id="tournaments"></div>
+
+    <h2>Point Rules (Class Restrictions)</h2>
+    <button onclick="toggleRules()" style="width:auto;padding:8px 16px;">Show Point Rules</button>
+    <div id="rules-section" style="display:none;margin-top:15px;">
+        <p style="color:#666;font-size:0.9em;">Min/Max points required for each class. Empty max = no upper limit.</p>
+        <div style="overflow-x:auto;max-width:100vw;">
+            <table id="rules-table" style="margin-bottom:10px;min-width:900px;">
+                <thead>
+                    <tr>
+                        <th>Klass</th><th>HS Min</th><th>HS Max</th><th>DS Min</th><th>DS Max</th><th>HD Min</th><th>HD Max</th><th>DD Min</th><th>DD Max</th><th>MD Min</th><th>MD Max</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <button id="edit-rules-btn" onclick="enableEditRules()" style="background:#f0a000;">Edit</button>
+        <button id="save-rules-btn" onclick="saveRules()" style="background:#28a745;display:none;">Save</button>
+        <button id="cancel-rules-btn" onclick="cancelEditRules()" style="background:#666;display:none;">Cancel</button>
+    </div>
+
+    <h2>Email Settings (SMTP)</h2>
+    <button onclick="toggleSmtp()" style="width:auto;padding:8px 16px;">Show Email Settings</button>
+    <div id="smtp-section" style="display:none;margin-top:15px;">
+        <form id="smtp-form" style="max-width:400px;">
+            <label>SMTP Host</label>
+            <input type="text" id="smtp-host" value="smtp.gmail.com">
+            <label>SMTP Port</label>
+            <input type="number" id="smtp-port" value="587">
+            <label>Email Address</label>
+            <input type="email" id="smtp-email" placeholder="your-email@gmail.com">
+            <label>App Password</label>
+            <input type="password" id="smtp-password" placeholder="App password">
+            <label>Reminder Days Before Close</label>
+            <input type="number" id="reminder-days" value="3" min="1" max="14">
+            <button type="submit" style="background:#28a745;">Save Settings</button>
+            <button type="button" onclick="testEmail()" style="background:#f0a000;">Send Test Email</button>
+        </form>
+    </div>
+
+    <!-- Edit Tournament Modal -->
+    <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:100;">
+        <div style="background:white; max-width:500px; margin:50px auto; padding:20px; border-radius:8px;">
+            <h2>Edit Tournament</h2>
+            <form id="edit-form">
+                <input type="hidden" id="edit-db">
+                <label for="edit-name">Tournament Name</label>
+                <input type="text" id="edit-name" required>
+                <label for="edit-levels">Levels</label>
+                <input type="text" id="edit-levels" placeholder="Comma separated">
+                <label for="edit-competition-date">Competition Date</label>
+                <input type="date" id="edit-competition-date">
+                <label for="edit-registration-date">Registration Closes</label>
+                <input type="date" id="edit-registration-date">
+                <label for="edit-cancellation-date">Cancellation Deadline</label>
+                <input type="date" id="edit-cancellation-date">
+                <button type="submit">Save</button>
+                <button type="button" onclick="closeEditModal()" style="background:#666;">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        async function loadTournaments() {
+            const res = await fetch("/api/tournaments");
+            const data = await res.json();
+            const container = document.getElementById("tournaments");
+            if (!data.length) {
+                container.innerHTML = "<p>No tournaments with registrations yet. Players will see open tournaments on the homepage and can register directly.</p>";
+                return;
+            }
+            container.innerHTML = data.map(t => `
+                <div class="tournament-card">
+                    <div>
+                        <strong>${t.name}</strong><br>
+                        <small>Competition: ${t.competition_date || "N/A"} | Reg closes: ${t.final_registration_date || "N/A"}</small>
+                    </div>
+                    <div>
+                        <button onclick="window.location.href='/tournament.html?db=${t.db}'">View</button>
+                        <button onclick="editTournament('${t.db}')" style="background:#f0a000;">Edit</button>
+                        <button onclick="submitTournament('${t.db}', '${t.name.replace(/'/g, "\\'")}')" style="background:#28a745;">Submit</button>
+                        <button onclick="deleteTournament('${t.db}')" style="background:#cc3333;">Delete</button>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        async function deleteTournament(db) {
+            if (!confirm("Delete this tournament and all registrations?")) return;
+            await fetch("/admin/delete-tournament", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({db})
+            });
+            loadTournaments();
+        }
+
+        async function submitTournament(db, name) {
+            if (!confirm(`Submit "${name}" to Badminton Sweden?\n\nThis will submit all registrations. (Not yet implemented)`)) return;
+            const res = await fetch("/admin/submit-tournament", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({db})
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || "Tournament submitted successfully!");
+            } else {
+                alert(data.error || "Submit failed");
+            }
+        }
+
+        async function editTournament(db) {
+            const listRes = await fetch("/api/tournaments");
+            const tournaments = await listRes.json();
+            const t = tournaments.find(x => x.db === db);
+            if (!t) return;
+
+            document.getElementById("edit-db").value = db;
+            document.getElementById("edit-name").value = t.name;
+            document.getElementById("edit-levels").value = t.levels.join(", ");
+            document.getElementById("edit-competition-date").value = t.competition_date || "";
+            document.getElementById("edit-registration-date").value = t.final_registration_date || "";
+            document.getElementById("edit-cancellation-date").value = t.final_cancellation_date || "";
+            document.getElementById("edit-modal").style.display = "block";
+        }
+
+        function closeEditModal() {
+            document.getElementById("edit-modal").style.display = "none";
+        }
+
+        document.getElementById("edit-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const body = {
+                db: document.getElementById("edit-db").value,
+                name: document.getElementById("edit-name").value,
+                levels: document.getElementById("edit-levels").value.split(",").map(l => l.trim()).filter(Boolean),
+                competition_date: document.getElementById("edit-competition-date").value,
+                final_registration_date: document.getElementById("edit-registration-date").value,
+                final_cancellation_date: document.getElementById("edit-cancellation-date").value,
+            };
+            const res = await fetch("/admin/edit-tournament", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.success) {
+                closeEditModal();
+                loadTournaments();
+            } else {
+                alert(data.error || "Failed to update");
+            }
+        });
+
+        loadTournaments();
+        loadRules();
+        loadSmtpSettings();
+
+        function toggleSmtp() {
+            const section = document.getElementById("smtp-section");
+            section.style.display = section.style.display === "none" ? "block" : "none";
+        }
+
+        async function loadSmtpSettings() {
+            const res = await fetch("/api/smtp-settings");
+            const data = await res.json();
+            if (!data.success) return;
+            document.getElementById("smtp-host").value = data.settings.smtp_host || "smtp.gmail.com";
+            document.getElementById("smtp-port").value = data.settings.smtp_port || 587;
+            document.getElementById("smtp-email").value = data.settings.smtp_email || "";
+            document.getElementById("smtp-password").value = data.settings.smtp_password || "";
+            document.getElementById("reminder-days").value = data.settings.reminder_days || 3;
+        }
+
+        document.getElementById("smtp-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const res = await fetch("/admin/save-smtp-settings", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    smtp_host: document.getElementById("smtp-host").value,
+                    smtp_port: parseInt(document.getElementById("smtp-port").value),
+                    smtp_email: document.getElementById("smtp-email").value,
+                    smtp_password: document.getElementById("smtp-password").value,
+                    reminder_days: parseInt(document.getElementById("reminder-days").value)
+                })
+            });
+            const data = await res.json();
+            if (data.success) alert("SMTP settings saved!");
+            else alert(data.error || "Failed to save");
+        });
+
+        async function testEmail() {
+            const email = prompt("Enter email address to send test to:");
+            if (!email) return;
+            const res = await fetch("/admin/send-test-email", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({to_email: email})
+            });
+            const data = await res.json();
+            if (data.success) alert("Test email sent!");
+            else alert(data.error || "Failed to send");
+        }
+
+        function toggleRules() {
+            const section = document.getElementById("rules-section");
+            section.style.display = section.style.display === "none" ? "block" : "none";
+        }
+
+        async function loadRules() {
+            const res = await fetch("/api/point-rules");
+            const data = await res.json();
+            if (!data.success) return;
+            const tbody = document.querySelector("#rules-table tbody");
+            tbody.innerHTML = data.rules.map(r => `
+                <tr data-id="${r.id}">
+                    <td><strong>${r.klass}</strong></td>
+                    <td><input type="number" class="rule-input" data-field="hs_min" value="${r.hs_min ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="hs_max" value="${r.hs_max ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="ds_min" value="${r.ds_min ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="ds_max" value="${r.ds_max ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="hd_min" value="${r.hd_min ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="hd_max" value="${r.hd_max ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="dd_min" value="${r.dd_min ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="dd_max" value="${r.dd_max ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="md_min" value="${r.md_min ?? ''}" style="width:80px;" disabled></td>
+                    <td><input type="number" class="rule-input" data-field="md_max" value="${r.md_max ?? ''}" style="width:80px;" disabled></td>
+                </tr>
+            `).join("");
+        }
+
+        function enableEditRules() {
+            document.querySelectorAll(".rule-input").forEach(inp => inp.disabled = false);
+            document.getElementById("edit-rules-btn").style.display = "none";
+            document.getElementById("save-rules-btn").style.display = "inline-block";
+            document.getElementById("cancel-rules-btn").style.display = "inline-block";
+        }
+
+        function cancelEditRules() {
+            document.querySelectorAll(".rule-input").forEach(inp => inp.disabled = true);
+            document.getElementById("edit-rules-btn").style.display = "inline-block";
+            document.getElementById("save-rules-btn").style.display = "none";
+            document.getElementById("cancel-rules-btn").style.display = "none";
+            loadRules();
+        }
+
+        async function saveRules() {
+            const rows = document.querySelectorAll("#rules-table tbody tr");
+            const rules = [];
+            rows.forEach(row => {
+                const rule = {id: parseInt(row.dataset.id)};
+                row.querySelectorAll(".rule-input").forEach(inp => {
+                    rule[inp.dataset.field] = inp.value ? parseInt(inp.value) : null;
+                });
+                rules.push(rule);
+            });
+            const res = await fetch("/admin/update-point-rules", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({rules})
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert("Rules saved!");
+                cancelEditRules();
+            } else {
+                alert(data.error || "Failed to save");
+            }
+        }
+    </script>
+</body>
+</html>
