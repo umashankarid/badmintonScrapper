@@ -272,10 +272,11 @@ def bwf_login():
             return jsonify(success=False, error="Could not load login page"), 500
 
         # Submit login
+        logo_el = soup.find("input", {"name": "LogoUrl"})
         resp = s.post("https://badmintonsweden.tournamentsoftware.com/user", data={
             "__RequestVerificationToken": token_el.get("value", ""),
             "ReturnUrl": "/",
-            "LogoUrl": "",
+            "LogoUrl": logo_el.get("value", "") if logo_el else "",
             "Login": login,
             "Password": password
         }, allow_redirects=True, timeout=10)
