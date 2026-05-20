@@ -8,22 +8,32 @@
 </head>
 <body>
     <h1>Admin Login</h1>
+    <p>Login with your Badminton Sweden account</p>
     <form id="login-form">
+        <input type="text" id="login" placeholder="Email / Username" required>
         <input type="password" id="password" placeholder="Password" required>
         <button type="submit">Login</button>
     </form>
-    <p id="error" style="color:red;display:none;">Wrong password</p>
+    <p id="error" style="color:red;display:none;"></p>
     <script>
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
-            const res = await fetch("/admin/login", {
+            const errEl = document.getElementById("error");
+            errEl.style.display = "none";
+            const res = await fetch("/api/bwf-login", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({password: document.getElementById("password").value})
+                body: JSON.stringify({
+                    login: document.getElementById("login").value,
+                    password: document.getElementById("password").value
+                })
             });
             const data = await res.json();
             if (data.success) window.location.href = "/admin.html";
-            else document.getElementById("error").style.display = "block";
+            else {
+                errEl.textContent = data.error || "Login failed";
+                errEl.style.display = "block";
+            }
         });
     </script>
 </body>
