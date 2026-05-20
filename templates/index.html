@@ -59,15 +59,17 @@
         async function checkBwfStatus() {
             const res = await fetch("/api/bwf-status");
             const data = await res.json();
-            if (data.logged_in) {
+            if (data.logged_in && data.login_mode === "admin") {
+                document.getElementById("bwf-login-btn").style.display = "none";
+                document.getElementById("bwf-user").style.display = "none";
+                document.getElementById("admin-info").style.display = "flex";
+            } else if (data.logged_in) {
                 document.getElementById("bwf-user").style.display = "flex";
                 let display = data.player_name;
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("bwf-player-info").textContent = display;
                 document.getElementById("bwf-login-btn").style.display = "none";
-                if (data.is_admin) {
-                    document.getElementById("admin-info").style.display = "flex";
-                }
+                document.getElementById("admin-info").style.display = "none";
             } else {
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "none";
@@ -84,7 +86,8 @@
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({
                     login: document.getElementById("bwf-email").value,
-                    password: document.getElementById("bwf-password").value
+                    password: document.getElementById("bwf-password").value,
+                    mode: "player"
                 })
             });
             const data = await res.json();
@@ -135,7 +138,8 @@
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({
                     login: document.getElementById("admin-username").value,
-                    password: document.getElementById("admin-password").value
+                    password: document.getElementById("admin-password").value,
+                    mode: "admin"
                 })
             });
             const data = await res.json();

@@ -19,15 +19,6 @@ ADMIN_DB = os.path.join(os.path.dirname(__file__), "admin.db")
 def init_admin_db():
     conn = sqlite3.connect(ADMIN_DB)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS admin (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            email TEXT,
-            phone TEXT
-        )
-    """)
-    conn.execute("""
         CREATE TABLE IF NOT EXISTS smtp_settings (
             id INTEGER PRIMARY KEY,
             smtp_host TEXT DEFAULT 'smtp.gmail.com',
@@ -406,8 +397,9 @@ def bwf_login():
         session["bwf_dob"] = dob
         session["bwf_age"] = age
         session["bwf_ranking"] = ranking
-        session["admin"] = True
-        session["admin_username"] = player_name
+        login_mode = data.get("mode", "player")
+        session["login_mode"] = login_mode
+        session["admin"] = (login_mode == "admin")
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
     except ext_requests.RequestException as e:
@@ -416,9 +408,7 @@ def bwf_login():
 
 @app.route("/api/bwf-logout", methods=["POST"])
 def bwf_logout():
-    session.pop("bwf_player", None)
-    session.pop("admin", None)
-    session.pop("admin_username", None)
+    session.clear()
     return jsonify(success=True)
 
 
@@ -433,8 +423,9 @@ def bwf_status():
     dob = session.get("bwf_dob", "")
     age = session.get("bwf_age", "")
     ranking = session.get("bwf_ranking", {})
+    login_mode = session.get("login_mode", "player")
     is_admin = session.get("admin", False)
-    return jsonify(logged_in=bool(player), player_name=player or "", license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking, is_admin=is_admin)
+    return jsonify(logged_in=bool(player), player_name=player or "", license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking, is_admin=is_admin, login_mode=login_mode)
 
 @app.route("/api/validate-registration", methods=["POST"])
 def validate_registration():
@@ -585,14 +576,9 @@ def admin_exists():
     return jsonify(exists=True)
 
 
-@app.route("/admin/register", methods=["POST"])
-def admin_register():
-    return jsonify(success=False, error="Registration disabled. Use Badminton Sweden login."), 403
-
-
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
-    return jsonify(success=False, error="Use Badminton Sweden login at /api/bwf-login"), 403
+    return jsonify(success=False, error="Use Badminton Sweden login"), 403
 
 
 @app.route("/api/point-rules", methods=["GET"])
@@ -627,8 +613,7 @@ def update_point_rules():
 
 @app.route("/admin/logout", methods=["POST"])
 def admin_logout():
-    session.pop("admin", None)
-    session.pop("admin_username", None)
+    session.clear()
     return jsonify(success=True)
 
 

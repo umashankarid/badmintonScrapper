@@ -79,10 +79,16 @@
             const data = await res.json();
             const container = document.getElementById("tournaments");
             if (!data.length) {
-                container.innerHTML = "<p>No tournaments with registrations yet. Players will see open tournaments on the homepage and can register directly.</p>";
+                container.innerHTML = "<p>No tournaments with registrations yet.</p>";
                 return;
             }
-            container.innerHTML = data.map(t => `
+            const today = new Date().toISOString().slice(0, 10);
+            const active = data.filter(t => !t.competition_date || t.competition_date >= today);
+            if (!active.length) {
+                container.innerHTML = "<p>No upcoming tournaments.</p>";
+                return;
+            }
+            container.innerHTML = active.map(t => `
                 <div class="tournament-card">
                     <div>
                         <strong>${t.name}</strong><br>
