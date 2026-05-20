@@ -405,6 +405,8 @@ def bwf_login():
         session["bwf_dob"] = dob
         session["bwf_age"] = age
         session["bwf_ranking"] = ranking
+        session["admin"] = True
+        session["admin_username"] = player_name
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
     except ext_requests.RequestException as e:
@@ -414,6 +416,8 @@ def bwf_login():
 @app.route("/api/bwf-logout", methods=["POST"])
 def bwf_logout():
     session.pop("bwf_player", None)
+    session.pop("admin", None)
+    session.pop("admin_username", None)
     return jsonify(success=True)
 
 
@@ -445,7 +449,64 @@ def validate_registration():
     if not level or not category:
         return jsonify(success=True, allowed=True)
 
-    # Age-based levels (U9, U11, etc.) don't have point restrictions
+    # Age-based levels (U9, U11, U13, U15, U17, U19)
+    # Player must be UNDER that age to play
+    # e.g., U13 means player must be under 13 (12 or younger)
+    # Exception: player can play their age group until June of the year they age out
+    if level.startswith("U") and dob:
+        try:
+            import re
+            age_limit = int(re.search(r'\d+', level).group())
+            from datetime import datetime as dt_cls
+            birth = dt_cls.strptime(dob, "%Y-%m-%d")
+
+            check_date = dt_cls.now()
+            if competition_date:
+                try:
+                    check_date = dt_cls.strptime(competition_date, "%Y-%m-%d")
+                except Exception:
+                    pass
+
+            # Year they turn the age limit
+            year_turn_limit = birth.year + age_limit
+
+            # Age at competition
+            age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
+
+            # Player is too old for this category
+            if age_at_comp >= age_limit:
+                # Exception: can still play until June of the year they age out
+                if check_date.year == year_turn_limit and check_date.month <= 6:
+                    pass  # Allowed - still within grace period
+                else:
+                    return jsonify(success=True, allowed=False, age_restriction=False,
+                        message=f"Player is {age_at_comp} years old. {level} is for players under {age_limit}.")
+
+            # Player is too young - can't play a lower age group
+            # e.g., a 12-year-old can't play U9 or U11
+            if age_at_comp >= age_limit:
+                pass  # Already handled above
+            elif age_limit - age_at_comp > 2:
+                # Player is way younger than the category - that's fine (playing up)
+                pass
+            # Check if player should be in a higher age group
+            # A 12-year-old should play U13, not U9 or U11
+            age_groups = [9, 11, 13, 15, 17, 19]
+            correct_group = None
+            for ag in age_groups:
+                if age_at_comp < ag:
+                    correct_group = ag
+                    break
+            if correct_group and age_limit < correct_group and age_at_comp >= age_limit:
+                return jsonify(success=True, allowed=False, age_restriction=False,
+                    message=f"Player is {age_at_comp} years old. Cannot play {level} (too old). Should play U{correct_group} or higher.")
+
+        except Exception:
+            pass
+
+        # No point restrictions for age-based levels
+        return jsonify(success=True, allowed=True)
+
     if level.startswith("U"):
         return jsonify(success=True, allowed=True)
 
@@ -520,65 +581,17 @@ def validate_registration():
 
 @app.route("/api/admin-exists", methods=["GET"])
 def admin_exists():
-    conn = sqlite3.connect(ADMIN_DB)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM admin")
-    count = cur.fetchone()[0]
-    conn.close()
-    return jsonify(exists=count > 0)
+    return jsonify(exists=True)
 
 
 @app.route("/admin/register", methods=["POST"])
 def admin_register():
-    from werkzeug.security import generate_password_hash
-    conn = sqlite3.connect(ADMIN_DB)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM admin")
-    if cur.fetchone()[0] > 0:
-        conn.close()
-        return jsonify(success=False, error="Admin already registered"), 400
-
-    data = request.json
-    username = data.get("username", "").strip()
-    password = data.get("password", "")
-    email = data.get("email", "").strip()
-    phone = data.get("phone", "").strip()
-
-    if not username or not password:
-        conn.close()
-        return jsonify(success=False, error="Username and password required"), 400
-
-    password_hash = generate_password_hash(password)
-    conn.execute("INSERT INTO admin (username, password_hash, email, phone) VALUES (?,?,?,?)",
-                 (username, password_hash, email, phone))
-    conn.commit()
-    conn.close()
-    return jsonify(success=True)
+    return jsonify(success=False, error="Registration disabled. Use Badminton Sweden login."), 403
 
 
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
-    from werkzeug.security import check_password_hash
-    data = request.json
-    username = data.get("username", "").strip()
-    password = data.get("password", "")
-
-    if not username or not password:
-        return jsonify(success=False, error="Username and password required"), 400
-
-    conn = sqlite3.connect(ADMIN_DB)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM admin WHERE username=?", (username,))
-    admin = cur.fetchone()
-    conn.close()
-
-    if not admin or not check_password_hash(admin["password_hash"], password):
-        return jsonify(success=False, error="Invalid username or password"), 401
-
-    session["admin"] = True
-    session["admin_username"] = username
-    return jsonify(success=True)
+    return jsonify(success=False, error="Use Badminton Sweden login at /api/bwf-login"), 403
 
 
 @app.route("/api/point-rules", methods=["GET"])
