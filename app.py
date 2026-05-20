@@ -9,6 +9,7 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = "supersecretkey"
 
 TOURNAMENTS_DIR = os.path.join(os.path.dirname(__file__), "tournaments")
+os.makedirs(TOURNAMENTS_DIR, exist_ok=True)
 PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
 
 
