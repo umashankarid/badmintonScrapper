@@ -65,9 +65,9 @@
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("bwf-player-info").textContent = display;
                 document.getElementById("bwf-login-btn").style.display = "none";
-            } else if (data.is_admin) {
-                document.getElementById("bwf-login-btn").style.display = "none";
-                document.getElementById("admin-info").style.display = "flex";
+                if (data.is_admin) {
+                    document.getElementById("admin-info").style.display = "flex";
+                }
             } else {
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "none";
@@ -114,7 +114,6 @@
             document.getElementById("bwf-error").style.display = "none";
             document.getElementById("bwf-login-form").style.display = "none";
             document.getElementById("admin-login-form").style.display = "none";
-            document.getElementById("admin-register-form").style.display = "none";
             document.getElementById("tab-player").style.background = "#666";
             document.getElementById("tab-admin").style.background = "#666";
 
