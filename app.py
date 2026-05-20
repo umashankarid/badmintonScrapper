@@ -20,6 +20,12 @@ ADMIN_DB = os.path.join(os.path.dirname(__file__), "admin.db")
 def init_admin_db():
     conn = sqlite3.connect(ADMIN_DB)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS smtp_settings (
             id INTEGER PRIMARY KEY,
             smtp_host TEXT DEFAULT 'smtp.gmail.com',
@@ -42,6 +48,15 @@ def init_admin_db():
 
 
 init_admin_db()
+
+
+def is_admin_user(username):
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM admins WHERE username=?", (username,))
+    result = cur.fetchone()
+    conn.close()
+    return result is not None
 
 
 def init_point_rules_db():
@@ -390,6 +405,7 @@ def bwf_login():
             player_name = login
 
         session["bwf_player"] = player_name
+        session["bwf_login"] = login
         session["bwf_license_id"] = license_id
         session["bwf_club"] = club
         session["bwf_gender"] = gender
@@ -398,9 +414,7 @@ def bwf_login():
         session["bwf_dob"] = dob
         session["bwf_age"] = age
         session["bwf_ranking"] = ranking
-        login_mode = data.get("mode", "player")
-        session["login_mode"] = login_mode
-        session["admin"] = (login_mode == "admin")
+        session["admin"] = is_admin_user(login)
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
     except ext_requests.RequestException as e:
@@ -424,9 +438,8 @@ def bwf_status():
     dob = session.get("bwf_dob", "")
     age = session.get("bwf_age", "")
     ranking = session.get("bwf_ranking", {})
-    login_mode = session.get("login_mode", "player")
     is_admin = session.get("admin", False)
-    return jsonify(logged_in=bool(player), player_name=player or "", license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking, is_admin=is_admin, login_mode=login_mode)
+    return jsonify(logged_in=bool(player), player_name=player or "", license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking, is_admin=is_admin)
 
 @app.route("/api/validate-registration", methods=["POST"])
 def validate_registration():
@@ -577,9 +590,86 @@ def admin_exists():
     return jsonify(exists=True)
 
 
-@app.route("/admin/login", methods=["POST"])
-def admin_login():
-    return jsonify(success=False, error="Use Badminton Sweden login"), 403
+@app.route("/admin/add-admin", methods=["POST"])
+def add_admin():
+    data = request.json
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    confirm_password = data.get("confirm_password", "")
+    if not username or not password:
+        return jsonify(success=False, error="Username and password required"), 400
+    if confirm_password != "admin@2026":
+        return jsonify(success=False, error="Incorrect admin confirmation password"), 403
+
+    # Verify user against Badminton Sweden
+    try:
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/user",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=10)
+        resp = s.get("https://badmintonsweden.tournamentsoftware.com/user", timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        token_el = soup.find("input", {"name": "__RequestVerificationToken"})
+        if not token_el:
+            return jsonify(success=False, error="Could not connect to Badminton Sweden"), 500
+        logo_el = soup.find("input", {"name": "LogoUrl"})
+        resp = s.post("https://badmintonsweden.tournamentsoftware.com/user", data={
+            "__RequestVerificationToken": token_el.get("value", ""),
+            "ReturnUrl": "/",
+            "LogoUrl": logo_el.get("value", "") if logo_el else "",
+            "Login": username,
+            "Password": password
+        }, allow_redirects=True, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        if soup.find("input", {"name": "Login"}):
+            return jsonify(success=False, error="Invalid Badminton Sweden credentials"), 401
+    except ext_requests.RequestException as e:
+        return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
+
+    # Verified - add as admin
+    conn = sqlite3.connect(ADMIN_DB)
+    try:
+        conn.execute("INSERT INTO admins (username) VALUES (?)", (username,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify(success=False, error="User is already an admin")
+    conn.close()
+    # If user just added themselves, update session
+    if username == session.get("bwf_login"):
+        session["admin"] = True
+    return jsonify(success=True)
+
+
+@app.route("/admin/remove-admin", methods=["POST"])
+def remove_admin():
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    data = request.json
+    username = data.get("username", "").strip()
+    if not username:
+        return jsonify(success=False, error="Username required"), 400
+    conn = sqlite3.connect(ADMIN_DB)
+    conn.execute("DELETE FROM admins WHERE username=?", (username,))
+    conn.commit()
+    conn.close()
+    # If removed self, update session
+    if username == session.get("bwf_login"):
+        session["admin"] = False
+    return jsonify(success=True)
+
+
+@app.route("/admin/list-admins", methods=["GET"])
+def list_admins():
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM admins ORDER BY username")
+    admins = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return jsonify(success=True, admins=admins)
 
 
 @app.route("/api/point-rules", methods=["GET"])
@@ -1575,9 +1665,13 @@ def search_players():
             club_el = item.select_one(".media__subheading span.nav-link__value")
             if club_el:
                 club = club_el.get_text(strip=True).split("|")[0].strip()
+            license_id = ""
+            license_el = item.select_one(".media__title-aside")
+            if license_el:
+                license_id = license_el.get_text(strip=True).strip("()")
             profile_link = item.select_one("a.media__link")
             profile_url = profile_link.get("href", "") if profile_link else ""
-            live_results.append({"name": name, "club": club, "source": "live"})
+            live_results.append({"name": name, "club": club, "license_id": license_id, "source": "live"})
 
             # Cache to local DB
             try:

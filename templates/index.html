@@ -15,11 +15,12 @@
                 <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
             </div>
             <div id="admin-info" style="display:none;align-items:center;gap:8px;">
-                <span style="font-weight:bold;">Admin</span>
+                <span id="admin-player-info" style="font-weight:bold;"></span>
                 <a href="/admin.html"><button style="width:auto;padding:8px 16px;">Dashboard</button></a>
-                <button onclick="adminLogout()" style="width:auto;padding:8px 16px;background:#666;">Logout</button>
+                <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;background:#666;">Logout</button>
             </div>
             <button id="bwf-login-btn" onclick="document.getElementById('bwf-login-modal').style.display='block'" style="width:auto;padding:8px 16px;">Login</button>
+            <button id="manage-admin-btn" onclick="document.getElementById('admin-modal').style.display='block'" style="width:auto;padding:8px 16px;background:#f0a000;">Manage Admin</button>
         </div>
     </div>
 
@@ -27,28 +28,37 @@
     <div id="bwf-login-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;">
         <div style="background:white;max-width:400px;margin:80px auto;padding:20px;border-radius:8px;">
             <h2>Login</h2>
-            <div style="display:flex;gap:10px;margin-bottom:15px;">
-                <button id="tab-player" onclick="showTab('player')" style="width:auto;padding:8px 16px;">Player</button>
-                <button id="tab-admin" onclick="showTab('admin')" style="width:auto;padding:8px 16px;background:#666;">Admin</button>
-            </div>
             <form id="bwf-login-form">
-                <label for="bwf-email">Email / License ID</label>
-                <input type="text" id="bwf-email" placeholder="Email or license number" required>
+                <label for="bwf-email">Email / Username</label>
+                <input type="text" id="bwf-email" placeholder="Email or username" required>
                 <label for="bwf-password">Password</label>
                 <input type="password" id="bwf-password" placeholder="Password" required>
                 <button type="submit">Login</button>
                 <button type="button" onclick="document.getElementById('bwf-login-modal').style.display='none'" style="background:#666;">Cancel</button>
                 <p style="margin-top:10px;font-size:0.9em;text-align:center;">Don't have an account? <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="color:#0066cc;">Register on Badminton Sweden</a></p>
             </form>
-            <form id="admin-login-form" style="display:none;">
-                <label for="admin-username">Badminton Sweden Email/Username</label>
-                <input type="text" id="admin-username" placeholder="Email / Username" required>
-                <label for="admin-password">Password</label>
-                <input type="password" id="admin-password" placeholder="Password" required>
-                <button type="submit">Login</button>
-                <button type="button" onclick="document.getElementById('bwf-login-modal').style.display='none'" style="background:#666;">Cancel</button>
-            </form>
             <p id="bwf-error" style="color:red;display:none;"></p>
+        </div>
+    </div>
+
+    <!-- Manage Admin Modal -->
+    <div id="admin-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;">
+        <div style="background:white;max-width:450px;margin:80px auto;padding:20px;border-radius:8px;">
+            <h2>Manage Admins</h2>
+            <div id="admins-list" style="margin-bottom:15px;"></div>
+            <h3>Add New Admin</h3>
+            <form id="add-admin-form">
+                <label>Badminton Sweden Username/Email</label>
+                <input type="text" id="admin-new-username" placeholder="Username or email" required>
+                <label>Badminton Sweden Password (to verify user)</label>
+                <input type="password" id="admin-new-password" placeholder="User's BWF password" required>
+                <label>Admin Confirmation Password</label>
+                <input type="password" id="admin-confirm-password" placeholder="Admin password" required>
+                <button type="submit">Add Admin</button>
+                <button type="button" onclick="document.getElementById('admin-modal').style.display='none'" style="background:#666;">Close</button>
+            </form>
+            <p id="admin-error" style="color:red;display:none;"></p>
+            <p id="admin-success" style="color:green;display:none;"></p>
         </div>
     </div>
 
@@ -59,10 +69,13 @@
         async function checkBwfStatus() {
             const res = await fetch("/api/bwf-status");
             const data = await res.json();
-            if (data.logged_in && data.login_mode === "admin") {
+            if (data.logged_in && data.is_admin) {
                 document.getElementById("bwf-login-btn").style.display = "none";
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "flex";
+                let display = data.player_name;
+                if (data.license_id) display += ` (${data.license_id})`;
+                document.getElementById("admin-player-info").textContent = "Admin: " + display;
             } else if (data.logged_in) {
                 document.getElementById("bwf-user").style.display = "flex";
                 let display = data.player_name;
@@ -86,8 +99,7 @@
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({
                     login: document.getElementById("bwf-email").value,
-                    password: document.getElementById("bwf-password").value,
-                    mode: "player"
+                    password: document.getElementById("bwf-password").value
                 })
             });
             const data = await res.json();
@@ -107,51 +119,70 @@
             loadTournaments();
         }
 
-        async function adminLogout() {
-            await fetch("/admin/logout", {method: "POST"});
-            checkBwfStatus();
-            loadTournaments();
-        }
-
-        async function showTab(tab) {
-            document.getElementById("bwf-error").style.display = "none";
-            document.getElementById("bwf-login-form").style.display = "none";
-            document.getElementById("admin-login-form").style.display = "none";
-            document.getElementById("tab-player").style.background = "#666";
-            document.getElementById("tab-admin").style.background = "#666";
-
-            if (tab === 'player') {
-                document.getElementById("bwf-login-form").style.display = "block";
-                document.getElementById("tab-player").style.background = "";
-            } else {
-                document.getElementById("tab-admin").style.background = "";
-                document.getElementById("admin-login-form").style.display = "block";
-            }
-        }
-
-        document.getElementById("admin-login-form").addEventListener("submit", async (e) => {
+        // Manage Admin
+        document.getElementById("add-admin-form").addEventListener("submit", async (e) => {
             e.preventDefault();
-            const errorEl = document.getElementById("bwf-error");
+            const errorEl = document.getElementById("admin-error");
+            const successEl = document.getElementById("admin-success");
             errorEl.style.display = "none";
-            const res = await fetch("/api/bwf-login", {
+            successEl.style.display = "none";
+
+            const username = document.getElementById("admin-new-username").value.trim();
+            const password = document.getElementById("admin-new-password").value;
+            const confirmPassword = document.getElementById("admin-confirm-password").value;
+
+            const res = await fetch("/admin/add-admin", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({
-                    login: document.getElementById("admin-username").value,
-                    password: document.getElementById("admin-password").value,
-                    mode: "admin"
-                })
+                body: JSON.stringify({username, password, confirm_password: confirmPassword})
             });
             const data = await res.json();
             if (data.success) {
-                document.getElementById("bwf-login-modal").style.display = "none";
+                successEl.textContent = `"${username}" added as admin.`;
+                successEl.style.display = "block";
+                document.getElementById("add-admin-form").reset();
+                loadAdmins();
                 checkBwfStatus();
-                loadTournaments();
             } else {
-                errorEl.textContent = data.error || "Login failed";
+                errorEl.textContent = data.error || "Failed to add admin";
                 errorEl.style.display = "block";
             }
         });
+
+        async function removeAdmin(username) {
+            if (!confirm(`Remove admin privileges from "${username}"?`)) return;
+            const res = await fetch("/admin/remove-admin", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username})
+            });
+            const data = await res.json();
+            if (data.success) {
+                loadAdmins();
+                checkBwfStatus();
+            } else {
+                alert(data.error || "Failed to remove admin");
+            }
+        }
+
+        async function loadAdmins() {
+            const res = await fetch("/admin/list-admins");
+            const data = await res.json();
+            const container = document.getElementById("admins-list");
+            if (!data.success || !data.admins.length) {
+                container.innerHTML = "<p style='color:#666;'>No admins yet.</p>";
+                return;
+            }
+            container.innerHTML = data.admins.map(u => `
+                <div style="display:flex;align-items:center;gap:10px;padding:5px 0;">
+                    <span>${u}</span>
+                    <button onclick="removeAdmin('${u.replace(/'/g, "\\\\'")}')" style="width:auto;padding:4px 10px;background:#cc3333;font-size:0.8em;">Remove</button>
+                </div>
+            `).join("");
+        }
+
+        // Load admins when modal opens
+        document.getElementById("manage-admin-btn").addEventListener("click", loadAdmins);
 
         async function loadTournaments() {
             const container = document.getElementById("tournaments");
@@ -167,7 +198,6 @@
                 return;
             }
 
-            // Check player registration status
             const statusRes = await fetch("/api/bwf-status");
             const statusData = await statusRes.json();
             let registeredUrls = new Set();

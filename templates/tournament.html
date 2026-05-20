@@ -339,7 +339,7 @@
                     const res = await fetch(`/api/search-players?q=${encodeURIComponent(q)}`);
                     results = await res.json();
                     container.innerHTML = results.map((p, i) =>
-                        `<div class="search-item" data-index="${i}">${p.name} - ${p.club || "No club"}</div>`
+                        `<div class="search-item" data-index="${i}">${p.name}${p.license_id ? ' (' + p.license_id + ')' : ''} - ${p.club || "No club"}</div>`
                     ).join("");
                     container.querySelectorAll(".search-item").forEach(el => {
                         el.addEventListener("click", () => {
@@ -415,6 +415,7 @@
         setupLiveSearch("admin-edit-name", "admin-search-results", (player) => {
             document.getElementById("admin-edit-name").value = player.name || "";
             document.getElementById("admin-edit-club").value = player.club || "";
+            document.getElementById("admin-edit-license").value = player.license_id || "";
         });
 
         async function loadAdminLevels() {
