@@ -51,11 +51,16 @@
             <input type="text" id="admin-edit-license">
             <label>Club</label>
             <input type="text" id="admin-edit-club" required>
-            <select id="admin-edit-gender" style="display:none;">
-                <option value="">Gender</option>
+            <label>Gender</label>
+            <select id="admin-edit-gender">
+                <option value="">-- Select --</option>
                 <option value="M">Male</option>
                 <option value="F">Female</option>
             </select>
+            <label>Email</label>
+            <input type="email" id="admin-edit-email" placeholder="Email">
+            <label>Phone</label>
+            <input type="text" id="admin-edit-phone" placeholder="Phone">
             <div id="admin-levels-container"></div>
             <div id="admin-doubles-partner-container" style="position:relative;display:none;">
                 <label>Doubles Partner</label>
@@ -412,10 +417,19 @@
             document.getElementById("admin-mixed-partner").value = player.name || "";
         });
 
-        setupLiveSearch("admin-edit-name", "admin-search-results", (player) => {
+        setupLiveSearch("admin-edit-name", "admin-search-results", async (player) => {
             document.getElementById("admin-edit-name").value = player.name || "";
             document.getElementById("admin-edit-club").value = player.club || "";
             document.getElementById("admin-edit-license").value = player.license_id || "";
+            // Fetch full details (gender, ranking)
+            const params = player.profile_url ?
+                `profile_url=${encodeURIComponent(player.profile_url)}` :
+                `name=${encodeURIComponent(player.name)}`;
+            const detailRes = await fetch(`/api/player-details?${params}`);
+            const detail = await detailRes.json();
+            if (detail.success) {
+                document.getElementById("admin-edit-gender").value = detail.gender || "";
+            }
         });
 
         async function loadAdminLevels() {
@@ -481,6 +495,8 @@
             document.getElementById("admin-edit-license").value = player.license_id || "";
             document.getElementById("admin-edit-club").value = player.club || "";
             document.getElementById("admin-edit-gender").value = player.gender || "";
+            document.getElementById("admin-edit-email").value = player.email || "";
+            document.getElementById("admin-edit-phone").value = player.phone || "";
             document.getElementById("admin-doubles-partner").value = player.doubles_partner || "";
             document.getElementById("admin-mixed-partner").value = player.mixed_partner || "";
 
@@ -523,6 +539,8 @@
                 license_id: document.getElementById("admin-edit-license").value,
                 club: document.getElementById("admin-edit-club").value,
                 gender: document.getElementById("admin-edit-gender").value,
+                email: document.getElementById("admin-edit-email").value,
+                phone: document.getElementById("admin-edit-phone").value,
                 singles_levels: singlesLevels,
                 doubles_levels: doublesLevels,
                 mixed_levels: mixedLevels,

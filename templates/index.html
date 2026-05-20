@@ -52,13 +52,26 @@
                 <input type="text" id="admin-new-username" placeholder="Username or email" required>
                 <label>Badminton Sweden Password (to verify user)</label>
                 <input type="password" id="admin-new-password" placeholder="User's BWF password" required>
-                <label>Admin Confirmation Password</label>
-                <input type="password" id="admin-confirm-password" placeholder="Admin password" required>
                 <button type="submit">Add Admin</button>
                 <button type="button" onclick="document.getElementById('admin-modal').style.display='none'" style="background:#666;">Close</button>
             </form>
             <p id="admin-error" style="color:red;display:none;"></p>
             <p id="admin-success" style="color:green;display:none;"></p>
+        </div>
+    </div>
+
+    <!-- Remove Admin Password Modal -->
+    <div id="confirm-password-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:200;">
+        <div style="background:white;max-width:350px;margin:120px auto;padding:20px;border-radius:8px;">
+            <h3 id="confirm-password-title">Confirm</h3>
+            <p id="confirm-password-msg"></p>
+            <label>Admin Confirmation Password</label>
+            <input type="password" id="confirm-password-input" placeholder="Password" required>
+            <p id="confirm-password-error" style="color:red;display:none;"></p>
+            <div style="display:flex;gap:10px;margin-top:10px;">
+                <button onclick="submitConfirmPassword()" id="confirm-password-btn">Confirm</button>
+                <button onclick="document.getElementById('confirm-password-modal').style.display='none'" style="background:#666;">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -120,6 +133,28 @@
         }
 
         // Manage Admin
+        let confirmPasswordCallback = null;
+
+        function showConfirmPassword(title, msg, btnStyle, callback) {
+            document.getElementById("confirm-password-title").textContent = title;
+            document.getElementById("confirm-password-msg").textContent = msg;
+            document.getElementById("confirm-password-input").value = "";
+            document.getElementById("confirm-password-error").style.display = "none";
+            document.getElementById("confirm-password-btn").style.background = btnStyle || "";
+            confirmPasswordCallback = callback;
+            document.getElementById("confirm-password-modal").style.display = "block";
+        }
+
+        async function submitConfirmPassword() {
+            const password = document.getElementById("confirm-password-input").value;
+            if (!password) return;
+            if (confirmPasswordCallback) {
+                await confirmPasswordCallback(password);
+            }
+        }
+
+        let pendingAdminAdd = {};
+
         document.getElementById("add-admin-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const errorEl = document.getElementById("admin-error");
@@ -129,40 +164,48 @@
 
             const username = document.getElementById("admin-new-username").value.trim();
             const password = document.getElementById("admin-new-password").value;
-            const confirmPassword = document.getElementById("admin-confirm-password").value;
+            if (!username || !password) return;
 
-            const res = await fetch("/admin/add-admin", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({username, password, confirm_password: confirmPassword})
+            pendingAdminAdd = {username, password};
+            showConfirmPassword("Add Admin", `Enter admin password to confirm adding "${username}":`, "#28a745", async (confirmPassword) => {
+                const res = await fetch("/admin/add-admin", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({username: pendingAdminAdd.username, password: pendingAdminAdd.password, confirm_password: confirmPassword})
+                });
+                const data = await res.json();
+                document.getElementById("confirm-password-modal").style.display = "none";
+                if (data.success) {
+                    successEl.textContent = `"${pendingAdminAdd.username}" added as admin.`;
+                    successEl.style.display = "block";
+                    document.getElementById("add-admin-form").reset();
+                    loadAdmins();
+                    checkBwfStatus();
+                } else {
+                    errorEl.textContent = data.error || "Failed to add admin";
+                    errorEl.style.display = "block";
+                }
             });
-            const data = await res.json();
-            if (data.success) {
-                successEl.textContent = `"${username}" added as admin.`;
-                successEl.style.display = "block";
-                document.getElementById("add-admin-form").reset();
-                loadAdmins();
-                checkBwfStatus();
-            } else {
-                errorEl.textContent = data.error || "Failed to add admin";
-                errorEl.style.display = "block";
-            }
         });
 
+        let removeAdminTarget = "";
+
         async function removeAdmin(username) {
-            if (!confirm(`Remove admin privileges from "${username}"?`)) return;
-            const res = await fetch("/admin/remove-admin", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({username})
+            showConfirmPassword("Remove Admin", `Enter admin password to remove "${username}":`, "#cc3333", async (password) => {
+                const res = await fetch("/admin/remove-admin", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({username, password})
+                });
+                const data = await res.json();
+                document.getElementById("confirm-password-modal").style.display = "none";
+                if (data.success) {
+                    loadAdmins();
+                    checkBwfStatus();
+                } else {
+                    alert(data.error || "Failed to remove admin");
+                }
             });
-            const data = await res.json();
-            if (data.success) {
-                loadAdmins();
-                checkBwfStatus();
-            } else {
-                alert(data.error || "Failed to remove admin");
-            }
         }
 
         async function loadAdmins() {

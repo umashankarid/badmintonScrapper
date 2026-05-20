@@ -646,12 +646,13 @@ def add_admin():
 
 @app.route("/admin/remove-admin", methods=["POST"])
 def remove_admin():
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
     data = request.json
     username = data.get("username", "").strip()
+    password = data.get("password", "")
     if not username:
         return jsonify(success=False, error="Username required"), 400
+    if password != "admin@2026":
+        return jsonify(success=False, error="Incorrect confirmation password"), 403
     conn = sqlite3.connect(ADMIN_DB)
     conn.execute("DELETE FROM admins WHERE username=?", (username,))
     conn.commit()
@@ -1671,7 +1672,7 @@ def search_players():
                 license_id = license_el.get_text(strip=True).strip("()")
             profile_link = item.select_one("a.media__link")
             profile_url = profile_link.get("href", "") if profile_link else ""
-            live_results.append({"name": name, "club": club, "license_id": license_id, "source": "live"})
+            live_results.append({"name": name, "club": club, "license_id": license_id, "profile_url": profile_url, "source": "live"})
 
             # Cache to local DB
             try:
@@ -1691,6 +1692,91 @@ def search_players():
     except Exception:
         conn.close()
         return jsonify(local_results)
+
+
+@app.route("/api/player-details", methods=["GET"])
+def player_details():
+    """Fetch full player details (gender, email, phone, ranking) from Badminton Sweden profile."""
+    profile_url = request.args.get("profile_url", "").strip()
+    player_name = request.args.get("name", "").strip()
+    if not profile_url and not player_name:
+        return jsonify(success=False, error="profile_url or name required"), 400
+
+    try:
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        # If no profile_url, search for the player
+        if not profile_url:
+            resp = s.get(
+                "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+                params={"Page": 1, "SportID": 2, "Query": player_name},
+                headers={"X-Requested-With": "XMLHttpRequest"},
+                timeout=5
+            )
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for item in soup.select("li.list__item"):
+                name_el = item.select_one("a.media__link span.nav-link__value")
+                if name_el and name_el.get_text(strip=True).lower() == player_name.lower():
+                    link = item.select_one("a.media__link")
+                    if link:
+                        profile_url = link.get("href", "")
+                    break
+
+        if not profile_url:
+            return jsonify(success=False, error="Player profile not found"), 404
+
+        # Fetch player profile page to get gender
+        gender = ""
+        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}", timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Gender is often in the profile meta info
+        for dt in soup.find_all("dt"):
+            dd = dt.find_next_sibling("dd")
+            if not dd:
+                continue
+            label = dt.get_text(strip=True).rstrip(":")
+            value = dd.get_text(strip=True)
+            if label == "Kön" or "gender" in label.lower():
+                gender = "F" if "kvinna" in value.lower() or "female" in value.lower() else "M" if "man" in value.lower() or "male" in value.lower() else ""
+
+        # If gender not found on profile page, try to infer from events
+        if not gender:
+            for a in soup.select("a"):
+                text = a.get_text(strip=True)
+                if text.startswith("DS ") or text.startswith("DD "):
+                    gender = "F"
+                    break
+                elif text.startswith("HS ") or text.startswith("HD "):
+                    gender = "M"
+                    break
+
+        # Fetch ranking
+        ranking = {}
+        try:
+            ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}/ranking", timeout=10)
+            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
+            table = ranking_soup.find("table")
+            if table:
+                valid_categories = {"DS", "HS", "DD", "HD", "MD"}
+                for row in table.find_all("tr")[1:]:
+                    th = row.find("th", scope="row")
+                    tds = row.find_all("td")
+                    if th and len(tds) >= 2:
+                        category = th.get_text(strip=True)
+                        if category in valid_categories:
+                            ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
+        except Exception:
+            pass
+
+        return jsonify(success=True, gender=gender, ranking=ranking)
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
 
 
 def send_email(to_email, subject, body):
