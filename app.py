@@ -1745,6 +1745,21 @@ def player_details():
             if label == "Kön" or "gender" in label.lower():
                 gender = "F" if "kvinna" in value.lower() or "female" in value.lower() else "M" if "man" in value.lower() or "male" in value.lower() else ""
 
+        # Try to get email and phone from profile page
+        email = ""
+        phone = ""
+        for dt in soup.find_all("dt"):
+            dd = dt.find_next_sibling("dd")
+            if not dd:
+                continue
+            label = dt.get_text(strip=True).rstrip(":")
+            value = dd.get_text(strip=True)
+            if "e-mail" in label.lower() or "email" in label.lower():
+                email = value.replace("(Redigera)", "").strip()
+            elif "telefon" in label.lower() or "phone" in label.lower() or "mobil" in label.lower():
+                if value and not phone:
+                    phone = value
+
         # If gender not found on profile page, try to infer from events
         if not gender:
             for a in soup.select("a"):
@@ -1774,7 +1789,7 @@ def player_details():
         except Exception:
             pass
 
-        return jsonify(success=True, gender=gender, ranking=ranking)
+        return jsonify(success=True, gender=gender, email=email, phone=phone, ranking=ranking)
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
 

@@ -52,11 +52,7 @@
             <label>Club</label>
             <input type="text" id="admin-edit-club" required>
             <label>Gender</label>
-            <select id="admin-edit-gender">
-                <option value="">-- Select --</option>
-                <option value="M">Male</option>
-                <option value="F">Female</option>
-            </select>
+            <input type="text" id="admin-edit-gender" readonly>
             <label>Email</label>
             <input type="email" id="admin-edit-email" placeholder="Email">
             <label>Phone</label>
@@ -428,7 +424,11 @@
             const detailRes = await fetch(`/api/player-details?${params}`);
             const detail = await detailRes.json();
             if (detail.success) {
-                document.getElementById("admin-edit-gender").value = detail.gender || "";
+                const genderEl = document.getElementById("admin-edit-gender");
+                genderEl.value = detail.gender === "F" ? "Female" : detail.gender === "M" ? "Male" : "";
+                genderEl.dataset.code = detail.gender || "";
+                if (detail.email) document.getElementById("admin-edit-email").value = detail.email;
+                if (detail.phone) document.getElementById("admin-edit-phone").value = detail.phone;
             }
         });
 
@@ -494,7 +494,9 @@
             document.getElementById("admin-edit-name").value = player.player_name || "";
             document.getElementById("admin-edit-license").value = player.license_id || "";
             document.getElementById("admin-edit-club").value = player.club || "";
-            document.getElementById("admin-edit-gender").value = player.gender || "";
+            const genderEl = document.getElementById("admin-edit-gender");
+            genderEl.value = player.gender === "F" ? "Female" : player.gender === "M" ? "Male" : "";
+            genderEl.dataset.code = player.gender || "";
             document.getElementById("admin-edit-email").value = player.email || "";
             document.getElementById("admin-edit-phone").value = player.phone || "";
             document.getElementById("admin-doubles-partner").value = player.doubles_partner || "";
@@ -518,6 +520,7 @@
         function cancelAdminEdit() {
             document.getElementById("admin-edit-form").reset();
             document.getElementById("admin-edit-id").value = "";
+            document.getElementById("admin-edit-gender").dataset.code = "";
             document.getElementById("admin-form-title").textContent = "Add / Edit Player (Admin)";
             document.getElementById("admin-submit-btn").textContent = "Add Player";
             if (document.querySelector(".admin-singles-level")) document.querySelector(".admin-singles-level").value = "";
@@ -538,7 +541,7 @@
                 player_name: document.getElementById("admin-edit-name").value,
                 license_id: document.getElementById("admin-edit-license").value,
                 club: document.getElementById("admin-edit-club").value,
-                gender: document.getElementById("admin-edit-gender").value,
+                gender: document.getElementById("admin-edit-gender").dataset.code || "",
                 email: document.getElementById("admin-edit-email").value,
                 phone: document.getElementById("admin-edit-phone").value,
                 singles_levels: singlesLevels,
