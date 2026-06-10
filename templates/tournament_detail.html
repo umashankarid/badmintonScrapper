@@ -56,9 +56,13 @@
         <h3>Club Stats</h3>
         <div class="stats-grid">
             <div class="stat-box"><div class="value" id="stat-club-players">0</div><div class="label">Players</div></div>
-            <div class="stat-box"><div class="value" style="color:#FFD700" id="stat-gold">0</div><div class="label">🥇 Gold</div></div>
-            <div class="stat-box"><div class="value" style="color:#C0C0C0" id="stat-silver">0</div><div class="label">🥈 Silver</div></div>
-            <div class="stat-box"><div class="value" style="color:#CD7F32" id="stat-bronze">0</div><div class="label">🥉 Bronze</div></div>
+            <div class="stat-box" style="cursor:pointer" onclick="showMedalWinners('1')"><div class="value" style="color:#FFD700" id="stat-gold">0</div><div class="label">🥇 Gold</div></div>
+            <div class="stat-box" style="cursor:pointer" onclick="showMedalWinners('2')"><div class="value" style="color:#C0C0C0" id="stat-silver">0</div><div class="label">🥈 Silver</div></div>
+            <div class="stat-box" style="cursor:pointer" onclick="showMedalWinners('3')"><div class="value" style="color:#CD7F32" id="stat-bronze">0</div><div class="label">🥉 Bronze</div></div>
+        </div>
+        <div id="medal-winners" style="display:none;margin-bottom:15px;padding:10px;background:#fffde7;border-radius:8px;">
+            <h4 id="medal-winners-title"></h4>
+            <div id="medal-winners-list"></div>
         </div>
         <h3>Players</h3>
         <div id="club-players"></div>
@@ -132,10 +136,12 @@
         }
 
         function selectClub(club) {
+            currentClub = club;
             document.getElementById('club-table-section').style.display = 'none';
             document.getElementById('overview-stats').style.display = 'none';
             document.getElementById('club-detail').style.display = '';
             document.getElementById('club-detail-title').textContent = club;
+            document.getElementById('medal-winners').style.display = 'none';
 
             const players = allPlayers.filter(p => p.club === club);
             const medals = getMedalsForClub(club);
@@ -165,6 +171,23 @@
             document.getElementById('overview-stats').style.display = '';
         }
 
+        let currentClub = '';
+
+        function showMedalWinners(placement) {
+            const icon = placement === '1' ? '🥇 Gold' : placement === '2' ? '🥈 Silver' : '🥉 Bronze';
+            const clubPlayerNames = allPlayers.filter(p => p.club === currentClub).map(p => normalizeName(p.name));
+            const winners = allMedals.filter(m => {
+                const matchPlacement = placement === '3' ? m.placement.startsWith('3') : m.placement === placement;
+                return matchPlacement && clubPlayerNames.includes(normalizeName(m.name));
+            });
+
+            document.getElementById('medal-winners-title').textContent = `${icon} Winners (${winners.length})`;
+            document.getElementById('medal-winners-list').innerHTML = winners.map(w =>
+                `<div style="padding:4px 0;">${w.name} — <em>${w.event}</em></div>`
+            ).join('') || '<p>None</p>';
+            document.getElementById('medal-winners').style.display = '';
+        }
+
         async function showPlayer(playerId, name) {
             document.getElementById('club-detail').style.display = 'none';
             document.getElementById('overview-stats').style.display = 'none';
@@ -189,8 +212,8 @@
             if (!data.success) return;
 
             document.getElementById('player-stats').innerHTML =
-                '<tr><th></th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr>' +
-                data.stats.map(s => `<tr><td><strong>${s.category}</strong></td><td>${s.played}</td><td>${s.win_loss}</td><td>${s.sets}</td><td>${s.points}</td></tr>`).join('');
+                '<thead><tr><th></th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr></thead><tbody>' +
+                data.stats.map(s => `<tr><td><strong>${s.category}</strong></td><td>${s.played}</td><td>${s.win_loss}</td><td>${s.sets}</td><td>${s.points}</td></tr>`).join('') + '</tbody>';
 
             document.getElementById('player-matches').innerHTML = data.matches.map(m => `
                 <div class="match-card">
