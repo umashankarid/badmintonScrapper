@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Detail</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .back-link { color:#0066cc; text-decoration:none; display:inline-block; margin-bottom:15px; }
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; margin:15px 0; }
+        .stat-box { text-align:center; padding:15px; background:#f8f9fa; border-radius:8px; }
+        .stat-box .value { font-size:1.8em; font-weight:700; color:#0066cc; }
+        .stat-box .label { font-size:0.85em; color:#666; }
+        .club-table { width:100%; border-collapse:collapse; margin:15px 0; }
+        .club-table th, .club-table td { padding:8px 12px; text-align:left; border-bottom:1px solid #eee; }
+        .club-table th { background:#f8f9fa; }
+        .club-table tr:hover { background:#f0f8ff; cursor:pointer; }
+        .club-select { width:100%; padding:12px; border:1px solid #ddd; border-radius:6px; font-size:1em; margin:10px 0; }
+        .player-row { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; cursor:pointer; }
+        .player-row:hover { background:#f0f8ff; }
+        .medal-badge { padding:2px 6px; border-radius:4px; font-size:0.75em; font-weight:600; margin-left:4px; }
+        .medal-badge.gold { background:#FFF8DC; color:#B8860B; }
+        .medal-badge.silver { background:#F5F5F5; color:#666; }
+        .medal-badge.bronze { background:#FFF0E0; color:#8B4513; }
+        .match-card { border:1px solid #e0e0e0; border-radius:8px; padding:12px; margin-bottom:8px; }
+        .match-card .round { font-size:0.85em; color:#888; }
+        .won { font-weight:700; color:#28a745; }
+        .lost { color:#666; }
+        .stats-table { width:100%; border-collapse:collapse; margin:10px 0; }
+        .stats-table th, .stats-table td { padding:8px; text-align:left; border-bottom:1px solid #eee; }
+        .stats-table th { background:#f8f9fa; }
+    </style>
+</head>
+<body>
+    <a href="/results.html" class="back-link">← Back to Results</a>
+    <h1 id="tournament-name">Loading...</h1>
+    <p id="tournament-info" style="color:#666;"></p>
+
+    <!-- Overview Stats -->
+    <h3>Tournament Overview</h3>
+    <div class="stats-grid" id="overview-stats">
+        <div class="stat-box"><div class="value" id="stat-total-players">-</div><div class="label">Players</div></div>
+        <div class="stat-box"><div class="value" id="stat-total-clubs">-</div><div class="label">Clubs</div></div>
+    </div>
+
+    <!-- Club Table (all clubs with player count) -->
+    <div id="club-table-section">
+        <h3>Clubs</h3>
+        <table class="club-table" id="club-table"></table>
+    </div>
+
+    <!-- Club Detail (shown when club selected) -->
+    <div id="club-detail" style="display:none;">
+        <a href="#" class="back-link" onclick="hideClubDetail(); return false;">← Back to all clubs</a>
+        <h2 id="club-detail-title"></h2>
+        <h3>Club Stats</h3>
+        <div class="stats-grid">
+            <div class="stat-box"><div class="value" id="stat-club-players">0</div><div class="label">Players</div></div>
+            <div class="stat-box"><div class="value" style="color:#FFD700" id="stat-gold">0</div><div class="label">🥇 Gold</div></div>
+            <div class="stat-box"><div class="value" style="color:#C0C0C0" id="stat-silver">0</div><div class="label">🥈 Silver</div></div>
+            <div class="stat-box"><div class="value" style="color:#CD7F32" id="stat-bronze">0</div><div class="label">🥉 Bronze</div></div>
+        </div>
+        <h3>Players</h3>
+        <div id="club-players"></div>
+    </div>
+
+    <!-- Player Detail (shown when player selected) -->
+    <div id="player-detail" style="display:none;">
+        <a href="#" class="back-link" onclick="hidePlayerDetail(); return false;">← Back to club</a>
+        <h2 id="player-name"></h2>
+        <table class="stats-table" id="player-stats"></table>
+        <h3 style="margin-top:20px;">Matches</h3>
+        <div id="player-matches"></div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const tournamentId = params.get('id');
+        document.getElementById('tournament-name').textContent = decodeURIComponent(params.get('name') || '');
+        document.getElementById('tournament-info').textContent = decodeURIComponent(params.get('info') || '');
+        document.title = decodeURIComponent(params.get('name') || 'Tournament');
+
+        let allPlayers = [];
+        let allMedals = [];
+
+        async function loadData() {
+            const [pRes, mRes] = await Promise.all([
+                fetch(`/api/tournament-clubs?id=${tournamentId}`),
+                fetch(`/api/tournament-medals?id=${tournamentId}`)
+            ]);
+            const pData = await pRes.json();
+            const mData = await mRes.json();
+            if (pData.success) allPlayers = pData.players;
+            if (mData.success) allMedals = mData.medals;
+
+            const clubs = [...new Set(allPlayers.map(p => p.club).filter(Boolean))].sort();
+
+            // Overview stats
+            document.getElementById('stat-total-players').textContent = allPlayers.length;
+            document.getElementById('stat-total-clubs').textContent = clubs.length;
+
+            // Club table
+            document.getElementById('club-table').innerHTML =
+                '<tr><th>Club</th><th>Players</th><th>🥇</th><th>🥈</th><th>🥉</th></tr>' +
+                clubs.map(c => {
+                    const count = allPlayers.filter(p => p.club === c).length;
+                    const clubMedals = getMedalsForClub(c);
+                    return `<tr onclick="selectClub('${c.replace(/'/g,"\\'")}')">
+                        <td>${c}</td><td>${count}</td>
+                        <td>${clubMedals.gold}</td><td>${clubMedals.silver}</td><td>${clubMedals.bronze}</td>
+                    </tr>`;
+                }).join('');
+        }
+
+        function getMedalsForClub(club) {
+            const clubPlayerNames = allPlayers.filter(p => p.club === club).map(p => normalizeName(p.name));
+            const clubMedals = allMedals.filter(m => clubPlayerNames.includes(normalizeName(m.name)));
+            return {
+                gold: clubMedals.filter(m => m.placement === '1').length,
+                silver: clubMedals.filter(m => m.placement === '2').length,
+                bronze: clubMedals.filter(m => m.placement.startsWith('3')).length
+            };
+        }
+
+        // Normalize "Lastname, Firstname" and "Firstname Lastname" to same format for comparison
+        function normalizeName(name) {
+            if (name.includes(',')) {
+                const parts = name.split(',').map(s => s.trim());
+                return (parts[1] + ' ' + parts[0]).toLowerCase().trim();
+            }
+            return name.toLowerCase().trim();
+        }
+
+        function selectClub(club) {
+            document.getElementById('club-table-section').style.display = 'none';
+            document.getElementById('overview-stats').style.display = 'none';
+            document.getElementById('club-detail').style.display = '';
+            document.getElementById('club-detail-title').textContent = club;
+
+            const players = allPlayers.filter(p => p.club === club);
+            const medals = getMedalsForClub(club);
+
+            document.getElementById('stat-club-players').textContent = players.length;
+            document.getElementById('stat-gold').textContent = medals.gold;
+            document.getElementById('stat-silver').textContent = medals.silver;
+            document.getElementById('stat-bronze').textContent = medals.bronze;
+
+            document.getElementById('club-players').innerHTML = players.map(p => {
+                const playerMedals = allMedals.filter(m => normalizeName(m.name) === normalizeName(p.name));
+                const badges = playerMedals.map(m => {
+                    const cls = m.placement === '1' ? 'gold' : m.placement === '2' ? 'silver' : 'bronze';
+                    const icon = m.placement === '1' ? '🥇' : m.placement === '2' ? '🥈' : '🥉';
+                    return `<span class="medal-badge ${cls}">${icon} ${m.event}</span>`;
+                }).join('');
+                return `<div class="player-row" onclick="showPlayer('${p.player_id || ''}', '${p.name.replace(/'/g,"\\'")}')">
+                    <span>${p.name}</span>
+                    <div>${badges}</div>
+                </div>`;
+            }).join('');
+        }
+
+        function hideClubDetail() {
+            document.getElementById('club-detail').style.display = 'none';
+            document.getElementById('club-table-section').style.display = '';
+            document.getElementById('overview-stats').style.display = '';
+        }
+
+        async function showPlayer(playerId, name) {
+            document.getElementById('club-detail').style.display = 'none';
+            document.getElementById('overview-stats').style.display = 'none';
+            document.getElementById('player-detail').style.display = '';
+            document.getElementById('player-name').textContent = name;
+            document.getElementById('player-stats').innerHTML = '<tr><td>Loading...</td></tr>';
+            document.getElementById('player-matches').innerHTML = '';
+
+            if (!playerId) {
+                const res = await fetch(`/api/tournament-player-id?id=${tournamentId}&name=${encodeURIComponent(name)}`);
+                const data = await res.json();
+                playerId = data.player_id || '';
+            }
+
+            if (!playerId) {
+                document.getElementById('player-stats').innerHTML = '<tr><td>Player details not available</td></tr>';
+                return;
+            }
+
+            const res = await fetch(`/api/tournament-player-results?id=${tournamentId}&player=${playerId}`);
+            const data = await res.json();
+            if (!data.success) return;
+
+            document.getElementById('player-stats').innerHTML =
+                '<tr><th></th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr>' +
+                data.stats.map(s => `<tr><td><strong>${s.category}</strong></td><td>${s.played}</td><td>${s.win_loss}</td><td>${s.sets}</td><td>${s.points}</td></tr>`).join('');
+
+            document.getElementById('player-matches').innerHTML = data.matches.map(m => `
+                <div class="match-card">
+                    <div class="round">${m.round} · ${m.event}</div>
+                    <div><span class="${m.team1_won ? 'won' : 'lost'}">${m.team1} ${m.team1_won ? '✓' : ''}</span></div>
+                    <div><span class="${!m.team1_won ? 'won' : 'lost'}">${m.team2} ${!m.team1_won ? '✓' : ''}</span></div>
+                    ${m.score ? `<div style="font-weight:700;color:#0066cc;margin-top:4px;">${m.score}</div>` : ''}
+                </div>
+            `).join('') || '<p>No match details available</p>';
+        }
+
+        function hidePlayerDetail() {
+            document.getElementById('player-detail').style.display = 'none';
+            document.getElementById('club-detail').style.display = '';
+            document.getElementById('overview-stats').style.display = 'none';
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

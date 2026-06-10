@@ -1915,6 +1915,299 @@ def send_reminders():
             t_conn.close()
 
 
+# --- Results Page ---
+@app.route("/results.html")
+def results_page():
+    from flask import render_template
+    return render_template("results.html")
+
+
+@app.route("/api/search-tournaments", methods=["GET"])
+def search_tournaments():
+    """Search tournaments by date range and status."""
+    try:
+        import re
+        start = request.args.get("start", "")
+        end = request.args.get("end", "")
+        status = request.args.get("status", "")  # 2=reg open, 3=upcoming, 4=finished
+
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        start_fmt = f"{start}T00:00" if start else ""
+        end_fmt = f"{end}T00:00" if end else ""
+
+        url = f"https://badmintonsweden.tournamentsoftware.com/find?DateFilterType=0&StartDate={start_fmt}&EndDate={end_fmt}&Distance=10&page=1&SportID=2"
+        if status:
+            url += f"&StatusFilterID={status}"
+
+        resp = s.get(url, timeout=10)
+        page_soup = BeautifulSoup(resp.text, "html.parser")
+        form = page_soup.select_one("#form_globalsearch")
+        form_data = {}
+        if form:
+            for inp in form.find_all("input"):
+                name = inp.get("name", "")
+                value = inp.get("value", "")
+                if name:
+                    form_data[name] = value
+        if status:
+            form_data["TournamentExtendedFilter.StatusFilterID"] = status
+
+        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
+            data=form_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        tournaments = []
+        for item in soup.select("li.list__item"):
+            link = item.select_one("a.media__link")
+            if not link:
+                continue
+            name = link.get_text(strip=True)
+            href = link.get("href", "")
+            location_el = item.select_one(".media__subheading .nav-link__value")
+            location = location_el.get_text(strip=True) if location_el else ""
+            time_els = item.select("time")
+            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+            status_el = item.select_one(".tournament-status, .media__status")
+            status_text = status_el.get_text(strip=True) if status_el else ""
+            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+            tid = tid_match.group(1) if tid_match else ""
+
+            tournaments.append({
+                "id": tid,
+                "name": name,
+                "location": location,
+                "date_start": date_start,
+                "date_end": date_end,
+                "status": status_text
+            })
+
+        return jsonify(success=True, tournaments=tournaments)
+    except Exception as e:
+        return jsonify(success=False, error=str(e), tournaments=[]), 500
+
+
+@app.route("/tournament-detail.html")
+def tournament_detail_page():
+    from flask import render_template
+    return render_template("tournament_detail.html")
+
+
+@app.route("/api/tournament-medals", methods=["GET"])
+def tournament_medals():
+    """Get medal winners from tournament winners page."""
+    try:
+        import re
+        tournament_id = request.args.get("id", "")
+        if not tournament_id:
+            return jsonify(success=False, error="No tournament ID"), 400
+
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/winners.aspx?id={tournament_id}", timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        medals = []
+        for table in soup.find_all("table"):
+            event_name = ""
+            for row in table.find_all("tr"):
+                cells = row.find_all(["td", "th"])
+                if len(cells) == 1:
+                    event_name = cells[0].get_text(strip=True)
+                    continue
+                if len(cells) >= 2:
+                    placement = cells[0].get_text(strip=True)
+                    player_links = cells[1].find_all("a")
+                    for a in player_links:
+                        txt = a.get_text(strip=True)
+                        if txt and not re.match(r"^\[.*\]$", txt) and len(txt) > 3:
+                            clean = re.sub(r"\s*\[\d+(/\d+)?\]\s*$", "", txt).strip()
+                            if clean:
+                                medals.append({"name": clean, "event": event_name, "placement": placement})
+
+        return jsonify(success=True, medals=medals)
+    except Exception as e:
+        return jsonify(success=False, error=str(e), medals=[]), 500
+
+
+@app.route("/api/tournament-player-id", methods=["GET"])
+def tournament_player_id():
+    """Find a player's ID from the tournament player list by name."""
+    try:
+        tournament_id = request.args.get("id", "")
+        name = request.args.get("name", "")
+
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Players/GetPlayersContent",
+            headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        import re
+        for a in soup.find_all("a", href=True):
+            if a.get_text(strip=True) == name or name in a.get_text(strip=True):
+                href = a.get("href", "")
+                match = re.search(r"player=(\d+)", href)
+                if match:
+                    return jsonify(success=True, player_id=match.group(1))
+
+        return jsonify(success=True, player_id="")
+    except Exception as e:
+        return jsonify(success=False, error=str(e), player_id=""), 500
+
+
+@app.route("/api/tournament-player-results", methods=["GET"])
+def tournament_player_results():
+    """Get a player's match results from the tournament."""
+    try:
+        tournament_id = request.args.get("id", "")
+        player_id = request.args.get("player", "")
+        if not tournament_id or not player_id:
+            return jsonify(success=False, error="Missing parameters"), 400
+
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/player/{player_id}", timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Parse stats table
+        stats = []
+        stats_table = soup.select_one("table")
+        if stats_table:
+            for row in stats_table.select("tr")[1:]:
+                cells = [c.get_text(strip=True) for c in row.find_all("td")]
+                if len(cells) >= 5:
+                    stats.append({
+                        "category": cells[0],
+                        "played": cells[1],
+                        "win_loss": cells[2],
+                        "sets": cells[3],
+                        "points": cells[4]
+                    })
+
+        # Parse matches
+        matches = []
+        for match_el in soup.select(".match"):
+            # Round and event
+            header_items = match_el.select(".match__header-title-item .nav-link__value")
+            round_name = header_items[0].get_text(strip=True) if header_items else ""
+            event = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
+
+            # Teams
+            rows = match_el.select(".match__row")
+            team1 = ""
+            team2 = ""
+            team1_won = False
+            for i, row in enumerate(rows):
+                players = [el.get_text(strip=True) for el in row.select(".nav-link__value") if el.get_text(strip=True)]
+                is_won = "has-won" in row.get("class", [])
+                name = " / ".join(players) if players else row.get_text(strip=True).strip()
+                if i == 0:
+                    team1 = name
+                    team1_won = is_won
+                else:
+                    team2 = name
+
+            # Scores from ul.points > li.points__cell
+            score_sets = []
+            points_lists = match_el.select("ul.points")
+            for pts in points_lists:
+                cells = pts.select("li.points__cell")
+                if len(cells) == 2:
+                    score_sets.append(f"{cells[0].get_text(strip=True)}-{cells[1].get_text(strip=True)}")
+
+            if team1 or team2:
+                matches.append({
+                    "round": round_name,
+                    "event": event,
+                    "team1": team1,
+                    "team2": team2,
+                    "team1_won": team1_won,
+                    "score": " ".join(score_sets)
+                })
+
+        return jsonify(success=True, stats=stats, matches=matches)
+    except Exception as e:
+        return jsonify(success=False, error=str(e), stats=[], matches=[]), 500
+
+
+@app.route("/api/tournament-clubs", methods=["GET"])
+def tournament_clubs():
+    """Get all players and their clubs from a tournament's player list."""
+    try:
+        tournament_id = request.args.get("id", "")
+        if not tournament_id:
+            return jsonify(success=False, error="No tournament ID"), 400
+
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Players/GetPlayersContent"
+        resp = s.get(url, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        players = []
+        for item in soup.select("li"):
+            name_el = item.select_one("a")
+            if not name_el:
+                continue
+            name = name_el.get_text(strip=True)
+            if not name or len(name) < 3:
+                continue
+            # Get player ID from href
+            import re as re_mod
+            href = name_el.get("href", "")
+            pid_match = re_mod.search(r"player=(\d+)", href)
+            player_id = pid_match.group(1) if pid_match else ""
+            # Club is the text in the li that's not the player name
+            all_text = [t.strip() for t in item.get_text(separator="|", strip=True).split("|") if t.strip()]
+            club = ""
+            for t in all_text:
+                if t != name and len(t) > 2 and not t.startswith("("):
+                    club = t
+                    break
+            players.append({"name": name, "club": club, "player_id": player_id})
+
+        # Deduplicate
+        seen = set()
+        unique_players = []
+        for p in players:
+            key = p["name"]
+            if key not in seen:
+                seen.add(key)
+                unique_players.append(p)
+
+        return jsonify(success=True, players=unique_players)
+    except Exception as e:
+        return jsonify(success=False, error=str(e), players=[]), 500
+
+
 def reminder_scheduler():
     """Run reminders check every 6 hours."""
     import time

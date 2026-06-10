@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Results</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:20px; padding:15px; background:#f5f5f5; border-radius:8px; }
+        .filters select, .filters input { padding:8px; border:1px solid #ddd; border-radius:4px; }
+        .filters button { padding:8px 16px; }
+        .tournament-result { border:1px solid #ddd; border-radius:8px; padding:15px; margin-bottom:10px; }
+        .tournament-result:hover { background:#f9f9f9; cursor:pointer; }
+        .tournament-result h3 { margin:0 0 5px; color:#0066cc; }
+        .tournament-result p { margin:2px 0; color:#666; font-size:0.9em; }
+        .club-filter { margin-top:15px; padding:15px; background:#e8f4ff; border-radius:8px; }
+        .club-filter select { width:100%; padding:10px; }
+        .back-link { color:#0066cc; text-decoration:none; display:inline-block; margin-bottom:15px; }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">← Back to Home</a>
+    <h1>Tournament Results</h1>
+
+    <div class="filters">
+        <label>Quick filter:</label>
+        <select id="quickFilter" onchange="applyQuickFilter()">
+            <option value="">Select period...</option>
+            <option value="last_week">Last Week</option>
+            <option value="this_week">This Week</option>
+            <option value="next_week">Next Week</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_month">This Month</option>
+            <option value="next_month">Next Month</option>
+        </select>
+        <label>From:</label>
+        <input type="date" id="startDate">
+        <label>To:</label>
+        <input type="date" id="endDate">
+        <select id="statusFilter">
+            <option value="">All Status</option>
+            <option value="4">Finished</option>
+            <option value="2">Registration Open</option>
+            <option value="3">Upcoming</option>
+        </select>
+        <button onclick="searchTournaments()">Search</button>
+    </div>
+
+    <p id="loading" style="display:none;">Loading tournaments...</p>
+    <div id="results"></div>
+
+    <script>
+        function applyQuickFilter() {
+            const filter = document.getElementById('quickFilter').value;
+            const now = new Date();
+            let start, end;
+
+            switch(filter) {
+                case 'last_week':
+                    start = new Date(now); start.setDate(now.getDate() - now.getDay() - 7);
+                    end = new Date(start); end.setDate(start.getDate() + 6);
+                    break;
+                case 'this_week':
+                    start = new Date(now); start.setDate(now.getDate() - now.getDay());
+                    end = new Date(start); end.setDate(start.getDate() + 6);
+                    break;
+                case 'next_week':
+                    start = new Date(now); start.setDate(now.getDate() - now.getDay() + 7);
+                    end = new Date(start); end.setDate(start.getDate() + 6);
+                    break;
+                case 'last_month':
+                    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    end = new Date(now.getFullYear(), now.getMonth(), 0);
+                    break;
+                case 'this_month':
+                    start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                    break;
+                case 'next_month':
+                    start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+                    end = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+                    break;
+                default: return;
+            }
+            document.getElementById('startDate').value = start.toISOString().slice(0,10);
+            document.getElementById('endDate').value = end.toISOString().slice(0,10);
+            searchTournaments();
+        }
+
+        async function searchTournaments() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            const status = document.getElementById('statusFilter').value;
+            if (!start || !end) { alert('Select a date range'); return; }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').innerHTML = '';
+
+            const params = new URLSearchParams({start, end});
+            if (status) params.append('status', status);
+
+            const res = await fetch(`/api/search-tournaments?${params}`);
+            const data = await res.json();
+            document.getElementById('loading').style.display = 'none';
+
+            if (!data.success || !data.tournaments.length) {
+                document.getElementById('results').innerHTML = '<p>No tournaments found for this period.</p>';
+                return;
+            }
+
+            document.getElementById('results').innerHTML = data.tournaments.map(t => {
+                const detailUrl = `/tournament-detail.html?id=${t.id}&name=${encodeURIComponent(t.name)}&info=${encodeURIComponent(t.location + ' · ' + t.date_start + (t.date_end ? ' to ' + t.date_end : ''))}`;
+                return `
+                <div class="tournament-result" onclick="window.location.href='${detailUrl}'">
+                    <h3>${t.name}</h3>
+                    <p>📍 ${t.location}</p>
+                    <p>📅 ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</p>
+                    <p>Status: ${t.status || ''}</p>
+                </div>
+            `}).join("");
+        }
+
+        // Default: this week
+        document.getElementById('quickFilter').value = 'this_week';
+        applyQuickFilter();
+    </script>
+</body>
+</html>
