@@ -1372,64 +1372,55 @@ def get_all_bwf_tournaments():
         return jsonify(success=False, error="Unauthorized"), 401
     
     try:
-        from datetime import datetime, timedelta
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        from playwright.sync_api import sync_playwright
         
-        # Accept cookies
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        # Use DoSearch API which returns tournament results
-        start = datetime.now().strftime("%Y-%m-%dT00:00")
-        end = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%dT00:00")
-
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data={
-                "TournamentExtendedFilter.StatusFilterID": "2",
-                "StartDate": start,
-                "EndDate": end,
-            },
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
-        
-        soup = BeautifulSoup(resp.text, "html.parser")
-        tournaments = []
-        import re
-        
-        # Parse tournament items from DoSearch response
-        for item in soup.select("li.list__item"):
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            if not name or not href:
-                continue
+        logger.info("Launching Playwright browser...")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            try:
+                logger.info("Navigating to tournament listing page...")
+                page.goto("https://badmintonsweden.tournamentsoftware.com/find/tournament", timeout=30000)
                 
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
-
-            if not tournament_url:
-                continue
-
-            tournaments.append({
-                "name": name,
-                "url": tournament_url,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end
-            })
-
-        logger.info(f"Found {len(tournaments)} tournaments from DoSearch API")
+                # Wait for tournament links to appear
+                logger.info("Waiting for tournament links to load...")
+                page.wait_for_selector("a[href*='/tournament/']", timeout=15000)
+                
+                # Get all tournament links
+                tournament_elements = page.query_selector_all("a[href*='/tournament/']")
+                logger.info(f"Found {len(tournament_elements)} tournament links")
+                
+                tournaments = []
+                import re
+                for elem in tournament_elements:
+                    try:
+                        link_text = elem.text_content().strip()
+                        href = elem.get_attribute("href")
+                        
+                        if not link_text or not href or "/tournament/" not in href:
+                            continue
+                        
+                        # Make absolute URL if needed
+                        if not href.startswith("http"):
+                            href = f"https://badmintonsweden.tournamentsoftware.com{href}"
+                        
+                        tournaments.append({
+                            "name": link_text,
+                            "url": href,
+                            "location": "",
+                            "date_start": "",
+                            "date_end": ""
+                        })
+                    except Exception as e:
+                        logger.debug(f"Error extracting tournament: {str(e)}")
+                        continue
+                
+                logger.info(f"Extracted {len(tournaments)} tournaments")
+                
+            finally:
+                page.close()
+                browser.close()
         
         # Get current visibility status
         conn = sqlite3.connect(ADMIN_DB)
@@ -1446,16 +1437,7 @@ def get_all_bwf_tournaments():
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error in get_all_bwf_tournaments: {str(e)}", exc_info=True)
-        
-        # If Selenium fails (likely no Chrome), provide helpful error
-        if "chrome" in str(e).lower() or "driver" in str(e).lower():
-            return jsonify(
-                success=False, 
-                error="Chrome/Chromium not available. Please ensure headless Chrome is installed on the server.",
-                tournaments=[]
-            ), 500
-        
-        return jsonify(success=False, error=str(e), tournaments=[]), 500
+        return jsonify(success=False, error=f"Failed to load tournaments: {str(e)}", tournaments=[]), 500
 
 
 # --- Tournament info ---
