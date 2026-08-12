@@ -4,12 +4,31 @@ import sqlite3
 import requests as ext_requests
 from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, session, send_from_directory
+from drive_sync import download_all, upload_all
+import atexit
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = "supersecretkey"
 
 TOURNAMENTS_DIR = os.path.join(os.path.dirname(__file__), "tournaments")
 os.makedirs(TOURNAMENTS_DIR, exist_ok=True)
+
+# Sync databases on startup
+logger.info("🔄 Starting Google Drive database sync...")
+download_all()
+
+# Register upload on shutdown
+def sync_on_shutdown():
+    """Upload databases to Google Drive on shutdown"""
+    logger.info("💾 Syncing databases to Google Drive before shutdown...")
+    upload_all()
+
+atexit.register(sync_on_shutdown)
 PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
 
 
