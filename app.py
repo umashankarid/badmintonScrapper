@@ -1418,24 +1418,33 @@ def open_tournaments():
                             if not datetime_val:
                                 # Parse from text content like "Sat, 15 Aug 23:59"
                                 time_text = time_el.get_text(strip=True)
-                                # Try to extract date from format like "Sat, 15 Aug 23:59"
+                                # Try to extract date from format like "Sat, 15 Aug 23:59" or "Sat, Aug 29"
                                 import re
                                 from datetime import datetime as dt
                                 date_match = re.search(r'(\d{1,2})\s+(\w+)', time_text)
-                                if date_match:
+                                if not date_match:
+                                    # Try format without day number: "Sat, Aug 29"
+                                    date_match = re.search(r',\s*(\w+)\s+(\d{1,2})', time_text)
+                                    if date_match:
+                                        month_str = date_match.group(1)
+                                        day = date_match.group(2)
+                                    else:
+                                        continue
+                                else:
                                     day = date_match.group(1)
                                     month_str = date_match.group(2)
-                                    # Map month abbreviations to numbers
-                                    months = {'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6,
-                                             'jul':7, 'aug':8, 'sep':9, 'oct':10, 'nov':11, 'dec':12}
-                                    month = months.get(month_str.lower(), None)
-                                    if month:
-                                        # Assume current year or next year based on current date
-                                        year = dt.now().year
-                                        # If the date is in the past, use next year
-                                        if dt(year, month, int(day)) < dt.now():
-                                            year = dt.now().year + 1
-                                        datetime_val = f"{year}-{month:02d}-{int(day):02d}"
+                                
+                                # Map month abbreviations to numbers
+                                months = {'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6,
+                                         'jul':7, 'aug':8, 'sep':9, 'oct':10, 'nov':11, 'dec':12}
+                                month = months.get(month_str.lower(), None)
+                                if month:
+                                    # Assume current year or next year based on current date
+                                    year = dt.now().year
+                                    # If the date is in the past, use next year
+                                    if dt(year, month, int(day)) < dt.now():
+                                        year = dt.now().year + 1
+                                    datetime_val = f"{year}-{month:02d}-{int(day):02d}"
                             
                             if datetime_val:
                                 if "closes" in label or "stänger" in label:
@@ -1444,9 +1453,9 @@ def open_tournaments():
                                     t["registration_opens"] = datetime_val
                                 elif "cancellation" in label or "återbud" in label:
                                     t["cancellation_deadline"] = datetime_val
-                                elif "competition start" in label or "tävlingsstart" in label or "start" in label:
+                                elif "competition start" in label or "tävlingsstart" in label or ("start" in label and "competition" in label):
                                     t["competition_start"] = datetime_val
-                                elif "competition end" in label or "tävlingsslut" in label or "end" in label or "slut" in label:
+                                elif "competition end" in label or "end of competition" in label or "tävlingsslut" in label or ("end" in label and "competition" in label) or "slut" in label:
                                     t["competition_end"] = datetime_val
             except Exception as e:
                 # If we can't fetch details, continue with what we have
