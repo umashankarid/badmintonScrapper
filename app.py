@@ -7,6 +7,8 @@ from flask import Flask, request, jsonify, session, send_from_directory
 from drive_sync import download_all, upload_all
 import atexit
 import logging
+import threading
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +31,23 @@ def sync_on_shutdown():
     upload_all()
 
 atexit.register(sync_on_shutdown)
+
+# Periodic sync thread (every 5 minutes)
+def periodic_sync():
+    """Periodically upload databases to Google Drive"""
+    while True:
+        try:
+            time.sleep(300)  # Wait 5 minutes
+            logger.info("⏱️  Periodic sync: Uploading databases to Google Drive...")
+            upload_all()
+        except Exception as e:
+            logger.error(f"❌ Error in periodic sync: {str(e)}")
+
+# Start background sync thread
+sync_thread = threading.Thread(target=periodic_sync, daemon=True)
+sync_thread.start()
+logger.info("✅ Periodic sync thread started (every 5 minutes)")
+
 PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
 
 
