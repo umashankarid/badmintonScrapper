@@ -24,29 +24,75 @@ os.makedirs(TOURNAMENTS_DIR, exist_ok=True)
 logger.info("🔄 Starting Google Drive database sync...")
 download_all()
 
-# Register upload on shutdown
-def sync_on_shutdown():
-    """Upload databases to Google Drive on shutdown"""
-    logger.info("💾 Syncing databases to Google Drive before shutdown...")
-    upload_all()
+# ==================== DEBOUNCE SYNC SYSTEM ====================
+# Debounce settings
+DEBOUNCE_DELAY = 10  # Wait 10 seconds after last change before syncing
+PERIODIC_SYNC_INTERVAL = 300  # Fallback periodic sync every 5 minutes
 
-atexit.register(sync_on_shutdown)
+# Debounce state
+_sync_timer = None
+_sync_lock = threading.Lock()
+_last_sync_time = time.time()
 
-# Periodic sync thread (every 5 minutes)
-def periodic_sync():
-    """Periodically upload databases to Google Drive"""
+def _debounced_sync():
+    """Internal function to perform the sync"""
+    global _sync_timer
+    try:
+        logger.info("📤 Debounced sync: Uploading databases to Google Drive...")
+        upload_all()
+        logger.info("✅ Debounced sync completed")
+    except Exception as e:
+        logger.error(f"❌ Error in debounced sync: {str(e)}")
+    finally:
+        _sync_timer = None
+
+def trigger_sync():
+    """
+    Trigger a debounced sync.
+    Call this after any database change.
+    Will upload within DEBOUNCE_DELAY seconds.
+    """
+    global _sync_timer
+    
+    with _sync_lock:
+        # Cancel existing timer if any
+        if _sync_timer is not None:
+            _sync_timer.cancel()
+        
+        # Schedule new sync after delay
+        _sync_timer = threading.Timer(DEBOUNCE_DELAY, _debounced_sync)
+        _sync_timer.daemon = True
+        _sync_timer.start()
+
+def periodic_sync_fallback():
+    """Fallback periodic sync (every 5 minutes) to ensure backup"""
     while True:
         try:
-            time.sleep(300)  # Wait 5 minutes
-            logger.info("⏱️  Periodic sync: Uploading databases to Google Drive...")
+            time.sleep(PERIODIC_SYNC_INTERVAL)
+            logger.info("⏱️  Periodic fallback sync: Uploading databases to Google Drive...")
             upload_all()
         except Exception as e:
             logger.error(f"❌ Error in periodic sync: {str(e)}")
 
-# Start background sync thread
-sync_thread = threading.Thread(target=periodic_sync, daemon=True)
-sync_thread.start()
-logger.info("✅ Periodic sync thread started (every 5 minutes)")
+# Register upload on shutdown
+def sync_on_shutdown():
+    """Upload databases to Google Drive on shutdown"""
+    logger.info("💾 Syncing databases to Google Drive on shutdown...")
+    # Cancel pending debounce timer
+    global _sync_timer
+    with _sync_lock:
+        if _sync_timer is not None:
+            _sync_timer.cancel()
+    # Final upload
+    upload_all()
+
+atexit.register(sync_on_shutdown)
+
+# Start background fallback sync thread
+fallback_sync_thread = threading.Thread(target=periodic_sync_fallback, daemon=True)
+fallback_sync_thread.start()
+logger.info("✅ Fallback sync thread started (every 5 minutes)")
+logger.info("✅ Debounce sync ready (10 seconds after changes)")
 
 PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
 
@@ -738,6 +784,7 @@ def update_point_rules():
         )
     conn.commit()
     conn.close()
+    trigger_sync()  # Trigger debounced sync after database change
     return jsonify(success=True)
 
 
@@ -1597,6 +1644,7 @@ def add_player():
 
     conn.commit()
     conn.close()
+    trigger_sync()  # Trigger debounced sync after database change
     return jsonify(success=True, player_id=player_id)
 
 
@@ -1665,6 +1713,7 @@ def delete_player():
 
     conn.commit()
     conn.close()
+    trigger_sync()  # Trigger debounced sync after database change
     return jsonify(success=True)
 
 
