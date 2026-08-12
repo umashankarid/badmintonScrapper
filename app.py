@@ -1457,6 +1457,18 @@ def get_all_bwf_tournaments():
         
         conn.commit()
         
+        # Delete expired tournaments (where date_end < today)
+        from datetime import datetime as dt
+        today = dt.now().strftime("%Y-%m-%d")
+        try:
+            cur.execute("DELETE FROM tournaments WHERE date_end < ?", (today,))
+            deleted_count = cur.rowcount
+            conn.commit()
+            if deleted_count > 0:
+                logger.info(f"Deleted {deleted_count} expired tournaments")
+        except Exception as e:
+            logger.error(f"Error deleting expired tournaments: {e}")
+        
         # Get current selected_for_view status
         cur.execute("SELECT tournament_url, selected_for_view FROM tournaments")
         selection_map = {row[0]: row[1] for row in cur.fetchall()}
@@ -1476,20 +1488,24 @@ def get_all_bwf_tournaments():
 # --- Tournament info ---
 @app.route("/api/open-tournaments", methods=["GET"])
 def open_tournaments():
-    """Fetch tournaments selected for view from tournaments.db"""
+    """Fetch tournaments selected for view AND not expired from tournaments.db"""
     try:
+        from datetime import datetime as dt
+        today = dt.now().strftime("%Y-%m-%d")
+        
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get tournaments marked as selected_for_view = 1
+        # Get tournaments marked as selected_for_view = 1 AND date_end >= TODAY
         cur.execute("""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
                    competition_start, competition_end
             FROM tournaments 
             WHERE selected_for_view = 1 
+            AND date_end >= ?
             ORDER BY registration_closes ASC, tournament_name ASC
-        """)
+        """, (today,))
         rows = cur.fetchall()
         conn.close()
         
