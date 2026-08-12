@@ -413,7 +413,7 @@
         }
 
         async function loadBWFTournaments() {
-            const res = await fetch("/api/open-tournaments");
+            const res = await fetch("/api/bwf-tournaments-all");
             const data = await res.json();
             const container = document.getElementById("bwf-tournaments-list");
             
@@ -425,7 +425,7 @@
             container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
                 data.tournaments.map(t => `
                     <label style="display: flex; align-items: center; gap: 12px; padding: 10px; background: rgba(255,255,255,0.9); border-radius: 8px; cursor: pointer;">
-                        <input type="checkbox" class="bwf-tournament-checkbox" data-url="${t.url}" data-name="${t.name.replace(/"/g, '&quot;')}" style="cursor: pointer; width: 18px; height: 18px;">
+                        <input type="checkbox" class="bwf-tournament-checkbox" data-url="${t.url}" data-name="${t.name.replace(/"/g, '&quot;')}" ${t.visible ? 'checked' : ''} style="cursor: pointer; width: 18px; height: 18px;">
                         <div style="flex: 1;">
                             <div style="font-weight: bold;">${t.name}</div>
                             <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
@@ -433,24 +433,6 @@
                     </label>
                 `).join("") +
                 `</div>`;
-
-            // Load current visibility status - check which tournaments admin selected
-            const visRes = await fetch("/api/bwf-tournament-visibility");
-            if (visRes.ok) {
-                const visData = await visRes.json();
-                if (visData.success && visData.tournaments) {
-                    const visMap = {};
-                    visData.tournaments.forEach(t => {
-                        visMap[t.url] = t.visible;
-                    });
-                    // Check boxes for visible tournaments
-                    document.querySelectorAll(".bwf-tournament-checkbox").forEach(checkbox => {
-                        if (visMap[checkbox.dataset.url]) {
-                            checkbox.checked = true;
-                        }
-                    });
-                }
-            }
         }
 
         async function saveBWFTournamentSelection() {
@@ -466,7 +448,7 @@
             });
             const data = await res.json();
             if (data.success) {
-                alert("Tournaments saved successfully! Users will now see the selected tournaments until their registration date closes.");
+                alert("Tournaments saved successfully! Users will now see the selected tournaments.");
             } else {
                 alert(data.error || "Failed to save");
             }
