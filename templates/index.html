@@ -157,19 +157,27 @@
                     `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
                     `<span style="background:#f0a000;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Not Registered</span>`) : "";
                 
-                // Check if registration closes within 7 days
+                // Check if registration closes within 7 days and calculate days left
                 let urgentStyle = "";
+                let daysCounter = "";
                 if (t.registration_closes) {
                     const closeDate = new Date(t.registration_closes);
                     const today = new Date();
                     const daysLeft = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
+                    
+                    if (daysLeft > 0) {
+                        const dayWord = daysLeft === 1 ? "day" : "days";
+                        daysCounter = `<div style="position:absolute;left:0;top:0;background:#0d47a1;color:white;padding:8px 12px;border-radius:0 0 8px 0;font-weight:bold;font-size:0.95em;min-width:60px;text-align:center;"><div style="font-size:1.3em;">${daysLeft}</div><div style="font-size:0.75em;">${dayWord}</div></div>`;
+                    }
+                    
                     if (daysLeft > 0 && daysLeft <= 7) {
-                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left-color: #ff6f00;";
+                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left-color: #ff6f00;position:relative;";
                     }
                 }
                 
                 return `
                 <div class="tournament-card" style="${urgentStyle}">
+                    ${daysCounter}
                     <div>
                         <h2><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a> ${badge}</h2>
                         <div class="details">
