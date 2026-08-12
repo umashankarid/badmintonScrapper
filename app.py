@@ -1390,6 +1390,20 @@ def get_all_bwf_tournaments():
         import re
         items = soup.select("li.list__item")
         logger.info(f"Found {len(items)} tournament items on listing page")
+        logger.info(f"Response length: {len(resp.text)}")
+        
+        if len(items) == 0:
+            # Debug: try to find what selectors are actually present
+            all_lis = soup.select("li")
+            logger.info(f"Total <li> elements: {len(all_lis)}")
+            all_divs = soup.select("div.tournament")
+            logger.info(f"Total <div class='tournament'>: {len(all_divs)}")
+            
+            # Print first 2000 chars of body to see structure
+            body = soup.find("body")
+            if body:
+                body_text = body.get_text()[:2000]
+                logger.info(f"Body text sample: {body_text}")
         
         for item in items:
             link = item.select_one("a.media__link")
