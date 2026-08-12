@@ -90,13 +90,17 @@ class DropboxSync:
             if self._download_file(db_file):
                 success_count += 1
         
-        # Download tournament databases
-        if os.path.exists(TOURNAMENTS_DIR):
-            for tournament_file in os.listdir(TOURNAMENTS_DIR):
-                if tournament_file.endswith('.db'):
-                    filepath = os.path.join(TOURNAMENTS_DIR, tournament_file)
+        # Download tournament databases from Dropbox folder (not from local directory)
+        try:
+            result = self.dbx.files_list_folder(self.folder_path)
+            for entry in result.entries:
+                if entry.name.endswith('.db') and entry.name not in DB_FILES:
+                    # This is a tournament database
+                    filepath = os.path.join(TOURNAMENTS_DIR, entry.name)
                     if self._download_file(filepath):
                         success_count += 1
+        except ApiError as e:
+            logger.warning(f"⚠️  Could not list Dropbox folder for tournaments: {str(e)}")
         
         logger.info(f"✅ Downloaded {success_count} database files from Dropbox")
         return True
