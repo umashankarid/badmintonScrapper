@@ -20,38 +20,6 @@
         </div>
     </div>
 
-    <!-- Manage Admin Modal -->
-    <div id="admin-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;">
-        <div style="background:white;max-width:450px;margin:80px auto;padding:20px;border-radius:8px;">
-            <h2>Manage Admins</h2>
-            <div id="admins-list" style="margin-bottom:15px;"></div>
-            <h3>Add New Admin</h3>
-            <form id="add-admin-form">
-                <label>User ID (Badminton Sweden Username/Email)</label>
-                <input type="text" id="admin-new-username" placeholder="Username or email" required>
-                <button type="submit">Add Admin</button>
-                <button type="button" onclick="document.getElementById('admin-modal').style.display='none'" style="background:#666;">Close</button>
-            </form>
-            <p id="admin-error" style="color:red;display:none;"></p>
-            <p id="admin-success" style="color:green;display:none;"></p>
-        </div>
-    </div>
-
-    <!-- Remove Admin Password Modal -->
-    <div id="confirm-password-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:200;">
-        <div style="background:white;max-width:350px;margin:120px auto;padding:20px;border-radius:8px;">
-            <h3 id="confirm-password-title">Confirm</h3>
-            <p id="confirm-password-msg"></p>
-            <label>Admin Confirmation Password</label>
-            <input type="password" id="confirm-password-input" placeholder="Password" required>
-            <p id="confirm-password-error" style="color:red;display:none;"></p>
-            <div style="display:flex;gap:10px;margin-top:10px;">
-                <button onclick="submitConfirmPassword()" id="confirm-password-btn">Confirm</button>
-                <button onclick="document.getElementById('confirm-password-modal').style.display='none'" style="background:#666;">Cancel</button>
-            </div>
-        </div>
-    </div>
-
     <p id="loading-msg" style="display:none;">Loading tournaments with open registration...</p>
     <div id="login-section" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;">
         <div style="background:white;max-width:450px;padding:40px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
@@ -129,66 +97,6 @@
             await fetch("/api/bwf-logout", {method: "POST"});
             checkBwfStatus();
             loadTournaments();
-        }
-
-        // Manage Admin
-        let confirmPasswordCallback = null;
-
-        function showConfirmPassword(title, msg, btnStyle, callback) {
-            document.getElementById("confirm-password-title").textContent = title;
-            document.getElementById("confirm-password-msg").textContent = msg;
-            document.getElementById("confirm-password-input").value = "";
-            document.getElementById("confirm-password-error").style.display = "none";
-            document.getElementById("confirm-password-btn").style.background = btnStyle || "";
-            confirmPasswordCallback = callback;
-            document.getElementById("confirm-password-modal").style.display = "block";
-        }
-
-        async function submitConfirmPassword() {
-            const password = document.getElementById("confirm-password-input").value;
-            if (!password) return;
-            if (confirmPasswordCallback) {
-                await confirmPasswordCallback(password);
-            }
-        }
-
-        document.getElementById("add-admin-form").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const errorEl = document.getElementById("admin-error");
-            const successEl = document.getElementById("admin-success");
-            errorEl.style.display = "none";
-            successEl.style.display = "none";
-
-            const username = document.getElementById("admin-new-username").value.trim();
-            if (!username) return;
-
-            const res = await fetch("/admin/add-admin-by-id", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({username})
-            });
-            const data = await res.json();
-            if (data.success) {
-                successEl.textContent = `"${username}" added as admin.`;
-                successEl.style.display = "block";
-                document.getElementById("add-admin-form").reset();
-                loadAdmins();
-                checkBwfStatus();
-            } else {
-                errorEl.textContent = data.error || "Failed to add admin";
-                errorEl.style.display = "block";
-            }
-        });
-
-        async function loadAdmins() {
-            const res = await fetch("/admin/list-admins");
-            const data = await res.json();
-            const container = document.getElementById("admins-list");
-            if (!data.success || !data.admins.length) {
-                container.innerHTML = "<p style='color:#666;'>No admins yet.</p>";
-                return;
-            }
-            container.innerHTML = "<p style='color:#666;'>Current admins: " + data.admins.join(", ") + "</p>";
         }
 
         async function loadTournaments() {
