@@ -16,10 +16,9 @@ logger = logging.getLogger(__name__)
 DB_FILES = [
     "players.db",
     "admin.db", 
-    "point_rules.db"
+    "point_rules.db",
+    "tournaments.db"  # Single unified tournaments database
 ]
-
-TOURNAMENTS_DIR = "tournaments"
 
 class DropboxSync:
     """Handle Dropbox sync for SQLite databases"""
@@ -90,17 +89,8 @@ class DropboxSync:
             if self._download_file(db_file):
                 success_count += 1
         
-        # Download tournament databases from Dropbox folder (not from local directory)
-        try:
-            result = self.dbx.files_list_folder(self.folder_path)
-            for entry in result.entries:
-                if entry.name.endswith('.db') and entry.name not in DB_FILES:
-                    # This is a tournament database
-                    filepath = os.path.join(TOURNAMENTS_DIR, entry.name)
-                    if self._download_file(filepath):
-                        success_count += 1
-        except ApiError as e:
-            logger.warning(f"⚠️  Could not list Dropbox folder for tournaments: {str(e)}")
+        # All databases to sync are in DB_FILES list now
+        # No need for separate tournament directory handling
         
         logger.info(f"✅ Downloaded {success_count} database files from Dropbox")
         return True
@@ -140,19 +130,11 @@ class DropboxSync:
         
         success_count = 0
         
-        # Upload root level databases
+        # Upload root level databases (including tournaments.db now)
         for db_file in DB_FILES:
             if os.path.exists(db_file):
                 if self._upload_file(db_file):
                     success_count += 1
-        
-        # Upload tournament databases
-        if os.path.exists(TOURNAMENTS_DIR):
-            for tournament_file in os.listdir(TOURNAMENTS_DIR):
-                if tournament_file.endswith('.db'):
-                    filepath = os.path.join(TOURNAMENTS_DIR, tournament_file)
-                    if self._upload_file(filepath):
-                        success_count += 1
         
         logger.info(f"✅ Uploaded {success_count} database files to Dropbox")
         return True
