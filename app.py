@@ -155,6 +155,16 @@ def init_admin_db():
         )
     """)
     conn.commit()
+    
+    # Insert default admin if it doesn't exist
+    try:
+        conn.execute("INSERT INTO admins (username) VALUES (?)", ("umashankar1985@gmail.com",))
+        conn.commit()
+        logger.info("Created default admin: umashankar1985@gmail.com")
+    except sqlite3.IntegrityError:
+        # Admin already exists
+        pass
+    
     conn.close()
 
 
