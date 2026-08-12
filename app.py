@@ -99,6 +99,32 @@ PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
 
 POINTS_DB = os.path.join(os.path.dirname(__file__), "point_rules.db")
 ADMIN_DB = os.path.join(os.path.dirname(__file__), "admin.db")
+TOURNAMENTS_DB = os.path.join(os.path.dirname(__file__), "tournaments.db")
+
+def init_tournaments_db():
+    """Initialize tournaments.db with metadata table"""
+    conn = sqlite3.connect(TOURNAMENTS_DB)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tournaments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_url TEXT UNIQUE NOT NULL,
+            tournament_name TEXT NOT NULL,
+            location TEXT,
+            date_start TEXT,
+            date_end TEXT,
+            registration_opens TEXT,
+            registration_closes TEXT,
+            cancellation_deadline TEXT,
+            competition_start TEXT,
+            competition_end TEXT,
+            selected_for_view INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+    logger.info("✅ tournaments.db initialized")
 
 
 def init_admin_db():
@@ -137,23 +163,6 @@ def init_admin_db():
             competition_date TEXT
         )
     """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS bwf_tournament_visibility (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tournament_url TEXT UNIQUE NOT NULL,
-            tournament_name TEXT,
-            location TEXT,
-            date_start TEXT,
-            date_end TEXT,
-            registration_opens TEXT,
-            registration_closes TEXT,
-            cancellation_deadline TEXT,
-            competition_start TEXT,
-            competition_end TEXT,
-            visible INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
     conn.commit()
     
     # Insert default admin if it doesn't exist
@@ -169,6 +178,7 @@ def init_admin_db():
 
 
 init_admin_db()
+init_tournaments_db()
 
 
 def is_admin_user(username):
@@ -1314,65 +1324,51 @@ def toggle_tournament_visibility():
     return jsonify(success=True)
 
 
-@app.route("/api/bwf-tournament-visibility", methods=["GET"])
-def get_bwf_tournament_visibility():
-    """Get list of all BWF tournaments and their visibility status"""
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
-    
-    conn = sqlite3.connect(ADMIN_DB)
-    cur = conn.cursor()
-    cur.execute("SELECT tournament_url, tournament_name, visible FROM bwf_tournament_visibility ORDER BY tournament_name")
-    rows = cur.fetchall()
-    conn.close()
-    
-    tournaments = [{"url": row[0], "name": row[1], "visible": row[2]} for row in rows]
-    return jsonify(success=True, tournaments=tournaments)
-
-
 @app.route("/api/bwf-tournament-visibility/save", methods=["POST"])
 def save_bwf_tournament_visibility():
-    """Save selected BWF tournaments with their details"""
+    """Save selected tournaments - toggle selected_for_view in tournaments.db"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
     data = request.json
-    selected_tournaments = data.get("tournaments", [])  # Array of tournament objects
+    selected_tournaments = data.get("tournaments", [])  # Array of tournament objects with URLs
     
     logger.info(f"Received request to save {len(selected_tournaments)} tournaments")
-    if selected_tournaments:
-        logger.info(f"First tournament: {selected_tournaments[0]}")
     
-    conn = sqlite3.connect(ADMIN_DB)
+    conn = sqlite3.connect(TOURNAMENTS_DB)
     cur = conn.cursor()
     
-    # Mark all as not visible first
-    cur.execute("UPDATE bwf_tournament_visibility SET visible=0")
+    # Get URLs of selected tournaments
+    selected_urls = {t.get("url") for t in selected_tournaments}
     
-    # Insert or update selected tournaments with their details
+    # Set selected_for_view=1 for selected tournaments
     for t in selected_tournaments:
         try:
             cur.execute("""
-                INSERT OR REPLACE INTO bwf_tournament_visibility 
-                (tournament_url, tournament_name, location, date_start, date_end, 
-                 registration_opens, registration_closes, cancellation_deadline, 
-                 competition_start, competition_end, visible)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-            """, (
-                t.get("url"),
-                t.get("name"),
-                t.get("location"),
-                t.get("date_start"),
-                t.get("date_end"),
-                t.get("registration_opens"),
-                t.get("registration_closes"),
-                t.get("cancellation_deadline"),
-                t.get("competition_start"),
-                t.get("competition_end")
-            ))
-            logger.debug(f"Saved tournament: {t.get('name')}")
+                UPDATE tournaments 
+                SET selected_for_view = 1, last_updated = CURRENT_TIMESTAMP
+                WHERE tournament_url = ?
+            """, (t.get("url"),))
+            logger.debug(f"Marked as selected: {t.get('name')}")
         except Exception as e:
-            logger.error(f"Error saving tournament {t.get('url')}: {e}")
+            logger.error(f"Error updating tournament {t.get('url')}: {e}")
+    
+    # Set selected_for_view=0 for unselected tournaments
+    try:
+        placeholders = ','.join(['?' for _ in selected_urls])
+        if placeholders:
+            cur.execute(f"""
+                UPDATE tournaments 
+                SET selected_for_view = 0, last_updated = CURRENT_TIMESTAMP
+                WHERE tournament_url NOT IN ({placeholders})
+            """, list(selected_urls))
+            logger.debug(f"Marked as unselected: non-selected tournaments")
+        else:
+            # If nothing selected, unselect all
+            cur.execute("UPDATE tournaments SET selected_for_view = 0, last_updated = CURRENT_TIMESTAMP")
+            logger.debug("Unselected all tournaments")
+    except Exception as e:
+        logger.error(f"Error updating unselected tournaments: {e}")
     
     conn.commit()
     conn.close()
@@ -1384,7 +1380,7 @@ def save_bwf_tournament_visibility():
 
 @app.route("/api/bwf-tournaments-all", methods=["GET"])
 def get_all_bwf_tournaments():
-    """Get ALL tournaments from Badminton Sweden for admin to select from (no filtering)"""
+    """Get ALL tournaments from Badminton Sweden and store in tournaments.db"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
@@ -1445,17 +1441,32 @@ def get_all_bwf_tournaments():
 
         logger.info(f"Found {len(tournaments)} tournaments from Badminton Sweden")
         
-        # Get current visibility status
-        conn = sqlite3.connect(ADMIN_DB)
+        # Insert/update all tournaments in tournaments.db
+        conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
-        cur.execute("SELECT tournament_url FROM bwf_tournament_visibility WHERE visible=1")
-        visible_urls = {row[0] for row in cur.fetchall()}
+        
+        for t in tournaments:
+            try:
+                cur.execute("""
+                    INSERT OR REPLACE INTO tournaments 
+                    (tournament_url, tournament_name, location, date_start, date_end, last_updated)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (t["url"], t["name"], t["location"], t["date_start"], t["date_end"]))
+            except Exception as e:
+                logger.error(f"Error inserting tournament {t['name']}: {e}")
+        
+        conn.commit()
+        
+        # Get current selected_for_view status
+        cur.execute("SELECT tournament_url, selected_for_view FROM tournaments")
+        selection_map = {row[0]: row[1] for row in cur.fetchall()}
         conn.close()
 
-        # Add visibility flag to each tournament
+        # Add selected_for_view flag to each tournament
         for t in tournaments:
-            t["visible"] = t["url"] in visible_urls
+            t["selected_for_view"] = selection_map.get(t["url"], 0)
 
+        trigger_sync()
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error in get_all_bwf_tournaments: {str(e)}", exc_info=True)
@@ -1465,18 +1476,18 @@ def get_all_bwf_tournaments():
 # --- Tournament info ---
 @app.route("/api/open-tournaments", methods=["GET"])
 def open_tournaments():
-    """Fetch visible tournaments from database (not from Badminton Sweden)."""
+    """Fetch tournaments selected for view from tournaments.db"""
     try:
-        conn = sqlite3.connect(ADMIN_DB)
+        conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get tournaments that are marked as visible
+        # Get tournaments marked as selected_for_view = 1
         cur.execute("""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
                    competition_start, competition_end
-            FROM bwf_tournament_visibility 
-            WHERE visible = 1 
+            FROM tournaments 
+            WHERE selected_for_view = 1 
             ORDER BY registration_closes ASC, tournament_name ASC
         """)
         rows = cur.fetchall()
@@ -1500,7 +1511,7 @@ def open_tournaments():
         return jsonify(tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error fetching open tournaments from database: {str(e)}")
-        return jsonify([])
+        return jsonify(tournaments=[])
 
 
 @app.route("/api/my-registrations", methods=["GET"])
