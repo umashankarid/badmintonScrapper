@@ -1388,6 +1388,7 @@ def ensure_tournament():
         )
         conn.commit()
         conn.close()
+        trigger_sync()  # Trigger debounced sync after tournament creation
         return jsonify(success=True, db=db_file)
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
