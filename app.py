@@ -24,17 +24,6 @@ os.makedirs(TOURNAMENTS_DIR, exist_ok=True)
 logger.info("🔄 Starting Google Drive database sync...")
 download_all()
 
-# Initialize all global databases on startup
-logger.info("📦 Initializing global databases...")
-init_admin_db()
-init_point_rules_db()
-logger.info("✅ Global databases initialized")
-
-# Upload initialized databases to Google Drive immediately
-logger.info("📤 Uploading initialized databases to Google Drive...")
-upload_all()
-logger.info("✅ Databases backed up on startup")
-
 # ==================== DEBOUNCE SYNC SYSTEM ====================
 # Debounce settings
 DEBOUNCE_DELAY = 10  # Wait 10 seconds after last change before syncing
@@ -191,6 +180,11 @@ def init_point_rules_db():
 
 
 init_point_rules_db()
+
+# Upload initialized databases to Google Drive immediately on startup
+logger.info("📤 Uploading initialized databases to Google Drive...")
+upload_all()
+logger.info("✅ Databases backed up on startup")
 
 
 def get_tournament_db(db_file):
