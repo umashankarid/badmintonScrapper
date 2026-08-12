@@ -127,6 +127,16 @@ def init_admin_db():
             sent_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tournament_visibility (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_db TEXT UNIQUE NOT NULL,
+            visible INTEGER DEFAULT 0,
+            tournament_name TEXT,
+            location TEXT,
+            competition_date TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -679,6 +689,29 @@ def admin_exists():
     return jsonify(exists=True)
 
 
+@app.route("/admin/add-admin-by-id", methods=["POST"])
+def add_admin_by_id():
+    """Add admin by username only (admin-only operation, no verification)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    username = data.get("username", "").strip()
+    if not username:
+        return jsonify(success=False, error="Username required"), 400
+    
+    # Add as admin
+    conn = sqlite3.connect(ADMIN_DB)
+    try:
+        conn.execute("INSERT INTO admins (username) VALUES (?)", (username,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify(success=False, error="User is already an admin")
+    conn.close()
+    return jsonify(success=True)
+
+
 @app.route("/admin/add-admin", methods=["POST"])
 def add_admin():
     data = request.json
@@ -1163,6 +1196,83 @@ def edit_tournament():
     conn.commit()
     conn.close()
     trigger_sync()  # Sync tournament changes to Dropbox
+    return jsonify(success=True)
+
+
+@app.route("/api/tournament-visibility", methods=["GET"])
+def get_tournament_visibility():
+    """Get list of all tournaments and their visibility status"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    # Get all tournaments from filesystem
+    tournaments = []
+    if os.path.exists(TOURNAMENTS_DIR):
+        for f in os.listdir(TOURNAMENTS_DIR):
+            if f.endswith(".db"):
+                conn = get_tournament_db(f)
+                if conn:
+                    cur = conn.cursor()
+                    try:
+                        cur.execute("SELECT name, location, competition_date FROM tournaments LIMIT 1")
+                        row = cur.fetchone()
+                        if row:
+                            tournaments.append({
+                                "db": f,
+                                "name": row[0],
+                                "location": row[1] if len(row) > 1 else "",
+                                "competition_date": row[2] if len(row) > 2 else ""
+                            })
+                    except:
+                        pass
+                    conn.close()
+    
+    # Get visibility status from admin.db
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT tournament_db, visible FROM tournament_visibility")
+    visibility_map = {row[0]: row[1] for row in cur.fetchall()}
+    conn.close()
+    
+    # Merge visibility data
+    for t in tournaments:
+        t["visible"] = visibility_map.get(t["db"], 0)
+    
+    return jsonify(success=True, tournaments=tournaments)
+
+
+@app.route("/api/tournament-visibility/toggle", methods=["POST"])
+def toggle_tournament_visibility():
+    """Toggle tournament visibility for available tournaments list"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    db_file = data.get("db")
+    if not db_file:
+        return jsonify(success=False, error="db required"), 400
+    
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    
+    # Get current visibility
+    cur.execute("SELECT id, visible FROM tournament_visibility WHERE tournament_db=?", (db_file,))
+    row = cur.fetchone()
+    
+    if row:
+        # Update existing
+        new_visible = 1 - row[1]
+        cur.execute("UPDATE tournament_visibility SET visible=? WHERE tournament_db=?", (new_visible, db_file))
+    else:
+        # Create new entry
+        conn.execute(
+            "INSERT INTO tournament_visibility (tournament_db, visible) VALUES (?, ?)",
+            (db_file, 1)
+        )
+    
+    conn.commit()
+    conn.close()
+    trigger_sync()
     return jsonify(success=True)
 
 

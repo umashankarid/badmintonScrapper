@@ -22,7 +22,7 @@
                 <a href="/results.html"><button style="width:auto;padding:8px 16px;background:#0066cc;">Show Results</button></a>
             </div>
             <button id="bwf-login-btn" onclick="document.getElementById('bwf-login-modal').style.display='block'" style="width:auto;padding:8px 16px;">Login</button>
-            <button id="manage-admin-btn" onclick="document.getElementById('admin-modal').style.display='block'" style="width:auto;padding:8px 16px;background:#f0a000;">Manage Admin</button>
+            <button id="manage-admin-btn" onclick="document.getElementById('admin-modal').style.display='block'" style="width:auto;padding:8px 16px;background:#f0a000;display:none;">Manage Admin</button>
         </div>
     </div>
 
@@ -50,10 +50,8 @@
             <div id="admins-list" style="margin-bottom:15px;"></div>
             <h3>Add New Admin</h3>
             <form id="add-admin-form">
-                <label>Badminton Sweden Username/Email</label>
+                <label>User ID (Badminton Sweden Username/Email)</label>
                 <input type="text" id="admin-new-username" placeholder="Username or email" required>
-                <label>Badminton Sweden Password (to verify user)</label>
-                <input type="password" id="admin-new-password" placeholder="User's BWF password" required>
                 <button type="submit">Add Admin</button>
                 <button type="button" onclick="document.getElementById('admin-modal').style.display='none'" style="background:#666;">Close</button>
             </form>
@@ -88,11 +86,13 @@
                 document.getElementById("bwf-login-btn").style.display = "none";
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "flex";
+                document.getElementById("manage-admin-btn").style.display = "block";
                 let display = data.player_name;
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("admin-player-info").textContent = "Admin: " + display;
             } else if (data.logged_in) {
                 document.getElementById("bwf-user").style.display = "flex";
+                document.getElementById("manage-admin-btn").style.display = "none";
                 let display = data.player_name;
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("bwf-player-info").textContent = display;
@@ -102,6 +102,7 @@
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "none";
                 document.getElementById("bwf-login-btn").style.display = "block";
+                document.getElementById("manage-admin-btn").style.display = "none";
             }
         }
 
@@ -155,8 +156,6 @@
             }
         }
 
-        let pendingAdminAdd = {};
-
         document.getElementById("add-admin-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const errorEl = document.getElementById("admin-error");
@@ -165,50 +164,25 @@
             successEl.style.display = "none";
 
             const username = document.getElementById("admin-new-username").value.trim();
-            const password = document.getElementById("admin-new-password").value;
-            if (!username || !password) return;
+            if (!username) return;
 
-            pendingAdminAdd = {username, password};
-            showConfirmPassword("Add Admin", `Enter admin password to confirm adding "${username}":`, "#28a745", async (confirmPassword) => {
-                const res = await fetch("/admin/add-admin", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({username: pendingAdminAdd.username, password: pendingAdminAdd.password, confirm_password: confirmPassword})
-                });
-                const data = await res.json();
-                document.getElementById("confirm-password-modal").style.display = "none";
-                if (data.success) {
-                    successEl.textContent = `"${pendingAdminAdd.username}" added as admin.`;
-                    successEl.style.display = "block";
-                    document.getElementById("add-admin-form").reset();
-                    loadAdmins();
-                    checkBwfStatus();
-                } else {
-                    errorEl.textContent = data.error || "Failed to add admin";
-                    errorEl.style.display = "block";
-                }
+            const res = await fetch("/admin/add-admin-by-id", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username})
             });
+            const data = await res.json();
+            if (data.success) {
+                successEl.textContent = `"${username}" added as admin.`;
+                successEl.style.display = "block";
+                document.getElementById("add-admin-form").reset();
+                loadAdmins();
+                checkBwfStatus();
+            } else {
+                errorEl.textContent = data.error || "Failed to add admin";
+                errorEl.style.display = "block";
+            }
         });
-
-        let removeAdminTarget = "";
-
-        async function removeAdmin(username) {
-            showConfirmPassword("Remove Admin", `Enter admin password to remove "${username}":`, "#cc3333", async (password) => {
-                const res = await fetch("/admin/remove-admin", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({username, password})
-                });
-                const data = await res.json();
-                document.getElementById("confirm-password-modal").style.display = "none";
-                if (data.success) {
-                    loadAdmins();
-                    checkBwfStatus();
-                } else {
-                    alert(data.error || "Failed to remove admin");
-                }
-            });
-        }
 
         async function loadAdmins() {
             const res = await fetch("/admin/list-admins");
@@ -218,12 +192,7 @@
                 container.innerHTML = "<p style='color:#666;'>No admins yet.</p>";
                 return;
             }
-            container.innerHTML = data.admins.map(u => `
-                <div style="display:flex;align-items:center;gap:10px;padding:5px 0;">
-                    <span>${u}</span>
-                    <button onclick="removeAdmin('${u.replace(/'/g, "\\\\'")}')" style="width:auto;padding:4px 10px;background:#cc3333;font-size:0.8em;">Remove</button>
-                </div>
-            `).join("");
+            container.innerHTML = "<p style='color:#666;'>Current admins: " + data.admins.join(", ") + "</p>";
         }
 
         // Load admins when modal opens
@@ -234,12 +203,30 @@
             document.getElementById("loading-msg").style.display = "block";
             container.innerHTML = "";
 
+            // Fetch open tournaments from Badminton Sweden
             const res = await fetch("/api/open-tournaments");
             const data = await res.json();
+            
+            // Fetch local visible tournaments
+            let localTournaments = [];
+            try {
+                const localRes = await fetch("/api/tournament-visibility");
+                if (localRes.ok) {
+                    const localData = await localRes.json();
+                    if (localData.success && localData.tournaments) {
+                        localTournaments = localData.tournaments.filter(t => t.visible);
+                    }
+                }
+            } catch(e) {
+                // Not admin, ignore
+            }
+
             document.getElementById("loading-msg").style.display = "none";
 
-            if (!data.success || !data.tournaments.length) {
-                container.innerHTML = "<p>No tournaments with open registration found.</p>";
+            const tournaments = data.tournaments || [];
+            
+            if (!tournaments.length && !localTournaments.length) {
+                container.innerHTML = "<p>No tournaments found.</p>";
                 return;
             }
 
@@ -255,7 +242,8 @@
                 }
             }
 
-            container.innerHTML = data.tournaments.map(t => {
+            // Display Badminton Sweden tournaments
+            const bwfHtml = tournaments.map(t => {
                 const isRegistered = registeredUrls.has(t.url);
                 const badge = statusData.logged_in ? (isRegistered ?
                     `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
@@ -269,6 +257,19 @@
                     </div>
                 </div>
             `}).join("");
+
+            // Display local tournaments
+            const localHtml = localTournaments.map(t => {
+                return `
+                <div class="tournament-card">
+                    <div>
+                        <h2><a href="/tournament.html?db=${t.db}">${t.name}</a></h2>
+                        <p>Date: ${t.competition_date || 'N/A'}</p>
+                    </div>
+                </div>
+            `}).join("");
+
+            container.innerHTML = bwfHtml + localHtml;
         }
 
         checkBwfStatus();

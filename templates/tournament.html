@@ -149,15 +149,16 @@
             const evData = await evRes.json();
             if (evData.success) {
                 const container = document.getElementById("levels-container");
-                container.innerHTML = "<p>Singles (HS/DS):</p>" +
+                container.innerHTML = 
+                    "<label>Singles (HS/DS):</label>" +
                     `<select class="singles-level"><option value="">-- None --</option>` +
                     evData.singles.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
-                    "<p>Doubles (HD/DD):</p>" +
+                    "<label>Doubles (HD/DD):</label>" +
                     `<select class="doubles-level"><option value="">-- None --</option>` +
                     evData.doubles.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
-                    "<p>Mixed (MD):</p>" +
+                    "<label>Mixed (MD):</label>" +
                     `<select class="mixed-level"><option value="">-- None --</option>` +
                     evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>`;
@@ -437,15 +438,15 @@
             const evData = await evRes.json();
             if (evData.success) {
                 const container = document.getElementById("admin-levels-container");
-                container.innerHTML = "<p>Singles (HS/DS):</p>" +
+                container.innerHTML = "<label>Singles (HS/DS):</label>" +
                     `<select class="admin-singles-level"><option value="">-- None --</option>` +
                     evData.singles.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
-                    "<p>Doubles (HD/DD):</p>" +
+                    "<label>Doubles (HD/DD):</label>" +
                     `<select class="admin-doubles-level"><option value="">-- None --</option>` +
                     evData.doubles.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
-                    "<p>Mixed (MD):</p>" +
+                    "<label>Mixed (MD):</label>" +
                     `<select class="admin-mixed-level"><option value="">-- None --</option>` +
                     evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>`;
