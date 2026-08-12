@@ -28,20 +28,93 @@ a { color: #64b5f6; }
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.15);
     backdrop-filter: blur(10px);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+    align-items: start;
     transition: transform 0.15s, box-shadow 0.15s;
     position: relative;
     z-index: 1;
 }
 
-.tournament-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+.tournament-card > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.tournament-card h2 { margin: 0; color: #1a237e; text-shadow: none; }
+.tournament-card h2 { 
+    margin: 0; 
+    color: #1a237e; 
+    text-shadow: none; 
+    font-size: 1.3em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tournament-card h2 a {
+    color: #0d47a1;
+    text-decoration: none;
+}
+
+.tournament-card h2 a:hover {
+    text-decoration: underline;
+}
+
+.tournament-card p {
+    margin: 4px 0;
+    color: #555;
+    font-size: 0.95em;
+}
+
+.tournament-card .details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: #666;
+    font-size: 0.9em;
+}
+
+.tournament-card .location {
+    font-weight: 500;
+    color: #1a237e;
+}
+
+.tournament-card .date {
+    color: #0d47a1;
+}
+
+.tournament-card > div:last-child {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.tournament-card button {
+    width: auto;
+    padding: 8px 16px;
+    margin: 0;
+    font-size: 0.9em;
+}
+
+@media (max-width: 768px) {
+    .tournament-card {
+        grid-template-columns: 1fr;
+    }
+    
+    .tournament-card > div:last-child {
+        align-items: flex-start;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .tournament-card button {
+        flex: 0 1 auto;
+    }
+}
 
 form {
     background: rgba(255,255,255,0.95);

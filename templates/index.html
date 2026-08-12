@@ -252,8 +252,10 @@
                 <div class="tournament-card">
                     <div>
                         <h2><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a> ${badge}</h2>
-                        <p>${t.location}</p>
-                        <p>Date: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</p>
+                        <div class="details">
+                            <span class="location">${t.location}</span>
+                            <span class="date">📅 ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
+                        </div>
                     </div>
                 </div>
             `}).join("");
@@ -264,7 +266,9 @@
                 <div class="tournament-card">
                     <div>
                         <h2><a href="/tournament.html?db=${t.db}">${t.name}</a></h2>
-                        <p>Date: ${t.competition_date || 'N/A'}</p>
+                        <div class="details">
+                            <span class="date">📅 ${t.competition_date || 'N/A'}</span>
+                        </div>
                     </div>
                 </div>
             `}).join("");
