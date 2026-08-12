@@ -1739,17 +1739,20 @@ def get_tournament_info():
         return jsonify(success=False, error="Tournament not found"), 404
     cur = conn.cursor()
     try:
-        cur.execute("SELECT name, levels, competition_date, final_cancellation_date FROM tournaments LIMIT 1")
+        cur.execute("SELECT name, levels, competition_date, final_registration_date, final_cancellation_date FROM tournaments LIMIT 1")
         row = cur.fetchone()
-        if row and len(row) >= 4:
-            cancellation_date = row[3]
+        if row and len(row) >= 5:
+            registration_closes = row[3]
+            cancellation_deadline = row[4]
         else:
-            cancellation_date = ""
+            registration_closes = ""
+            cancellation_deadline = ""
     except sqlite3.OperationalError:
         cur.execute("SELECT name, levels, competition_date FROM tournaments LIMIT 1")
         row = cur.fetchone()
         row = (row[0], row[1], row[2] if len(row) > 2 else "") if row else None
-        cancellation_date = ""
+        registration_closes = ""
+        cancellation_deadline = ""
     conn.close()
     if not row:
         return jsonify(success=False, error="No tournament info"), 500
@@ -1758,7 +1761,8 @@ def get_tournament_info():
         "name": row[0], 
         "levels": levels, 
         "competition_date": row[2] or "",
-        "cancellation_deadline": cancellation_date or ""
+        "registration_closes": registration_closes or "",
+        "cancellation_deadline": cancellation_deadline or ""
     })
 
 

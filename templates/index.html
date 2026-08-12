@@ -175,7 +175,9 @@
                         <div class="details">
                             <span class="location">${t.location}</span>
                             <span class="date">📅 Competition: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
-                            ${t.registration_opens ? `<span style="color:#666;">📝 Registration: ${t.registration_opens} to ${t.registration_closes || 'N/A'}</span>` : ''}
+                            ${t.registration_opens ? `<span style="color:#666;">📝 Registration opens: ${t.registration_opens}</span>` : ''}
+                            ${t.registration_closes ? `<span style="color:#666;">📝 Registration closes: ${t.registration_closes}</span>` : ''}
+                            ${t.cancellation_deadline ? `<span style="color:#666;">🔄 Cancellation deadline: ${t.cancellation_deadline}</span>` : ''}
                         </div>
                     </div>
                 </div>

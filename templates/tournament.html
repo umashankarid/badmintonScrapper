@@ -156,12 +156,13 @@
                 document.getElementById("tournament-name").textContent = data.tournament.name;
                 window.tournamentCompDate = data.tournament.competition_date || "";
                 
-                // Check if registration is still open
-                const cancellationDeadline = data.tournament.cancellation_deadline;
-                if (cancellationDeadline) {
+                // Check if registration is still open (based on registration_closes, not cancellation_deadline)
+                // The registration_closes is what matters for new registrations
+                const registrationCloses = data.tournament.registration_closes;
+                if (registrationCloses) {
                     const today = new Date().toISOString().slice(0, 10);
-                    if (today > cancellationDeadline) {
-                        // Registration is closed
+                    if (today > registrationCloses) {
+                        // Registration closed
                         window.registrationClosed = true;
                         showRegistrationClosed();
                     }
@@ -194,8 +195,9 @@
                 registerSection.innerHTML = `
                     <div style="background: #fff3e0; border: 2px solid #ff6f00; padding: 20px; border-radius: 8px; text-align: center;">
                         <h3 style="color: #e65100; margin-top: 0;">Registration Closed</h3>
-                        <p style="color: #666;">The cancellation period for this tournament has ended.</p>
-                        <p style="color: #666;">You can no longer register, unregister, or modify your registration.</p>
+                        <p style="color: #666;">The registration period for this tournament has ended.</p>
+                        <p style="color: #666;">You can no longer register or modify your registration.</p>
+                        <p style="color: #999; font-size: 0.9em;">You may still be able to withdraw until the cancellation deadline.</p>
                     </div>
                 `;
             }
