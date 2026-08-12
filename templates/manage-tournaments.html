@@ -420,12 +420,19 @@
                 const res = await fetch("/api/bwf-tournaments-all");
                 const data = await res.json();
                 
+                console.log("BWF Tournaments Response:", {status: res.status, ok: res.ok, data});
+                
                 if (!res.ok) {
+                    container.innerHTML = `<p style="color: red;">HTTP Error ${res.status}: ${data.error || 'Failed to load tournaments'}</p>`;
+                    return;
+                }
+                
+                if (!data.success) {
                     container.innerHTML = `<p style="color: red;">Error: ${data.error || 'Failed to load tournaments'}</p>`;
                     return;
                 }
                 
-                if (!data.success || !data.tournaments || !data.tournaments.length) {
+                if (!data.tournaments || !data.tournaments.length) {
                     container.innerHTML = "<p>No tournaments currently available on Badminton Sweden.<br><small style='color: #999;'>This might mean there are no tournaments scheduled in the near future, or the website is temporarily unavailable.</small></p>";
                     return;
                 }

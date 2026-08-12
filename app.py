@@ -1482,8 +1482,10 @@ def get_all_bwf_tournaments():
         for t in tournaments:
             t["visible"] = t["url"] in visible_urls
 
+        logger.info(f"Returning {len(tournaments)} tournaments from Badminton Sweden")
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
+        logger.error(f"Error in get_all_bwf_tournaments: {str(e)}", exc_info=True)
         return jsonify(success=False, error=str(e), tournaments=[]), 500
 
 
