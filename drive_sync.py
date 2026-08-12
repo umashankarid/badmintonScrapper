@@ -1,17 +1,12 @@
 """
-Google Drive sync module for SQLite databases
-Syncs .db files to/from Google Drive for persistent storage
-Uses OAuth 2.0 delegation (user's account) instead of service account
+Dropbox sync module for SQLite databases
+Syncs .db files to/from Dropbox for persistent storage
 """
 
 import os
-import json
 import logging
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import dropbox
+from dropbox.exceptions import ApiError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,108 +21,66 @@ DB_FILES = [
 
 TOURNAMENTS_DIR = "tournaments"
 
-class GoogleDriveSync:
-    """Handle Google Drive sync for SQLite databases using OAuth"""
+class DropboxSync:
+    """Handle Dropbox sync for SQLite databases"""
     
     def __init__(self):
-        """Initialize Google Drive API client with OAuth"""
-        self.drive_service = None
-        self.folder_id = None
+        """Initialize Dropbox client"""
+        self.dbx = None
+        self.folder_path = None
         self.authenticated = False
-        self._init_drive_client()
+        self._init_dropbox_client()
     
-    def _init_drive_client(self):
-        """Initialize Google Drive client using OAuth credentials"""
+    def _init_dropbox_client(self):
+        """Initialize Dropbox client using access token"""
         try:
-            # Get OAuth refresh token from environment
-            refresh_token = os.getenv('GOOGLE_DRIVE_REFRESH_TOKEN')
-            if not refresh_token:
-                logger.warning("⚠️  GOOGLE_DRIVE_REFRESH_TOKEN not set - sync disabled")
+            # Get access token from environment
+            access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
+            if not access_token:
+                logger.warning("⚠️  DROPBOX_ACCESS_TOKEN not set - sync disabled")
                 return False
             
-            # Get client ID and secret from environment
-            client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID')
-            client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET')
+            # Initialize Dropbox client
+            self.dbx = dropbox.Dropbox(access_token)
             
-            if not client_id or not client_secret:
-                logger.warning("⚠️  GOOGLE_DRIVE_CLIENT_ID or GOOGLE_DRIVE_CLIENT_SECRET not set")
-                return False
+            # Test connection
+            self.dbx.users_get_current_account()
+            logger.info("✅ Dropbox client initialized")
             
-            # Create credentials from refresh token
-            credentials = Credentials(
-                token=None,  # Will be refreshed
-                refresh_token=refresh_token,
-                token_uri='https://oauth2.googleapis.com/token',
-                client_id=client_id,
-                client_secret=client_secret,
-                scopes=['https://www.googleapis.com/auth/drive']
-            )
+            # Get folder path from environment
+            self.folder_path = os.getenv('DROPBOX_SYNC_FOLDER', '/BadmintonScrapPython-Databases')
+            logger.info(f"✅ Using Dropbox folder: {self.folder_path}")
             
-            # Refresh to get valid access token
-            credentials.refresh(Request())
-            
-            # Build Drive service
-            self.drive_service = build('drive', 'v3', credentials=credentials)
-            
-            # Get or create sync folder
-            folder_id = os.getenv('GOOGLE_DRIVE_SYNC_FOLDER_ID')
-            if folder_id:
-                self.folder_id = folder_id
-                logger.info(f"✅ Using existing Google Drive folder: {folder_id}")
-            else:
-                self._create_sync_folder()
+            # Ensure folder exists
+            self._ensure_folder_exists()
             
             self.authenticated = True
-            logger.info("✅ Google Drive client initialized (OAuth)")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Google Drive client: {str(e)}")
+            logger.error(f"❌ Failed to initialize Dropbox client: {str(e)}")
             self.authenticated = False
             return False
     
-    def _create_sync_folder(self):
-        """Create a folder in Google Drive for syncing databases"""
+    def _ensure_folder_exists(self):
+        """Create folder in Dropbox if it doesn't exist"""
         try:
-            folder_metadata = {
-                'name': 'BadmintonScrapPython-Databases',
-                'mimeType': 'application/vnd.google-apps.folder'
-            }
-            folder = self.drive_service.files().create(
-                body=folder_metadata,
-                fields='id'
-            ).execute()
-            self.folder_id = folder['id']
-            logger.info(f"✅ Created Google Drive folder: {self.folder_id}")
-            logger.info(f"📝 Set GOOGLE_DRIVE_SYNC_FOLDER_ID={self.folder_id} in Render config")
-            return self.folder_id
-        except Exception as e:
-            logger.error(f"❌ Failed to create sync folder: {str(e)}")
-            return None
-    
-    def _get_file_id(self, filename):
-        """Find file ID in Google Drive folder"""
-        try:
-            query = f"'{self.folder_id}' in parents and name='{filename}' and trashed=false"
-            results = self.drive_service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name, modifiedTime)',
-                pageSize=1
-            ).execute()
-            
-            files = results.get('files', [])
-            if files:
-                return files[0]['id']
-            return None
-        except Exception as e:
-            logger.error(f"❌ Error finding file {filename}: {str(e)}")
-            return None
+            self.dbx.files_get_metadata(self.folder_path)
+            logger.info(f"✅ Dropbox folder exists: {self.folder_path}")
+        except ApiError as e:
+            if e.error.is_path() and e.error.get_path().is_not_found():
+                try:
+                    self.dbx.files_create_folder_v2(self.folder_path)
+                    logger.info(f"✅ Created Dropbox folder: {self.folder_path}")
+                except Exception as create_err:
+                    logger.error(f"❌ Failed to create folder: {str(create_err)}")
+            else:
+                logger.error(f"❌ Error checking folder: {str(e)}")
     
     def download_databases(self):
-        """Download all .db files from Google Drive"""
+        """Download all .db files from Dropbox"""
         if not self.authenticated:
-            logger.warning("⚠️  Google Drive not authenticated - skipping download")
+            logger.warning("⚠️  Dropbox not authenticated - skipping download")
             return False
         
         success_count = 0
@@ -141,42 +94,44 @@ class GoogleDriveSync:
         if os.path.exists(TOURNAMENTS_DIR):
             for tournament_file in os.listdir(TOURNAMENTS_DIR):
                 if tournament_file.endswith('.db'):
-                    if self._download_file(os.path.join(TOURNAMENTS_DIR, tournament_file)):
+                    filepath = os.path.join(TOURNAMENTS_DIR, tournament_file)
+                    if self._download_file(filepath):
                         success_count += 1
         
-        logger.info(f"✅ Downloaded {success_count} database files from Google Drive")
+        logger.info(f"✅ Downloaded {success_count} database files from Dropbox")
         return True
     
     def _download_file(self, filepath):
-        """Download a single file from Google Drive"""
+        """Download a single file from Dropbox"""
         try:
-            file_id = self._get_file_id(os.path.basename(filepath))
-            if not file_id:
-                logger.debug(f"ℹ️  File not found in Drive (new file): {filepath}")
-                return False
+            dropbox_path = f"{self.folder_path}/{os.path.basename(filepath)}"
             
             # Ensure parent directory exists
             os.makedirs(os.path.dirname(filepath) or '.', exist_ok=True)
             
             # Download file
-            request = self.drive_service.files().get_media(fileId=file_id)
+            metadata, response = self.dbx.files_download(dropbox_path)
             with open(filepath, 'wb') as f:
-                downloader = MediaIoBaseDownload(f, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
+                f.write(response.content)
             
             logger.info(f"✅ Downloaded: {filepath}")
             return True
             
+        except ApiError as e:
+            if e.error.is_path() and e.error.get_path().is_not_found():
+                logger.debug(f"ℹ️  File not found in Dropbox (new file): {filepath}")
+                return False
+            else:
+                logger.error(f"❌ Failed to download {filepath}: {str(e)}")
+                return False
         except Exception as e:
             logger.error(f"❌ Failed to download {filepath}: {str(e)}")
             return False
     
     def upload_databases(self):
-        """Upload all .db files to Google Drive"""
+        """Upload all .db files to Dropbox"""
         if not self.authenticated:
-            logger.warning("⚠️  Google Drive not authenticated - skipping upload")
+            logger.warning("⚠️  Dropbox not authenticated - skipping upload")
             return False
         
         success_count = 0
@@ -195,36 +150,27 @@ class GoogleDriveSync:
                     if self._upload_file(filepath):
                         success_count += 1
         
-        logger.info(f"✅ Uploaded {success_count} database files to Google Drive")
+        logger.info(f"✅ Uploaded {success_count} database files to Dropbox")
         return True
     
     def _upload_file(self, filepath):
-        """Upload a single file to Google Drive"""
+        """Upload a single file to Dropbox"""
         try:
             filename = os.path.basename(filepath)
-            file_id = self._get_file_id(filename)
+            dropbox_path = f"{self.folder_path}/{filename}"
             
-            file_metadata = {'name': filename}
-            media = MediaFileUpload(filepath, resumable=True)
+            with open(filepath, 'rb') as f:
+                file_content = f.read()
             
-            if file_id:
-                # Update existing file
-                request = self.drive_service.files().update(
-                    fileId=file_id,
-                    media_body=media,
-                    fields='id'
-                )
-            else:
-                # Create new file
-                file_metadata['parents'] = [self.folder_id]
-                request = self.drive_service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id'
-                )
+            # Upload with overwrite
+            self.dbx.files_upload(
+                file_content,
+                dropbox_path,
+                mode=dropbox.files.WriteMode('overwrite', None),
+                autorename=False
+            )
             
-            response = request.execute()
-            logger.info(f"✅ Uploaded: {filepath} (ID: {response['id']})")
+            logger.info(f"✅ Uploaded: {filepath}")
             return True
             
         except Exception as e:
@@ -236,24 +182,24 @@ class GoogleDriveSync:
 _sync = None
 
 def init_sync():
-    """Initialize Google Drive sync"""
+    """Initialize Dropbox sync"""
     global _sync
-    _sync = GoogleDriveSync()
+    _sync = DropboxSync()
     return _sync
 
 def get_sync():
     """Get the global sync instance"""
     global _sync
     if _sync is None:
-        _sync = GoogleDriveSync()
+        _sync = DropboxSync()
     return _sync
 
 def download_all():
-    """Download all databases from Google Drive"""
+    """Download all databases from Dropbox"""
     sync = get_sync()
     return sync.download_databases()
 
 def upload_all():
-    """Upload all databases to Google Drive"""
+    """Upload all databases to Dropbox"""
     sync = get_sync()
     return sync.upload_databases()
