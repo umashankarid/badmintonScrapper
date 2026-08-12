@@ -155,6 +155,17 @@
             if (data.success) {
                 document.getElementById("tournament-name").textContent = data.tournament.name;
                 window.tournamentCompDate = data.tournament.competition_date || "";
+                
+                // Check if registration is still open
+                const cancellationDeadline = data.tournament.cancellation_deadline;
+                if (cancellationDeadline) {
+                    const today = new Date().toISOString().slice(0, 10);
+                    if (today > cancellationDeadline) {
+                        // Registration is closed
+                        window.registrationClosed = true;
+                        showRegistrationClosed();
+                    }
+                }
             }
             // Fetch event classes from Badminton Sweden
             const evRes = await fetch(`/api/tournament-events?dbFile=${dbFile}`);
@@ -174,6 +185,26 @@
                     `<select class="mixed-level"><option value="">-- None --</option>` +
                     evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>`;
+            }
+        }
+
+        function showRegistrationClosed() {
+            const registerSection = document.getElementById("register-section");
+            if (registerSection) {
+                registerSection.innerHTML = `
+                    <div style="background: #fff3e0; border: 2px solid #ff6f00; padding: 20px; border-radius: 8px; text-align: center;">
+                        <h3 style="color: #e65100; margin-top: 0;">Registration Closed</h3>
+                        <p style="color: #666;">The cancellation period for this tournament has ended.</p>
+                        <p style="color: #666;">You can no longer register, unregister, or modify your registration.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function disableRegistrationForm() {
+            if (window.registrationClosed) {
+                showRegistrationClosed();
+                document.getElementById("register-form").style.display = "none";
             }
         }
 
@@ -231,6 +262,12 @@
 
         document.getElementById("register-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            
+            if (window.registrationClosed) {
+                alert("Registration for this tournament has closed.");
+                return;
+            }
+            
             const singlesLevels = document.querySelector(".singles-level").value;
             const doublesLevels = document.querySelector(".doubles-level").value;
             const mixedLevels = document.querySelector(".mixed-level").value;
@@ -592,6 +629,7 @@
             try {
                 await loadTournamentInfo();
             } catch(e) { console.error("loadTournamentInfo error:", e); }
+            disableRegistrationForm();
             if (isAdmin) {
                 await loadAdminLevels();
                 document.getElementById("search-registered").addEventListener("input", (e) => {
