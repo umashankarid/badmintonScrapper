@@ -1497,7 +1497,7 @@ def open_tournaments():
                 "competition_end": row[9]
             })
         
-        return jsonify(tournaments)
+        return jsonify(tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error fetching open tournaments from database: {str(e)}")
         return jsonify([])
