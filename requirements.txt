@@ -2,5 +2,3 @@ flask==3.1.0
 requests==2.32.3
 beautifulsoup4==4.12.3
 dropbox==11.36.2
-selenium==4.15.2
-webdriver-manager==4.0.1

@@ -1372,76 +1372,64 @@ def get_all_bwf_tournaments():
         return jsonify(success=False, error="Unauthorized"), 401
     
     try:
-        from selenium import webdriver
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.chrome.options import Options
-        from webdriver_manager.chrome import ChromeDriverManager
-        from selenium.webdriver.chrome.service import Service
-        import time
+        from datetime import datetime, timedelta
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
         
-        # Configure Chrome options
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+        # Accept cookies
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+        # Use DoSearch API which returns tournament results
+        start = datetime.now().strftime("%Y-%m-%dT00:00")
+        end = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%dT00:00")
+
+        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
+            data={
+                "TournamentExtendedFilter.StatusFilterID": "2",
+                "StartDate": start,
+                "EndDate": end,
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=10)
         
-        # Use webdriver-manager to auto-download ChromeDriver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        try:
-            logger.info("Loading tournament listing page...")
-            driver.get("https://badmintonsweden.tournamentsoftware.com/find/tournament")
-            
-            # Wait for tournaments to load (they load via JavaScript)
-            logger.info("Waiting for tournaments to load...")
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[href*='/tournament/']"))
-            )
-            
-            # Give it a bit more time to render
-            time.sleep(2)
-            
-            # Extract tournament links
-            tournament_elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/tournament/']")
-            logger.info(f"Found {len(tournament_elements)} tournament links")
-            
-            tournaments = []
-            for elem in tournament_elements:
-                try:
-                    link_text = elem.text.strip()
-                    href = elem.get_attribute("href")
-                    
-                    if not link_text or not href or "/tournament/" not in href:
-                        continue
-                    
-                    # Extract tournament ID from URL
-                    import re
-                    tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-                    if not tid_match:
-                        continue
-                    
-                    tournament_url = href
-                    
-                    tournaments.append({
-                        "name": link_text,
-                        "url": tournament_url,
-                        "location": "",  # Will be fetched from detail page later
-                        "date_start": "",
-                        "date_end": ""
-                    })
-                except Exception as e:
-                    logger.debug(f"Error extracting tournament: {str(e)}")
-                    continue
-            
-            logger.info(f"Extracted {len(tournaments)} tournaments")
-            
-        finally:
-            driver.quit()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        tournaments = []
+        import re
+        
+        # Parse tournament items from DoSearch response
+        for item in soup.select("li.list__item"):
+            link = item.select_one("a.media__link")
+            if not link:
+                continue
+            name = link.get_text(strip=True)
+            href = link.get("href", "")
+            if not name or not href:
+                continue
+                
+            location_el = item.select_one(".media__subheading .nav-link__value")
+            location = location_el.get_text(strip=True) if location_el else ""
+            time_els = item.select("time")
+            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
+
+            if not tournament_url:
+                continue
+
+            tournaments.append({
+                "name": name,
+                "url": tournament_url,
+                "location": location,
+                "date_start": date_start,
+                "date_end": date_end
+            })
+
+        logger.info(f"Found {len(tournaments)} tournaments from DoSearch API")
         
         # Get current visibility status
         conn = sqlite3.connect(ADMIN_DB)
