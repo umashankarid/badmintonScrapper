@@ -23,24 +23,6 @@
         </div>
     </div>
 
-    <!-- Login Modal -->
-    <div id="bwf-login-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;">
-        <div style="background:white;max-width:400px;margin:80px auto;padding:20px;border-radius:8px;">
-            <h2>Badminton Sweden Login</h2>
-            <p style="color:#666;font-size:0.95em;">Use your Badminton Sweden account credentials</p>
-            <form id="bwf-login-form">
-                <label for="bwf-email">Email / Username</label>
-                <input type="text" id="bwf-email" placeholder="Email or username" required>
-                <label for="bwf-password">Password</label>
-                <input type="password" id="bwf-password" placeholder="Password" required>
-                <button type="submit">Login</button>
-                <button type="button" onclick="document.getElementById('bwf-login-modal').style.display='none'" style="background:#666;">Cancel</button>
-                <p style="margin-top:10px;font-size:0.9em;text-align:center;color:#666;">Don't have an account? <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="color:#0066cc;">Register here</a></p>
-            </form>
-            <p id="bwf-error" style="color:red;display:none;"></p>
-        </div>
-    </div>
-
     <!-- Manage Admin Modal -->
     <div id="admin-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;">
         <div style="background:white;max-width:450px;margin:80px auto;padding:20px;border-radius:8px;">
@@ -74,18 +56,23 @@
     </div>
 
     <p id="loading-msg" style="display:none;">Loading tournaments with open registration...</p>
-    <div id="login-section">
-        <div style="background: white; padding: 40px; border-radius: 12px; max-width: 600px; margin: 40px auto; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-            <h2 style="color: #1a237e; margin-bottom: 20px;">Welcome to BMK Komet Tournament Registration</h2>
-            <p style="color: #555; font-size: 1.05em; line-height: 1.6; margin-bottom: 30px;">
-                Register and manage your badminton tournament participation. Use your Badminton Sweden account credentials to log in.
-            </p>
+    <div id="login-section" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;">
+        <div style="background:white;max-width:450px;padding:40px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
+            <h2 style="color:#1a237e;text-align:center;margin-bottom:10px;">BMK Komet Tournament Registration</h2>
+            <p style="color:#666;text-align:center;font-size:0.95em;margin-bottom:30px;">Login with your Badminton Sweden account</p>
             
-            <button id="bwf-login-btn" onclick="document.getElementById('bwf-login-modal').style.display='block'" style="width:auto;padding:14px 32px;font-size:1.05em;margin-bottom:30px;background:#0d47a1;color:white;border:none;border-radius:8px;cursor:pointer;">Login with Badminton Sweden Account</button>
+            <form id="bwf-login-form">
+                <label for="bwf-email">Email / Username</label>
+                <input type="text" id="bwf-email" placeholder="Email or username" required>
+                <label for="bwf-password">Password</label>
+                <input type="password" id="bwf-password" placeholder="Password" required>
+                <button type="submit" style="background:#0d47a1;">Login</button>
+                <p id="bwf-error" style="color:red;display:none;margin-top:10px;text-align:center;"></p>
+            </form>
             
-            <div style="border-top: 1px solid #ddd; padding-top: 20px; margin-top: 30px;">
-                <p style="color: #666; margin-bottom: 10px;">Don't have a Badminton Sweden account yet?</p>
-                <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="color: #0066cc; text-decoration: none; font-weight: bold;">Create a Badminton Sweden Account</a>
+            <div style="border-top:1px solid #ddd;padding-top:20px;margin-top:30px;text-align:center;">
+                <p style="color:#666;font-size:0.9em;margin-bottom:10px;">Don't have a Badminton Sweden account?</p>
+                <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="color:#0066cc;text-decoration:none;font-weight:bold;">Create an account here</a>
             </div>
         </div>
     </div>
