@@ -7,19 +7,16 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h1>BMK Komet Tournament Registration System</h1>
-        <div style="display:flex;gap:10px;align-items:center;">
-            <div id="bwf-user" style="display:none;align-items:center;gap:8px;">
-                <span id="bwf-player-info" style="font-weight:bold;"></span>
-                <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
-            </div>
-            <div id="admin-info" style="display:none;align-items:center;gap:8px;">
-                <span id="admin-player-info" style="font-weight:bold;"></span>
-                <a href="/manage-tournaments.html"><button style="width:auto;padding:8px 16px;">Manage Tournaments</button></a>
-                <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;background:#666;">Logout</button>
-                <a href="/results.html"><button style="width:auto;padding:8px 16px;background:#0066cc;">Show Results</button></a>
-            </div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:20px;">
+        <div id="bwf-user" style="display:none;align-items:center;gap:8px;">
+            <span id="bwf-player-info" style="font-weight:bold;"></span>
+            <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
+        </div>
+        <div id="admin-info" style="display:none;align-items:center;gap:8px;">
+            <span id="admin-player-info" style="font-weight:bold;"></span>
+            <a href="/manage-tournaments.html"><button style="width:auto;padding:8px 16px;">Manage Tournaments</button></a>
+            <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;background:#666;">Logout</button>
+            <a href="/results.html"><button style="width:auto;padding:8px 16px;background:#0066cc;">Show Results</button></a>
         </div>
     </div>
 
