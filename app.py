@@ -1413,19 +1413,44 @@ def open_tournaments():
                         time_el = li.find("time")
                         if label_el and time_el:
                             label = label_el.get_text(strip=True).lower()
-                            datetime_val = time_el.get("datetime", "")[:10]
-                            if "öppnar" in label or "opens" in label:
-                                t["registration_opens"] = datetime_val
-                            elif "stänger" in label or "closes" in label:
-                                t["registration_closes"] = datetime_val
-                            elif "återbud" in label or "cancellation" in label:
-                                t["cancellation_deadline"] = datetime_val
-                            elif "tävlingsstart" in label or "start" in label:
-                                t["competition_start"] = datetime_val
-                            elif "tävlingsslut" in label or "slut" in label or "end" in label:
-                                t["competition_end"] = datetime_val
+                            # Try to get datetime attribute first, then fall back to text content
+                            datetime_val = time_el.get("datetime", "")[:10] if time_el.get("datetime") else None
+                            if not datetime_val:
+                                # Parse from text content like "Sat, 15 Aug 23:59"
+                                time_text = time_el.get_text(strip=True)
+                                # Try to extract date from format like "Sat, 15 Aug 23:59"
+                                import re
+                                from datetime import datetime as dt
+                                date_match = re.search(r'(\d{1,2})\s+(\w+)', time_text)
+                                if date_match:
+                                    day = date_match.group(1)
+                                    month_str = date_match.group(2)
+                                    # Map month abbreviations to numbers
+                                    months = {'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6,
+                                             'jul':7, 'aug':8, 'sep':9, 'oct':10, 'nov':11, 'dec':12}
+                                    month = months.get(month_str.lower(), None)
+                                    if month:
+                                        # Assume current year or next year based on current date
+                                        year = dt.now().year
+                                        # If the date is in the past, use next year
+                                        if dt(year, month, int(day)) < dt.now():
+                                            year = dt.now().year + 1
+                                        datetime_val = f"{year}-{month:02d}-{int(day):02d}"
+                            
+                            if datetime_val:
+                                if "closes" in label or "stänger" in label:
+                                    t["registration_closes"] = datetime_val
+                                elif "opens" in label or "öppnar" in label:
+                                    t["registration_opens"] = datetime_val
+                                elif "cancellation" in label or "återbud" in label:
+                                    t["cancellation_deadline"] = datetime_val
+                                elif "competition start" in label or "tävlingsstart" in label or "start" in label:
+                                    t["competition_start"] = datetime_val
+                                elif "competition end" in label or "tävlingsslut" in label or "end" in label or "slut" in label:
+                                    t["competition_end"] = datetime_val
             except Exception as e:
                 # If we can't fetch details, continue with what we have
+                logger.debug(f"Could not fetch detail for {t.get('url', 'unknown')}: {str(e)}")
                 pass
 
         # Save tournaments to visibility table (create entries if they don't exist)
