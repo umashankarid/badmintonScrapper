@@ -1372,76 +1372,73 @@ def get_all_bwf_tournaments():
         return jsonify(success=False, error="Unauthorized"), 401
     
     try:
-        from datetime import datetime, timedelta
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        # Try fetching the tournament listing page directly
-        listing_resp = s.get("https://badmintonsweden.tournamentsoftware.com/find/tournament", timeout=10)
-        resp = listing_resp
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        tournaments = []
-        import re
-        items = soup.select("li.list__item")
-        logger.info(f"Found {len(items)} tournament items on listing page")
-        logger.info(f"Response length: {len(resp.text)}")
+        from selenium import webdriver
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.chrome.options import Options
+        import time
         
-        if len(items) == 0:
-            # Debug: try to find what selectors are actually present
-            all_lis = soup.select("li")
-            logger.info(f"Total <li> elements: {len(all_lis)}")
-            all_divs = soup.select("div.tournament")
-            logger.info(f"Total <div class='tournament'>: {len(all_divs)}")
+        # Configure Chrome options
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+        
+        driver = webdriver.Chrome(options=chrome_options)
+        try:
+            logger.info("Loading tournament listing page...")
+            driver.get("https://badmintonsweden.tournamentsoftware.com/find/tournament")
             
-            # Print first 2000 chars of body to see structure
-            body = soup.find("body")
-            if body:
-                body_text = body.get_text()[:2000]
-                logger.info(f"Body text sample: {body_text}")
+            # Wait for tournaments to load (they load via JavaScript)
+            logger.info("Waiting for tournaments to load...")
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[href*='/tournament/']"))
+            )
+            
+            # Give it a bit more time to render
+            time.sleep(2)
+            
+            # Extract tournament links
+            tournament_elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/tournament/']")
+            logger.info(f"Found {len(tournament_elements)} tournament links")
+            
+            tournaments = []
+            for elem in tournament_elements:
+                try:
+                    link_text = elem.text.strip()
+                    href = elem.get_attribute("href")
+                    
+                    if not link_text or not href or "/tournament/" not in href:
+                        continue
+                    
+                    # Extract tournament ID from URL
+                    import re
+                    tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+                    if not tid_match:
+                        continue
+                    
+                    tournament_url = href
+                    
+                    tournaments.append({
+                        "name": link_text,
+                        "url": tournament_url,
+                        "location": "",  # Will be fetched from detail page later
+                        "date_start": "",
+                        "date_end": ""
+                    })
+                except Exception as e:
+                    logger.debug(f"Error extracting tournament: {str(e)}")
+                    continue
+            
+            logger.info(f"Extracted {len(tournaments)} tournaments")
+            
+        finally:
+            driver.quit()
         
-        for item in items:
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            if not name or not href:
-                logger.debug(f"Skipping item: name={name}, href={href}")
-                continue
-                
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
-
-            if not tournament_url:
-                logger.debug(f"Skipping tournament {name}: no URL extracted")
-                continue
-
-            tournaments.append({
-                "name": name,
-                "url": tournament_url,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end
-            })
-            logger.debug(f"Added tournament: {name} ({tournament_url})")
-
-        logger.info(f"Added {len(tournaments)} tournaments before detail fetching")
-
-        # For now, skip detail fetching to get tournaments working quickly
-        # Detail dates will be fetched later when admin selects them
-        # TODO: Add background job to fetch tournament details asynchronously
-
         # Get current visibility status
         conn = sqlite3.connect(ADMIN_DB)
         cur = conn.cursor()
