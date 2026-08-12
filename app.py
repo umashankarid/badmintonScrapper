@@ -851,6 +851,7 @@ def save_smtp_settings():
         )
     conn.commit()
     conn.close()
+    trigger_sync()  # Sync SMTP settings to Dropbox
     return jsonify(success=True)
 
 
@@ -1114,6 +1115,7 @@ def create_tournament():
     )
     conn.commit()
     conn.close()
+    trigger_sync()  # Sync new tournament to Dropbox
     return jsonify(success=True, db=db_file)
 
 
@@ -1128,6 +1130,7 @@ def delete_tournament():
     path = os.path.join(TOURNAMENTS_DIR, db_file)
     if os.path.exists(path):
         os.remove(path)
+    trigger_sync()  # Sync deletion to Dropbox
     return jsonify(success=True)
 
 
@@ -1159,6 +1162,7 @@ def edit_tournament():
     )
     conn.commit()
     conn.close()
+    trigger_sync()  # Sync tournament changes to Dropbox
     return jsonify(success=True)
 
 
