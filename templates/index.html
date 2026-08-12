@@ -156,13 +156,26 @@
                 const badge = statusData.logged_in ? (isRegistered ?
                     `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
                     `<span style="background:#f0a000;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Not Registered</span>`) : "";
+                
+                // Check if registration closes within 7 days
+                let urgentStyle = "";
+                if (t.registration_closes) {
+                    const closeDate = new Date(t.registration_closes);
+                    const today = new Date();
+                    const daysLeft = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
+                    if (daysLeft > 0 && daysLeft <= 7) {
+                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left-color: #ff6f00;";
+                    }
+                }
+                
                 return `
-                <div class="tournament-card">
+                <div class="tournament-card" style="${urgentStyle}">
                     <div>
                         <h2><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a> ${badge}</h2>
                         <div class="details">
                             <span class="location">${t.location}</span>
-                            <span class="date">📅 ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
+                            <span class="date">📅 Competition: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
+                            ${t.registration_opens ? `<span style="color:#666;">📝 Registration: ${t.registration_opens} to ${t.registration_closes || 'N/A'}</span>` : ''}
                         </div>
                     </div>
                 </div>

@@ -1399,6 +1399,35 @@ def open_tournaments():
                 "date_end": date_end
             })
 
+        # Fetch detailed dates for each tournament from their detail pages
+        for t in tournaments:
+            try:
+                detail_resp = s.get(t["url"], timeout=10)
+                detail_soup = BeautifulSoup(detail_resp.text, "html.parser")
+                
+                # Extract registration and competition dates
+                timeline = detail_soup.select_one(".tournament-meta__timeline")
+                if timeline:
+                    for li in timeline.find_all("li"):
+                        label_el = li.select_one(".list__value")
+                        time_el = li.find("time")
+                        if label_el and time_el:
+                            label = label_el.get_text(strip=True).lower()
+                            datetime_val = time_el.get("datetime", "")[:10]
+                            if "öppnar" in label or "opens" in label:
+                                t["registration_opens"] = datetime_val
+                            elif "stänger" in label or "closes" in label:
+                                t["registration_closes"] = datetime_val
+                            elif "återbud" in label or "cancellation" in label:
+                                t["cancellation_deadline"] = datetime_val
+                            elif "tävlingsstart" in label or "start" in label:
+                                t["competition_start"] = datetime_val
+                            elif "tävlingsslut" in label or "slut" in label or "end" in label:
+                                t["competition_end"] = datetime_val
+            except Exception as e:
+                # If we can't fetch details, continue with what we have
+                pass
+
         # Save tournaments to visibility table (create entries if they don't exist)
         conn = sqlite3.connect(ADMIN_DB)
         for t in tournaments:

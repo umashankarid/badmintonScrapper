@@ -173,11 +173,12 @@
                         <strong>${t.name}</strong><br>
                         <small>Competition: ${t.competition_date || "N/A"} | Reg closes: ${t.final_registration_date || "N/A"}</small>
                     </div>
-                    <div>
-                        <button onclick="window.location.href='/tournament.html?db=${t.db}'">View</button>
-                        <button onclick="editTournament('${t.db}')" style="background:#f0a000;">Edit</button>
-                        <button onclick="submitTournament('${t.db}', '${t.name.replace(/'/g, "\\'")}')" style="background:#28a745;">Submit</button>
-                        <button onclick="deleteTournament('${t.db}')" style="background:#cc3333;">Delete</button>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                        <button onclick="window.location.href='/tournament.html?db=${t.db}'" style="padding:8px 14px;font-size:0.85em;">View</button>
+                        <button onclick="editTournament('${t.db}')" style="background:#f0a000;padding:8px 14px;font-size:0.85em;">Edit</button>
+                        <button onclick="submitTournament('${t.db}', '${t.name.replace(/'/g, "\\'")}')" style="background:#28a745;padding:8px 14px;font-size:0.85em;">Submit</button>
+                        <button onclick="downloadPlayerData('${t.db}')" style="background:#0066cc;padding:8px 14px;font-size:0.85em;">Download CSV</button>
+                        <button onclick="deleteTournament('${t.db}')" style="background:#cc3333;padding:8px 14px;font-size:0.85em;">Delete</button>
                     </div>
                 </div>
             `).join("");
@@ -191,6 +192,53 @@
                 body: JSON.stringify({db})
             });
             loadTournaments();
+        }
+
+        async function downloadPlayerData(db) {
+            try {
+                const res = await fetch(`/api/tournament-players?dbFile=${db}&page=1&pageSize=10000`);
+                const data = await res.json();
+                if (!data.success || !data.players.length) {
+                    alert("No players registered for this tournament");
+                    return;
+                }
+
+                // Prepare CSV content
+                const headers = ["Name", "License ID", "Club", "Gender", "Email", "Phone", "Singles", "Doubles", "Mixed", "Doubles Partner", "Mixed Partner"];
+                const csvContent = [
+                    headers.join(","),
+                    ...data.players.map(p => [
+                        `"${(p.player_name || "").replace(/"/g, '""')}"`,
+                        `"${(p.license_id || "").replace(/"/g, '""')}"`,
+                        `"${(p.club || "").replace(/"/g, '""')}"`,
+                        `"${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}"`,
+                        `"${(p.email || "").replace(/"/g, '""')}"`,
+                        `"${(p.phone || "").replace(/"/g, '""')}"`,
+                        `"${(p.singles_levels || "").replace(/"/g, '""')}"`,
+                        `"${(p.doubles_levels || "").replace(/"/g, '""')}"`,
+                        `"${(p.mixed_levels || "").replace(/"/g, '""')}"`,
+                        `"${(p.doubles_partner || "").replace(/"/g, '""')}"`,
+                        `"${(p.mixed_partner || "").replace(/"/g, '""')}"`
+                    ].join(","))
+                ].join("\n");
+
+                // Get tournament name from the card
+                const tournamentName = Array.from(document.querySelectorAll(".tournament-card strong"))
+                    .find(el => el.closest(".tournament-card"))?.textContent || "tournament";
+
+                // Download CSV
+                const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `${tournamentName}_players.csv`);
+                link.style.visibility = "hidden";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch (e) {
+                alert("Error downloading player data: " + e.message);
+            }
         }
 
         async function submitTournament(db, name) {

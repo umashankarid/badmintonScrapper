@@ -8,7 +8,7 @@
 </head>
 <body>
     <h1 id="tournament-name">Tournament</h1>
-    <a href="/">← Back to tournaments</a>
+    <a id="back-link" href="/">← Back to tournaments</a>
 
     <!-- Not logged in message -->
     <div id="login-prompt" style="display:none;">
@@ -94,6 +94,18 @@
         let currentPage = 1;
         let loggedInPlayer = null;
         let isAdmin = false;
+
+        // Set back link based on where we came from
+        const backLink = document.getElementById("back-link");
+        if (dbFile) {
+            // Coming from admin manage-tournaments page
+            backLink.href = "/manage-tournaments.html";
+            backLink.textContent = "← Back to tournaments";
+        } else {
+            // Coming from home page
+            backLink.href = "/";
+            backLink.textContent = "← Back to tournaments";
+        }
 
         // If we have a URL but no db, ensure the tournament exists
         async function ensureTournament() {
