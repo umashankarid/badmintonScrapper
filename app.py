@@ -1441,19 +1441,34 @@ def get_all_bwf_tournaments():
 
         logger.info(f"Found {len(tournaments)} tournaments from Badminton Sweden")
         
-        # Insert/update all tournaments in tournaments.db
+        # Sync tournaments to tournaments.db - preserve selected_for_view status
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
         for t in tournaments:
             try:
-                cur.execute("""
-                    INSERT OR REPLACE INTO tournaments 
-                    (tournament_url, tournament_name, location, date_start, date_end, last_updated)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (t["url"], t["name"], t["location"], t["date_start"], t["date_end"]))
+                # Check if tournament already exists
+                cur.execute("SELECT selected_for_view FROM tournaments WHERE tournament_url = ?", (t["url"],))
+                existing = cur.fetchone()
+                
+                if existing:
+                    # Tournament exists - preserve selected_for_view, update dates only
+                    cur.execute("""
+                        UPDATE tournaments 
+                        SET tournament_name = ?, location = ?, date_start = ?, date_end = ?, last_updated = CURRENT_TIMESTAMP
+                        WHERE tournament_url = ?
+                    """, (t["name"], t["location"], t["date_start"], t["date_end"], t["url"]))
+                    logger.debug(f"Updated existing tournament: {t['name']} (kept selection status)")
+                else:
+                    # New tournament - insert with selected_for_view = 0
+                    cur.execute("""
+                        INSERT INTO tournaments 
+                        (tournament_url, tournament_name, location, date_start, date_end, selected_for_view, last_updated)
+                        VALUES (?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                    """, (t["url"], t["name"], t["location"], t["date_start"], t["date_end"]))
+                    logger.debug(f"Added new tournament: {t['name']}")
             except Exception as e:
-                logger.error(f"Error inserting tournament {t['name']}: {e}")
+                logger.error(f"Error syncing tournament {t['name']}: {e}")
         
         conn.commit()
         
