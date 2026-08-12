@@ -1377,6 +1377,8 @@ def get_all_bwf_tournaments():
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.webdriver.chrome.options import Options
+        from webdriver_manager.chrome import ChromeDriverManager
+        from selenium.webdriver.chrome.service import Service
         import time
         
         # Configure Chrome options
@@ -1388,7 +1390,9 @@ def get_all_bwf_tournaments():
         chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
         
-        driver = webdriver.Chrome(options=chrome_options)
+        # Use webdriver-manager to auto-download ChromeDriver
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         try:
             logger.info("Loading tournament listing page...")
             driver.get("https://badmintonsweden.tournamentsoftware.com/find/tournament")
@@ -1454,6 +1458,15 @@ def get_all_bwf_tournaments():
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error in get_all_bwf_tournaments: {str(e)}", exc_info=True)
+        
+        # If Selenium fails (likely no Chrome), provide helpful error
+        if "chrome" in str(e).lower() or "driver" in str(e).lower():
+            return jsonify(
+                success=False, 
+                error="Chrome/Chromium not available. Please ensure headless Chrome is installed on the server.",
+                tournaments=[]
+            ), 500
+        
         return jsonify(success=False, error=str(e), tournaments=[]), 500
 
 
