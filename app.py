@@ -345,6 +345,11 @@ def admin_page():
     return send_from_directory("templates", "admin.html")
 
 
+@app.route("/manage-tournaments.html")
+def manage_tournaments_page():
+    return send_from_directory("templates", "manage-tournaments.html")
+
+
 @app.route("/login.html")
 def login_page():
     return send_from_directory("templates", "login.html")
