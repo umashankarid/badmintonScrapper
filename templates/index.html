@@ -21,25 +21,32 @@
     </div>
 
     <p id="loading-msg" style="display:none;">Loading tournaments with open registration...</p>
-    <div id="login-section" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;">
-        <div style="background:white;max-width:450px;padding:40px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
-            <h2 style="color:#1a237e;text-align:center;margin-bottom:10px;">BMK Komet Tournament Registration</h2>
-            <p style="color:#666;text-align:center;font-size:0.95em;margin-bottom:30px;">Login with your Badminton Sweden account</p>
+    <div id="login-section" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:90vh;padding:20px;">
+        <div style="background:white;max-width:480px;padding:50px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);position:relative;overflow:hidden;">
+            <!-- Decorative top bar -->
+            <div style="position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg, #0d47a1, #1a237e,#0d47a1);"></div>
             
-            <form id="bwf-login-form">
-                <label for="bwf-email">Email / Username</label>
-                <input type="text" id="bwf-email" placeholder="Email or username" required>
-                <label for="bwf-password">Password</label>
-                <input type="password" id="bwf-password" placeholder="Password" required>
-                <button type="submit" style="background:#0d47a1;">Login</button>
-                <p id="bwf-error" style="color:red;display:none;margin-top:10px;text-align:center;"></p>
+            <h2 style="color:#1a237e;text-align:center;margin-bottom:15px;font-size:1.8em;">BMK Komet</h2>
+            <p style="color:#0d47a1;text-align:center;font-size:0.95em;margin-bottom:30px;font-weight:500;">Tournament Registration System</p>
+            
+            <form id="bwf-login-form" style="margin:0;">
+                <label for="bwf-email" style="color:#1a237e;font-weight:600;display:block;margin-bottom:8px;">Email / Username</label>
+                <input type="text" id="bwf-email" placeholder="Enter your email or username" required style="margin-bottom:15px;">
+                
+                <label for="bwf-password" style="color:#1a237e;font-weight:600;display:block;margin-bottom:8px;">Password</label>
+                <input type="password" id="bwf-password" placeholder="Enter your password" required style="margin-bottom:20px;">
+                
+                <button type="submit" style="background:linear-gradient(135deg, #0d47a1, #1a237e);font-size:1.05em;padding:14px;margin-bottom:15px;">Login to Your Account</button>
+                <p id="bwf-error" style="color:#d32f2f;display:none;margin-top:15px;text-align:center;background:#ffebee;padding:12px;border-radius:8px;"></p>
             </form>
             
-            <div style="border-top:1px solid #ddd;padding-top:20px;margin-top:30px;text-align:center;">
-                <p style="color:#666;font-size:0.9em;margin-bottom:10px;">Don't have a Badminton Sweden account?</p>
-                <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="color:#0066cc;text-decoration:none;font-weight:bold;">Create an account here</a>
+            <div style="border-top:2px solid #eee;padding-top:25px;margin-top:25px;text-align:center;">
+                <p style="color:#666;font-size:0.9em;margin-bottom:12px;">New to Badminton Sweden?</p>
+                <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="display:inline-block;color:white;background:linear-gradient(135deg, #0d47a1, #1a237e);text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px;transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 4px 12px rgba(0,0,0,0.1);">Create Account</a>
             </div>
         </div>
+        
+        <p style="color:#666;text-align:center;margin-top:30px;font-size:0.9em;max-width:480px;">Use the same login credentials as your Badminton Sweden account to access tournaments and manage your registrations.</p>
     </div>
     <div id="tournaments" style="display:none;"></div>
 

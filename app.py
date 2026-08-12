@@ -920,6 +920,7 @@ def send_test_email():
 # --- Tournament CRUD ---
 @app.route("/api/tournaments", methods=["GET"])
 def list_tournaments():
+    """List only tournaments that have registered players"""
     if not os.path.exists(TOURNAMENTS_DIR):
         return jsonify([])
     files = [f for f in os.listdir(TOURNAMENTS_DIR) if f.endswith(".db")]
@@ -930,18 +931,23 @@ def list_tournaments():
             continue
         cur = conn.cursor()
         try:
-            cur.execute("SELECT name, levels, competition_date, final_registration_date, final_cancellation_date FROM tournaments LIMIT 1")
-            row = cur.fetchone()
-            if row:
-                levels = json.loads(row[1]) if row[1] else []
-                tournaments.append({
-                    "name": row[0],
-                    "db": f,
-                    "levels": levels,
-                    "competition_date": row[2],
-                    "final_registration_date": row[3],
-                    "final_cancellation_date": row[4],
-                })
+            # Check if tournament has any registered players
+            cur.execute("SELECT COUNT(*) FROM players")
+            player_count = cur.fetchone()[0]
+            
+            if player_count > 0:
+                cur.execute("SELECT name, levels, competition_date, final_registration_date, final_cancellation_date FROM tournaments LIMIT 1")
+                row = cur.fetchone()
+                if row:
+                    levels = json.loads(row[1]) if row[1] else []
+                    tournaments.append({
+                        "name": row[0],
+                        "db": f,
+                        "levels": levels,
+                        "competition_date": row[2],
+                        "final_registration_date": row[3],
+                        "final_cancellation_date": row[4],
+                    })
         except sqlite3.OperationalError:
             pass
         finally:
@@ -1408,17 +1414,14 @@ def open_tournaments():
         
         # Filter to only show tournaments marked as visible by admin
         visible_tournaments = []
-        if session.get("admin"):
-            # Admins see all tournaments
-            visible_tournaments = tournaments
-        else:
-            # Regular users see only marked visible tournaments
-            conn = sqlite3.connect(ADMIN_DB)
-            cur = conn.cursor()
-            cur.execute("SELECT tournament_url FROM bwf_tournament_visibility WHERE visible=1")
-            visible_urls = {row[0] for row in cur.fetchall()}
-            conn.close()
-            visible_tournaments = [t for t in tournaments if t["url"] in visible_urls]
+        conn = sqlite3.connect(ADMIN_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT tournament_url FROM bwf_tournament_visibility WHERE visible=1")
+        visible_urls = {row[0] for row in cur.fetchall()}
+        conn.close()
+        
+        # Both admins and regular users see only marked visible tournaments
+        visible_tournaments = [t for t in tournaments if t["url"] in visible_urls]
 
         return jsonify(success=True, tournaments=visible_tournaments)
     except Exception as e:
