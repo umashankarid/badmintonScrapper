@@ -1356,17 +1356,9 @@ def get_all_bwf_tournaments():
             "CookieWallCategoryPreferences": "1,2,3"
         }, allow_redirects=True, timeout=5)
 
-        start = datetime.now().strftime("%Y-%m-%dT00:00")
-        end = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%dT00:00")
-
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data={
-                "TournamentExtendedFilter.StatusFilterID": "2",
-                "StartDate": start,
-                "EndDate": end,
-            },
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
+        # Try fetching the tournament listing page directly
+        listing_resp = s.get("https://badmintonsweden.tournamentsoftware.com/find/tournament", timeout=10)
+        resp = listing_resp
         soup = BeautifulSoup(resp.text, "html.parser")
 
         tournaments = []

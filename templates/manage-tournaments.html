@@ -413,26 +413,38 @@
         }
 
         async function loadBWFTournaments() {
-            const res = await fetch("/api/bwf-tournaments-all");
-            const data = await res.json();
             const container = document.getElementById("bwf-tournaments-list");
+            container.innerHTML = "<p style='color: #999;'>Loading tournaments from Badminton Sweden...</p>";
             
-            if (!data.success || !data.tournaments.length) {
-                container.innerHTML = "<p>No tournaments found on Badminton Sweden.</p>";
-                return;
-            }
+            try {
+                const res = await fetch("/api/bwf-tournaments-all");
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    container.innerHTML = `<p style="color: red;">Error: ${data.error || 'Failed to load tournaments'}</p>`;
+                    return;
+                }
+                
+                if (!data.success || !data.tournaments || !data.tournaments.length) {
+                    container.innerHTML = "<p>No tournaments currently available on Badminton Sweden.<br><small style='color: #999;'>This might mean there are no tournaments scheduled in the near future, or the website is temporarily unavailable.</small></p>";
+                    return;
+                }
 
-            container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
-                data.tournaments.map(t => `
-                    <label style="display: flex; align-items: center; gap: 12px; padding: 10px; background: rgba(255,255,255,0.9); border-radius: 8px; cursor: pointer;">
-                        <input type="checkbox" class="bwf-tournament-checkbox" data-url="${t.url}" data-name="${t.name.replace(/"/g, '&quot;')}" ${t.visible ? 'checked' : ''} style="cursor: pointer; width: 18px; height: 18px;">
-                        <div style="flex: 1;">
-                            <div style="font-weight: bold;">${t.name}</div>
-                            <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
-                        </div>
-                    </label>
-                `).join("") +
-                `</div>`;
+                container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
+                    data.tournaments.map(t => `
+                        <label style="display: flex; align-items: center; gap: 12px; padding: 10px; background: rgba(255,255,255,0.9); border-radius: 8px; cursor: pointer;">
+                            <input type="checkbox" class="bwf-tournament-checkbox" data-url="${t.url}" data-name="${t.name.replace(/"/g, '&quot;')}" ${t.visible ? 'checked' : ''} style="cursor: pointer; width: 18px; height: 18px;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: bold;">${t.name}</div>
+                                <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
+                            </div>
+                        </label>
+                    `).join("") +
+                    `</div>`;
+            } catch (err) {
+                container.innerHTML = `<p style="color: red;">Error loading tournaments: ${err.message}</p>`;
+            }
+        }
         }
 
         async function saveBWFTournamentSelection() {
