@@ -142,6 +142,14 @@ def init_admin_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tournament_url TEXT UNIQUE NOT NULL,
             tournament_name TEXT,
+            location TEXT,
+            date_start TEXT,
+            date_end TEXT,
+            registration_opens TEXT,
+            registration_closes TEXT,
+            cancellation_deadline TEXT,
+            competition_start TEXT,
+            competition_end TEXT,
             visible INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -1314,12 +1322,12 @@ def get_bwf_tournament_visibility():
 
 @app.route("/api/bwf-tournament-visibility/save", methods=["POST"])
 def save_bwf_tournament_visibility():
-    """Save selected BWF tournaments"""
+    """Save selected BWF tournaments with their details"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
     data = request.json
-    selected_urls = data.get("urls", [])
+    selected_tournaments = data.get("tournaments", [])  # Array of tournament objects
     
     conn = sqlite3.connect(ADMIN_DB)
     cur = conn.cursor()
@@ -1327,12 +1335,29 @@ def save_bwf_tournament_visibility():
     # Mark all as not visible first
     cur.execute("UPDATE bwf_tournament_visibility SET visible=0")
     
-    # Set selected ones as visible
-    for url in selected_urls:
-        cur.execute(
-            "UPDATE bwf_tournament_visibility SET visible=1 WHERE tournament_url=?",
-            (url,)
-        )
+    # Insert or update selected tournaments with their details
+    for t in selected_tournaments:
+        try:
+            cur.execute("""
+                INSERT OR REPLACE INTO bwf_tournament_visibility 
+                (tournament_url, tournament_name, location, date_start, date_end, 
+                 registration_opens, registration_closes, cancellation_deadline, 
+                 competition_start, competition_end, visible)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            """, (
+                t.get("url"),
+                t.get("name"),
+                t.get("location"),
+                t.get("date_start"),
+                t.get("date_end"),
+                t.get("registration_opens"),
+                t.get("registration_closes"),
+                t.get("cancellation_deadline"),
+                t.get("competition_start"),
+                t.get("competition_end")
+            ))
+        except Exception as e:
+            logger.error(f"Error saving tournament {t.get('url')}: {e}")
     
     conn.commit()
     conn.close()
@@ -1465,152 +1490,42 @@ def get_all_bwf_tournaments():
 # --- Tournament info ---
 @app.route("/api/open-tournaments", methods=["GET"])
 def open_tournaments():
-    """Fetch tournaments with open registration from Badminton Sweden."""
+    """Fetch visible tournaments from database (not from Badminton Sweden)."""
     try:
-        from datetime import datetime, timedelta
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        start = datetime.now().strftime("%Y-%m-%dT00:00")
-        end = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%dT00:00")
-
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/find?StatusFilterID=2&DateFilterType=0&StartDate={start}&EndDate={end}&Distance=10&page=1&SportID=2", timeout=10)
-        page_soup = BeautifulSoup(resp.text, "html.parser")
-        form = page_soup.select_one("#form_globalsearch")
-        form_data = {}
-        if form:
-            for inp in form.find_all("input"):
-                name = inp.get("name", "")
-                value = inp.get("value", "")
-                if name:
-                    form_data[name] = value
-        form_data["TournamentExtendedFilter.StatusFilterID"] = "2"
-
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data=form_data,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        tournaments = []
-        import re
-        for item in soup.select("li.list__item"):
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
-
-            tournaments.append({
-                "name": name,
-                "url": tournament_url,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end
-            })
-
-        # Fetch detailed dates for each tournament from their detail pages
-        for t in tournaments:
-            try:
-                detail_resp = s.get(t["url"], timeout=10)
-                detail_soup = BeautifulSoup(detail_resp.text, "html.parser")
-                
-                # Extract registration and competition dates
-                timeline = detail_soup.select_one(".tournament-meta__timeline")
-                if timeline:
-                    for li in timeline.find_all("li"):
-                        label_el = li.select_one(".list__value")
-                        time_el = li.find("time")
-                        if label_el and time_el:
-                            label = label_el.get_text(strip=True).lower()
-                            # Try to get datetime attribute first, then fall back to text content
-                            datetime_val = time_el.get("datetime", "")[:10] if time_el.get("datetime") else None
-                            if not datetime_val:
-                                # Parse from text content like "Sat, 15 Aug 23:59"
-                                time_text = time_el.get_text(strip=True)
-                                # Try to extract date from format like "Sat, 15 Aug 23:59" or "Sat, Aug 29"
-                                import re
-                                from datetime import datetime as dt
-                                date_match = re.search(r'(\d{1,2})\s+(\w+)', time_text)
-                                if not date_match:
-                                    # Try format without day number: "Sat, Aug 29"
-                                    date_match = re.search(r',\s*(\w+)\s+(\d{1,2})', time_text)
-                                    if date_match:
-                                        month_str = date_match.group(1)
-                                        day = date_match.group(2)
-                                    else:
-                                        continue
-                                else:
-                                    day = date_match.group(1)
-                                    month_str = date_match.group(2)
-                                
-                                # Map month abbreviations to numbers
-                                months = {'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6,
-                                         'jul':7, 'aug':8, 'sep':9, 'oct':10, 'nov':11, 'dec':12}
-                                month = months.get(month_str.lower(), None)
-                                if month:
-                                    # Assume current year or next year based on current date
-                                    year = dt.now().year
-                                    # If the date is in the past, use next year
-                                    if dt(year, month, int(day)) < dt.now():
-                                        year = dt.now().year + 1
-                                    datetime_val = f"{year}-{month:02d}-{int(day):02d}"
-                            
-                            if datetime_val:
-                                if "closes" in label or "stänger" in label:
-                                    t["registration_closes"] = datetime_val
-                                elif "opens" in label or "öppnar" in label:
-                                    t["registration_opens"] = datetime_val
-                                elif "cancellation" in label or "återbud" in label:
-                                    t["cancellation_deadline"] = datetime_val
-                                elif "competition start" in label or "tävlingsstart" in label or ("start" in label and "competition" in label):
-                                    t["competition_start"] = datetime_val
-                                elif "competition end" in label or "end of competition" in label or "tävlingsslut" in label or ("end" in label and "competition" in label) or "slut" in label:
-                                    t["competition_end"] = datetime_val
-            except Exception as e:
-                # If we can't fetch details, continue with what we have
-                logger.debug(f"Could not fetch detail for {t.get('url', 'unknown')}: {str(e)}")
-                pass
-
-        # Save tournaments to visibility table (create entries if they don't exist)
-        conn = sqlite3.connect(ADMIN_DB)
-        for t in tournaments:
-            try:
-                conn.execute(
-                    "INSERT OR IGNORE INTO bwf_tournament_visibility (tournament_url, tournament_name) VALUES (?, ?)",
-                    (t["url"], t["name"])
-                )
-            except:
-                pass
-        conn.commit()
-        conn.close()
-        
-        # Filter to only show tournaments marked as visible by admin
-        visible_tournaments = []
         conn = sqlite3.connect(ADMIN_DB)
         cur = conn.cursor()
-        cur.execute("SELECT tournament_url FROM bwf_tournament_visibility WHERE visible=1")
-        visible_urls = {row[0] for row in cur.fetchall()}
+        
+        # Get tournaments that are marked as visible
+        cur.execute("""
+            SELECT tournament_url, tournament_name, location, date_start, date_end,
+                   registration_opens, registration_closes, cancellation_deadline,
+                   competition_start, competition_end
+            FROM bwf_tournament_visibility 
+            WHERE visible = 1 
+            ORDER BY registration_closes ASC, tournament_name ASC
+        """)
+        rows = cur.fetchall()
         conn.close()
         
-        # Both admins and regular users see only marked visible tournaments
-        visible_tournaments = [t for t in tournaments if t["url"] in visible_urls]
-
-        return jsonify(success=True, tournaments=visible_tournaments)
+        tournaments = []
+        for row in rows:
+            tournaments.append({
+                "url": row[0],
+                "name": row[1],
+                "location": row[2],
+                "date_start": row[3],
+                "date_end": row[4],
+                "registration_opens": row[5],
+                "registration_closes": row[6],
+                "cancellation_deadline": row[7],
+                "competition_start": row[8],
+                "competition_end": row[9]
+            })
+        
+        return jsonify(tournaments)
     except Exception as e:
-        return jsonify(success=False, error=str(e), tournaments=[]), 500
+        logger.error(f"Error fetching open tournaments from database: {str(e)}")
+        return jsonify([])
 
 
 @app.route("/api/my-registrations", methods=["GET"])

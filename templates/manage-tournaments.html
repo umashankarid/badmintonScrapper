@@ -433,7 +433,19 @@
                 container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
                     data.tournaments.map(t => `
                         <label style="display: flex; align-items: center; gap: 12px; padding: 10px; background: rgba(255,255,255,0.9); border-radius: 8px; cursor: pointer;">
-                            <input type="checkbox" class="bwf-tournament-checkbox" data-url="${t.url}" data-name="${t.name.replace(/"/g, '&quot;')}" ${t.visible ? 'checked' : ''} style="cursor: pointer; width: 18px; height: 18px;">
+                            <input type="checkbox" class="bwf-tournament-checkbox" 
+                                data-url="${t.url}" 
+                                data-name="${t.name.replace(/"/g, '&quot;')}"
+                                data-location="${(t.location || '').replace(/"/g, '&quot;')}"
+                                data-date-start="${t.date_start || ''}"
+                                data-date-end="${t.date_end || ''}"
+                                data-registration-opens="${t.registration_opens || ''}"
+                                data-registration-closes="${t.registration_closes || ''}"
+                                data-cancellation-deadline="${t.cancellation_deadline || ''}"
+                                data-competition-start="${t.competition_start || ''}"
+                                data-competition-end="${t.competition_end || ''}"
+                                ${t.visible ? 'checked' : ''} 
+                                style="cursor: pointer; width: 18px; height: 18px;">
                             <div style="flex: 1;">
                                 <div style="font-weight: bold;">${t.name}</div>
                                 <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
@@ -450,13 +462,24 @@
         async function saveBWFTournamentSelection() {
             const selected = [];
             document.querySelectorAll(".bwf-tournament-checkbox:checked").forEach(checkbox => {
-                selected.push(checkbox.dataset.url);
+                selected.push({
+                    url: checkbox.dataset.url,
+                    name: checkbox.dataset.name,
+                    location: checkbox.dataset.location,
+                    date_start: checkbox.dataset.dateStart,
+                    date_end: checkbox.dataset.dateEnd,
+                    registration_opens: checkbox.dataset.registrationOpens,
+                    registration_closes: checkbox.dataset.registrationCloses,
+                    cancellation_deadline: checkbox.dataset.cancellationDeadline,
+                    competition_start: checkbox.dataset.competitionStart,
+                    competition_end: checkbox.dataset.competitionEnd
+                });
             });
 
             const res = await fetch("/api/bwf-tournament-visibility/save", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({urls: selected})
+                body: JSON.stringify({tournaments: selected})
             });
             const data = await res.json();
             if (data.success) {
