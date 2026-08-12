@@ -1339,6 +1339,10 @@ def save_bwf_tournament_visibility():
     data = request.json
     selected_tournaments = data.get("tournaments", [])  # Array of tournament objects
     
+    logger.info(f"Received request to save {len(selected_tournaments)} tournaments")
+    if selected_tournaments:
+        logger.info(f"First tournament: {selected_tournaments[0]}")
+    
     conn = sqlite3.connect(ADMIN_DB)
     cur = conn.cursor()
     
@@ -1366,11 +1370,14 @@ def save_bwf_tournament_visibility():
                 t.get("competition_start"),
                 t.get("competition_end")
             ))
+            logger.debug(f"Saved tournament: {t.get('name')}")
         except Exception as e:
             logger.error(f"Error saving tournament {t.get('url')}: {e}")
     
     conn.commit()
     conn.close()
+    
+    logger.info(f"Successfully saved {len(selected_tournaments)} tournaments")
     trigger_sync()
     return jsonify(success=True)
 

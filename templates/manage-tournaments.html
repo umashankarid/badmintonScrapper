@@ -482,12 +482,16 @@
                 });
             });
 
+            console.log("Sending to save endpoint:", {count: selected.length, tournaments: selected});
+            
             const res = await fetch("/api/bwf-tournament-visibility/save", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({tournaments: selected})
             });
             const data = await res.json();
+            console.log("Save response:", data);
+            
             if (data.success) {
                 alert("Tournaments saved successfully! Users will now see the selected tournaments.");
             } else {
