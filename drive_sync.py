@@ -1,13 +1,15 @@
 """
 Google Drive sync module for SQLite databases
 Syncs .db files to/from Google Drive for persistent storage
+Uses OAuth 2.0 delegation (user's account) instead of service account
 """
 
 import os
 import json
 import logging
-from pathlib import Path
-from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
@@ -25,30 +27,44 @@ DB_FILES = [
 TOURNAMENTS_DIR = "tournaments"
 
 class GoogleDriveSync:
-    """Handle Google Drive sync for SQLite databases"""
+    """Handle Google Drive sync for SQLite databases using OAuth"""
     
     def __init__(self):
-        """Initialize Google Drive API client"""
+        """Initialize Google Drive API client with OAuth"""
         self.drive_service = None
         self.folder_id = None
         self.authenticated = False
         self._init_drive_client()
     
     def _init_drive_client(self):
-        """Initialize Google Drive client using service account credentials"""
+        """Initialize Google Drive client using OAuth credentials"""
         try:
-            # Get credentials from environment variable
-            creds_json = os.getenv('GOOGLE_DRIVE_CREDENTIALS')
-            if not creds_json:
-                logger.warning("⚠️  GOOGLE_DRIVE_CREDENTIALS not set - sync disabled")
+            # Get OAuth refresh token from environment
+            refresh_token = os.getenv('GOOGLE_DRIVE_REFRESH_TOKEN')
+            if not refresh_token:
+                logger.warning("⚠️  GOOGLE_DRIVE_REFRESH_TOKEN not set - sync disabled")
                 return False
             
-            # Parse service account credentials
-            creds_dict = json.loads(creds_json)
-            credentials = Credentials.from_service_account_info(
-                creds_dict,
+            # Get client ID and secret from environment
+            client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID')
+            client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET')
+            
+            if not client_id or not client_secret:
+                logger.warning("⚠️  GOOGLE_DRIVE_CLIENT_ID or GOOGLE_DRIVE_CLIENT_SECRET not set")
+                return False
+            
+            # Create credentials from refresh token
+            credentials = Credentials(
+                token=None,  # Will be refreshed
+                refresh_token=refresh_token,
+                token_uri='https://oauth2.googleapis.com/token',
+                client_id=client_id,
+                client_secret=client_secret,
                 scopes=['https://www.googleapis.com/auth/drive']
             )
+            
+            # Refresh to get valid access token
+            credentials.refresh(Request())
             
             # Build Drive service
             self.drive_service = build('drive', 'v3', credentials=credentials)
@@ -62,7 +78,7 @@ class GoogleDriveSync:
                 self._create_sync_folder()
             
             self.authenticated = True
-            logger.info("✅ Google Drive client initialized")
+            logger.info("✅ Google Drive client initialized (OAuth)")
             return True
             
         except Exception as e:
