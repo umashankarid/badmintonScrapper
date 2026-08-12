@@ -74,8 +74,13 @@
         </div>
     </div>
 
-    <p id="loading-msg">Loading tournaments with open registration...</p>
-    <div id="tournaments"></div>
+    <p id="loading-msg" style="display:none;">Loading tournaments with open registration...</p>
+    <div id="login-section">
+        <h2>Welcome to Badminton Tournaments</h2>
+        <p style="color:#666;font-size:1.05em;margin-bottom:20px;">Please login to view available tournaments</p>
+        <button id="bwf-login-btn" onclick="document.getElementById('bwf-login-modal').style.display='block'" style="width:auto;padding:12px 24px;font-size:1.05em;">Login with Badminton Sweden</button>
+    </div>
+    <div id="tournaments" style="display:none;"></div>
 
     <script>
         async function checkBwfStatus() {
@@ -86,22 +91,28 @@
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "flex";
                 document.getElementById("manage-admin-btn").style.display = "block";
+                document.getElementById("login-section").style.display = "none";
+                document.getElementById("tournaments").style.display = "block";
                 let display = data.player_name;
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("admin-player-info").textContent = "Admin: " + display;
             } else if (data.logged_in) {
                 document.getElementById("bwf-user").style.display = "flex";
                 document.getElementById("manage-admin-btn").style.display = "none";
+                document.getElementById("bwf-login-btn").style.display = "none";
+                document.getElementById("admin-info").style.display = "none";
+                document.getElementById("login-section").style.display = "none";
+                document.getElementById("tournaments").style.display = "block";
                 let display = data.player_name;
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("bwf-player-info").textContent = display;
-                document.getElementById("bwf-login-btn").style.display = "none";
-                document.getElementById("admin-info").style.display = "none";
             } else {
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "none";
                 document.getElementById("bwf-login-btn").style.display = "block";
                 document.getElementById("manage-admin-btn").style.display = "none";
+                document.getElementById("login-section").style.display = "block";
+                document.getElementById("tournaments").style.display = "none";
             }
         }
 

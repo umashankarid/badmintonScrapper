@@ -137,6 +137,15 @@ def init_admin_db():
             competition_date TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS bwf_tournament_visibility (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_url TEXT UNIQUE NOT NULL,
+            tournament_name TEXT,
+            visible INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -1281,6 +1290,50 @@ def toggle_tournament_visibility():
     return jsonify(success=True)
 
 
+@app.route("/api/bwf-tournament-visibility", methods=["GET"])
+def get_bwf_tournament_visibility():
+    """Get list of all BWF tournaments and their visibility status"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT tournament_url, tournament_name, visible FROM bwf_tournament_visibility ORDER BY tournament_name")
+    rows = cur.fetchall()
+    conn.close()
+    
+    tournaments = [{"url": row[0], "name": row[1], "visible": row[2]} for row in rows]
+    return jsonify(success=True, tournaments=tournaments)
+
+
+@app.route("/api/bwf-tournament-visibility/save", methods=["POST"])
+def save_bwf_tournament_visibility():
+    """Save selected BWF tournaments"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    selected_urls = data.get("urls", [])
+    
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    
+    # Mark all as not visible first
+    cur.execute("UPDATE bwf_tournament_visibility SET visible=0")
+    
+    # Set selected ones as visible
+    for url in selected_urls:
+        cur.execute(
+            "UPDATE bwf_tournament_visibility SET visible=1 WHERE tournament_url=?",
+            (url,)
+        )
+    
+    conn.commit()
+    conn.close()
+    trigger_sync()
+    return jsonify(success=True)
+
+
 # --- Tournament info ---
 @app.route("/api/open-tournaments", methods=["GET"])
 def open_tournaments():
@@ -1340,7 +1393,34 @@ def open_tournaments():
                 "date_end": date_end
             })
 
-        return jsonify(success=True, tournaments=tournaments)
+        # Save tournaments to visibility table (create entries if they don't exist)
+        conn = sqlite3.connect(ADMIN_DB)
+        for t in tournaments:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO bwf_tournament_visibility (tournament_url, tournament_name) VALUES (?, ?)",
+                    (t["url"], t["name"])
+                )
+            except:
+                pass
+        conn.commit()
+        conn.close()
+        
+        # Filter to only show tournaments marked as visible by admin
+        visible_tournaments = []
+        if session.get("admin"):
+            # Admins see all tournaments
+            visible_tournaments = tournaments
+        else:
+            # Regular users see only marked visible tournaments
+            conn = sqlite3.connect(ADMIN_DB)
+            cur = conn.cursor()
+            cur.execute("SELECT tournament_url FROM bwf_tournament_visibility WHERE visible=1")
+            visible_urls = {row[0] for row in cur.fetchall()}
+            conn.close()
+            visible_tournaments = [t for t in tournaments if t["url"] in visible_urls]
+
+        return jsonify(success=True, tournaments=visible_tournaments)
     except Exception as e:
         return jsonify(success=False, error=str(e), tournaments=[]), 500
 
