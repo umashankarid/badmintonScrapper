@@ -10,6 +10,12 @@
     <h1 id="tournament-name">Tournament</h1>
     <a id="back-link" href="/">← Back to tournaments</a>
 
+    <!-- Warnings banner -->
+    <div id="warnings-banner" style="display:none;margin:15px 0;padding:15px;border-radius:8px;border:2px solid #ff6f00;background:#fff3e0;">
+        <h3 style="color:#e65100;margin:0 0 10px 0;">⚠️ Registration Warnings</h3>
+        <div id="warnings-list"></div>
+    </div>
+
     <!-- Not logged in message -->
     <div id="login-prompt" style="display:none;">
         <p style="color:#cc3333;font-weight:bold;">You must be logged in to register for this tournament. <a href="/">Go to homepage to login</a></p>
@@ -963,7 +969,60 @@
                 });
             }
             await loadPlayers();
+            await loadWarnings();
         }
+
+        async function loadWarnings() {
+            if (!dbFile) return;
+            
+            try {
+                let url = `/api/tournament-warnings?dbFile=${encodeURIComponent(dbFile)}`;
+                
+                // If player (not admin), only fetch their own warnings
+                if (!isAdmin && loggedInPlayer && loggedInPlayer.license_id) {
+                    url += `&license_id=${encodeURIComponent(loggedInPlayer.license_id)}`;
+                }
+                
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (!data.success || !data.warnings || !data.warnings.length) {
+                    document.getElementById("warnings-banner").style.display = "none";
+                    return;
+                }
+                
+                const banner = document.getElementById("warnings-banner");
+                const list = document.getElementById("warnings-list");
+                
+                if (isAdmin) {
+                    // Admin sees all warnings grouped by player
+                    const grouped = {};
+                    data.warnings.forEach(w => {
+                        if (!grouped[w.player_name]) grouped[w.player_name] = [];
+                        grouped[w.player_name].push(w);
+                    });
+                    
+                    list.innerHTML = Object.entries(grouped).map(([name, warns]) => {
+                        const items = warns.map(w => {
+                            const icon = w.type === "age" ? "🔴" : "🟡";
+                            return `<div style="margin:3px 0;padding:4px 8px;background:${w.type === 'age' ? '#ffebee' : '#fff8e1'};border-radius:4px;font-size:0.9em;">${icon} ${w.message}</div>`;
+                        }).join("");
+                        return `<div style="margin-bottom:10px;"><strong>${name}</strong>${items}</div>`;
+                    }).join("");
+                } else {
+                    // Player sees only their own warnings
+                    list.innerHTML = data.warnings.map(w => {
+                        const icon = w.type === "age" ? "🔴" : "🟡";
+                        return `<div style="margin:5px 0;padding:8px 12px;background:${w.type === 'age' ? '#ffebee' : '#fff8e1'};border-radius:4px;">${icon} ${w.message}</div>`;
+                    }).join("");
+                }
+                
+                banner.style.display = "block";
+            } catch (e) {
+                console.error("Error loading warnings:", e);
+            }
+        }
+
         init();
     </script>
 </body>

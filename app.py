@@ -949,6 +949,183 @@ def validate_registration():
     return jsonify(success=True, allowed=not blocked, message=message)
 
 
+@app.route("/api/tournament-warnings", methods=["GET"])
+def get_tournament_warnings():
+    """Check all registrations in a tournament for age/point violations.
+    Returns warnings for admin view and per-player warnings."""
+    tournament_name = request.args.get("dbFile", "").strip()
+    license_id_filter = request.args.get("license_id", "").strip()  # Optional: filter for specific player
+    
+    if not tournament_name:
+        return jsonify(success=True, warnings=[])
+    
+    try:
+        # Get tournament competition date
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT competition_start FROM tournaments WHERE tournament_name = ?", (tournament_name,))
+        row = cur.fetchone()
+        competition_date = row[0] if row else ""
+        
+        # Get all registrations
+        query = """
+            SELECT tr.license_id, tr.singles_levels, tr.doubles_levels, tr.mixed_levels
+            FROM tournament_registrations tr
+            WHERE tr.tournament_name = ?
+        """
+        params = [tournament_name]
+        if license_id_filter:
+            query += " AND tr.license_id = ?"
+            params.append(license_id_filter)
+        
+        cur.execute(query, params)
+        registrations = cur.fetchall()
+        conn.close()
+        
+        # Get point rules
+        conn_rules = sqlite3.connect(POINTS_DB)
+        conn_rules.row_factory = sqlite3.Row
+        cur_rules = conn_rules.cursor()
+        cur_rules.execute("SELECT * FROM point_rules")
+        all_rules = {row["klass"]: dict(row) for row in cur_rules.fetchall()}
+        conn_rules.close()
+        
+        # Get player data (name, dob, ranking) from players.db
+        conn_players = sqlite3.connect(PLAYERS_DB)
+        cur_players = conn_players.cursor()
+        
+        warnings = []
+        
+        for reg in registrations:
+            reg_license_id = reg[0]
+            singles_levels = reg[1] or ""
+            doubles_levels = reg[2] or ""
+            mixed_levels = reg[3] or ""
+            
+            # Get player info
+            cur_players.execute("SELECT name, dob, age, ranking FROM players WHERE license_id = ?", (reg_license_id,))
+            player_row = cur_players.fetchone()
+            if not player_row:
+                continue
+            
+            player_name = player_row[0] or "Unknown"
+            player_dob = player_row[1] or ""
+            player_age = player_row[2] or ""
+            player_ranking_json = player_row[3] or ""
+            
+            try:
+                player_ranking = json.loads(player_ranking_json) if player_ranking_json else {}
+            except Exception:
+                player_ranking = {}
+            
+            # Check each registered category
+            all_levels = []
+            if singles_levels:
+                for lvl in singles_levels.split(","):
+                    lvl = lvl.strip()
+                    if lvl:
+                        parts = lvl.split(" ", 1)
+                        all_levels.append({"event": lvl, "category": parts[0], "level": parts[1] if len(parts) > 1 else ""})
+            if doubles_levels:
+                for lvl in doubles_levels.split(","):
+                    lvl = lvl.strip()
+                    if lvl:
+                        parts = lvl.split(" ", 1)
+                        all_levels.append({"event": lvl, "category": parts[0], "level": parts[1] if len(parts) > 1 else ""})
+            if mixed_levels:
+                for lvl in mixed_levels.split(","):
+                    lvl = lvl.strip()
+                    if lvl:
+                        parts = lvl.split(" ", 1)
+                        all_levels.append({"event": lvl, "category": parts[0], "level": parts[1] if len(parts) > 1 else ""})
+            
+            for entry in all_levels:
+                category = entry["category"]
+                level = entry["level"]
+                event = entry["event"]
+                
+                if not level:
+                    continue
+                
+                # Age check for adult classes
+                adult_classes = {"Elit", "A", "B", "C", "D"}
+                if level in adult_classes and player_dob:
+                    try:
+                        from datetime import datetime as dt_cls
+                        birth = dt_cls.strptime(player_dob, "%Y-%m-%d")
+                        check_date = dt_cls.now()
+                        if competition_date:
+                            try:
+                                check_date = dt_cls.strptime(competition_date, "%Y-%m-%d")
+                            except Exception:
+                                pass
+                        
+                        year_turn_13 = birth.year + 13
+                        age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
+                        
+                        if age_at_comp < 13:
+                            warnings.append({
+                                "license_id": reg_license_id,
+                                "player_name": player_name,
+                                "type": "age",
+                                "event": event,
+                                "message": f"{player_name} is {age_at_comp} years old. Must be at least 13 to play {level} class."
+                            })
+                            continue  # Skip point check if age is already an issue
+                        
+                        if check_date.year == year_turn_13 and check_date.month < 6:
+                            warnings.append({
+                                "license_id": reg_license_id,
+                                "player_name": player_name,
+                                "type": "age",
+                                "event": event,
+                                "message": f"{player_name} turns 13 in {year_turn_13}. Can only play {level} class after June {year_turn_13}."
+                            })
+                            continue
+                    except Exception:
+                        pass
+                
+                # Point check for adult classes
+                if level in adult_classes:
+                    rule = all_rules.get(level)
+                    if rule:
+                        col_min = f"{category.lower()}_min"
+                        col_max = f"{category.lower()}_max"
+                        min_pts = rule.get(col_min)
+                        max_pts = rule.get(col_max)
+                        
+                        cat_ranking = player_ranking.get(category, {})
+                        points_str = cat_ranking.get("points", "")
+                        if points_str:
+                            try:
+                                points = int(points_str)
+                                if min_pts is not None and points < min_pts:
+                                    warnings.append({
+                                        "license_id": reg_license_id,
+                                        "player_name": player_name,
+                                        "type": "points",
+                                        "event": event,
+                                        "message": f"{player_name}: {category} points ({points}) below minimum ({min_pts}) for {level} class."
+                                    })
+                                elif max_pts is not None and points > max_pts:
+                                    warnings.append({
+                                        "license_id": reg_license_id,
+                                        "player_name": player_name,
+                                        "type": "points",
+                                        "event": event,
+                                        "message": f"{player_name}: {category} points ({points}) exceed maximum ({max_pts}) for {level} class."
+                                    })
+                            except ValueError:
+                                pass
+        
+        conn_players.close()
+        return jsonify(success=True, warnings=warnings)
+    
+    except Exception as e:
+        logger.error(f"❌ Error checking tournament warnings: {e}")
+        return jsonify(success=True, warnings=[])
+
+
 @app.route("/api/admin-exists", methods=["GET"])
 def admin_exists():
     return jsonify(exists=True)
