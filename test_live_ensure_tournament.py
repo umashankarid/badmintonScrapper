@@ -71,7 +71,7 @@ conn = sqlite3.connect(TOURNAMENTS_DB)
 cur = conn.cursor()
 
 cur.execute("""
-    SELECT id, tournament_url, tournament_name, location, date_start, date_end,
+    SELECT tournament_url, tournament_name, location, date_start, date_end,
            registration_opens, registration_closes, cancellation_deadline,
            competition_start, competition_end, selected_for_view
     FROM tournaments WHERE tournament_url = ?
@@ -84,7 +84,7 @@ if not row:
     print(f"  ❌ No record found in database!")
     exit(1)
 
-col_names = ['id', 'tournament_url', 'tournament_name', 'location', 'date_start', 'date_end',
+col_names = ['tournament_url', 'tournament_name', 'location', 'date_start', 'date_end',
              'registration_opens', 'registration_closes', 'cancellation_deadline',
              'competition_start', 'competition_end', 'selected_for_view']
 

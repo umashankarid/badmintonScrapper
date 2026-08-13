@@ -177,7 +177,7 @@ class TestTournamentRegistrations(unittest.TestCase):
         cur = conn.cursor()
         
         # Get tournament ID
-        cur.execute("SELECT id FROM tournaments WHERE tournament_name=?", ("Test Tournament",))
+        cur.execute("SELECT tournament_name FROM tournaments WHERE tournament_name=?", ("Test Tournament",))
         tournament_id = cur.fetchone()[0]
         
         # Register player (normalized: use license_id FK)

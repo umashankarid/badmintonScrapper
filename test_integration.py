@@ -76,30 +76,30 @@ class TestDatabaseIntegration(unittest.TestCase):
             VALUES (?, ?, ?, ?, ?)
         """, ("https://example.com/t1", "Test Tournament", "Stockholm", future_date, 1))
         
-        # Step 2: Get tournament ID
-        cur.execute("SELECT id FROM tournaments WHERE tournament_name=?", ("Test Tournament",))
-        tournament_id = cur.fetchone()[0]
+        # Step 2: Get tournament name
+        cur.execute("SELECT tournament_name FROM tournaments WHERE tournament_name=?", ("Test Tournament",))
+        tournament_name = cur.fetchone()[0]
         
-        # Step 3: Register player
+        # Step 3: Register player in unified tournament_registrations table
         cur.execute("""
-            INSERT INTO tournament_1_registrations
-            (license_id, singles_level, doubles_level, mixed_level)
-            VALUES (?, ?, ?, ?)
-        """, ("test_license_123", "A", "B", "C"))
+            INSERT INTO tournament_registrations
+            (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels)
+            VALUES (?, ?, ?, ?, ?)
+        """, (tournament_name, "test_license_123", "A", "B", "C"))
         
         conn.commit()
         
         # Step 4: Verify registration exists
         cur.execute("""
-            SELECT COUNT(*) FROM tournament_1_registrations 
-            WHERE license_id=?
-        """, ("test_license_123",))
+            SELECT COUNT(*) FROM tournament_registrations 
+            WHERE tournament_name=? AND license_id=?
+        """, (tournament_name, "test_license_123"))
         count = cur.fetchone()[0]
         
         conn.close()
         
         # Verify
-        self.assertEqual(tournament_id, 1)
+        self.assertEqual(tournament_name, "Test Tournament")
         self.assertEqual(count, 1)
     
     def test_tournament_visibility_filtering(self):

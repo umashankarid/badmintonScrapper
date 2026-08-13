@@ -174,12 +174,11 @@ def init_tournaments_db():
     """Initialize tournaments.db with tournament and registration tables"""
     conn = sqlite3.connect(TOURNAMENTS_DB)
     
-    # Tournament metadata table
+    # Tournament metadata table - tournament_name is PRIMARY KEY
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournaments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_name TEXT PRIMARY KEY UNIQUE NOT NULL,
             tournament_url TEXT UNIQUE NOT NULL,
-            tournament_name TEXT NOT NULL,
             location TEXT,
             date_start TEXT,
             date_end TEXT,
@@ -195,11 +194,11 @@ def init_tournaments_db():
         )
     """)
     
-    # Player registrations for tournaments (NORMALIZED - references players table)
+    # Player registrations for tournaments - references tournament_name
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournament_registrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tournament_id INTEGER NOT NULL,
+            tournament_name TEXT NOT NULL,
             license_id TEXT NOT NULL,
             singles_levels TEXT,
             doubles_levels TEXT,
@@ -207,7 +206,8 @@ def init_tournaments_db():
             doubles_partner TEXT,
             mixed_partner TEXT,
             registration_date TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+            UNIQUE(tournament_name, license_id),
+            FOREIGN KEY (tournament_name) REFERENCES tournaments(tournament_name),
             FOREIGN KEY (license_id) REFERENCES players(license_id)
         )
     """)
@@ -363,7 +363,7 @@ def get_tournament_by_url(tournament_url):
         return None
 
 
-def get_player_registrations_for_tournament(tournament_id):
+def get_player_registrations_for_tournament(tournament_name):
     """Get all player registrations for a tournament with player data via JOIN"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
@@ -378,9 +378,9 @@ def get_player_registrations_for_tournament(tournament_id):
                    r.doubles_partner, r.mixed_partner, r.registration_date
             FROM tournament_registrations r
             JOIN players_db.players p ON r.license_id = p.license_id
-            WHERE r.tournament_id=?
+            WHERE r.tournament_name=?
             ORDER BY r.registration_date DESC
-        """, (tournament_id,))
+        """, (tournament_name,))
         
         rows = cur.fetchall()
         conn.close()
@@ -408,7 +408,7 @@ def get_player_registrations_for_tournament(tournament_id):
         return []
 
 
-def register_player_in_tournament(tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner):
+def register_player_in_tournament(tournament_name, player_name, license_id, club, gender, email, phone, dob, age, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner):
     """Register a player for a tournament (uses normalized schema with FK to players)"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
@@ -416,35 +416,34 @@ def register_player_in_tournament(tournament_id, player_name, license_id, club, 
         # NORMALIZED: Store only tournament-specific fields + license_id FK
         # Player data (name, club, gender, email, phone, dob, age, ranking) come from players table
         conn.execute("""
-            INSERT INTO tournament_registrations
-            (tournament_id, license_id, singles_levels, doubles_levels, mixed_levels, 
+            INSERT INTO tournament_registrations (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels, 
              doubles_partner, mixed_partner)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (tournament_id, license_id, singles_levels, doubles_levels, mixed_levels, 
+        """, (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels, 
               doubles_partner, mixed_partner))
         
         conn.commit()
         conn.close()
-        logger.info(f"✅ Registered {player_name} ({license_id}) for tournament {tournament_id}")
+        logger.info(f"✅ Registered {player_name} ({license_id}) for tournament {tournament_name}")
         return True
     except Exception as e:
         logger.error(f"❌ Error registering player: {e}")
         return False
 
 
-def delete_player_from_tournament(tournament_id, license_id):
+def delete_player_from_tournament(tournament_name, license_id):
     """Delete a player registration from a tournament"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
         
         conn.execute("""
             DELETE FROM tournament_registrations
-            WHERE tournament_id=? AND license_id=?
-        """, (tournament_id, license_id))
+            WHERE tournament_name=? AND license_id=?
+        """, (tournament_name, license_id))
         
         conn.commit()
         conn.close()
-        logger.info(f"✅ Removed player {license_id} from tournament {tournament_id}")
+        logger.info(f"✅ Removed player {license_id} from tournament {tournament_name}")
         return True
     except Exception as e:
         logger.error(f"❌ Error deleting player: {e}")
@@ -1174,39 +1173,39 @@ def list_tournaments():
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get distinct tournament_ids from registrations, with their data if available
+        # Get distinct tournament_names from registrations, with their data
         cur.execute("""
-            SELECT DISTINCT tr.tournament_id, 
-                   COALESCE(t.tournament_name, 'Unknown Tournament'),
-                   COALESCE(t.location, ''),
-                   COALESCE(t.date_start, ''),
-                   COALESCE(t.date_end, '')
+            SELECT DISTINCT tr.tournament_name, 
+                   t.tournament_name,
+                   t.location,
+                   t.date_start,
+                   t.date_end
             FROM tournament_registrations tr
-            LEFT JOIN tournaments t ON tr.tournament_id = t.id
+            LEFT JOIN tournaments t ON tr.tournament_name = t.tournament_name
             ORDER BY COALESCE(t.date_start, '')
         """)
         
         tournaments = []
         for row in cur.fetchall():
-            tournament_id = row[0]
+            tournament_name = row[0]
             
             # Get registration count for this tournament
             cur.execute(
-                "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = ?",
-                (tournament_id,)
+                "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_name = ?",
+                (tournament_name,)
             )
             reg_count = cur.fetchone()[0]
             
             tournaments.append({
-                "id": tournament_id,
-                "db": tournament_id,  # For backward compatibility with frontend
-                "name": row[1],  # Keep both name formats
-                "tournament_name": row[1],
-                "location": row[2],
-                "date_start": row[3],
-                "date_end": row[4],
-                "competition_date": row[3],  # For compatibility
-                "final_registration_date": row[4],  # For compatibility
+                "id": tournament_name,
+                "db": tournament_name,  # Now tournament_name
+                "name": row[1] or tournament_name,
+                "tournament_name": row[1] or tournament_name,
+                "location": row[2] or "",
+                "date_start": row[3] or "",
+                "date_end": row[4] or "",
+                "competition_date": row[3] or "",
+                "final_registration_date": row[4] or "",
                 "registrations": reg_count
             })
         
@@ -1865,30 +1864,21 @@ def my_registrations():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT id, tournament_url, tournament_name
+            SELECT tournament_name, tournament_url
             FROM tournaments
         """)
         
         registered_urls = []
-        for tournament_id, tournament_url, tournament_name in cur.fetchall():
+        for tournament_name, tournament_url in cur.fetchall():
             # Check if player is registered in this tournament
-            table_name = f"tournament_{tournament_id}_registrations"
-            
-            # Check if table exists
             cur.execute("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name=?
-            """, (table_name,))
+                SELECT id FROM tournament_registrations 
+                WHERE tournament_name=? AND license_id=?
+            """, (tournament_name, license_id))
             
             if cur.fetchone():
-                # Check if player is in this table
-                cur.execute(f"""
-                    SELECT id FROM {table_name} WHERE license_id=?
-                """, (license_id,))
-                
-                if cur.fetchone():
-                    registered_urls.append(tournament_url)
-                    logger.debug(f"✅ Player registered for: {tournament_name}")
+                registered_urls.append(tournament_url)
+                logger.debug(f"✅ Player registered for: {tournament_name}")
         
         conn.close()
         logger.info(f"✅ Found {len(registered_urls)} registrations for player")
@@ -1915,15 +1905,15 @@ def ensure_tournament():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT id FROM tournaments WHERE tournament_url=?
+            SELECT tournament_name FROM tournaments WHERE tournament_url=?
         """, (url,))
         
         result = cur.fetchone()
         if result:
-            tournament_id = result[0]
+            tournament_name = result[0]
             conn.close()
-            logger.info(f"✅ Tournament already exists with ID: {tournament_id}")
-            return jsonify(success=True, tournament_id=tournament_id, db=tournament_id, created=False)
+            logger.info(f"✅ Tournament already exists with name: {tournament_name}")
+            return jsonify(success=True, tournament_id=tournament_name, db=tournament_name, created=False)
         
         conn.close()
         
@@ -2057,10 +2047,9 @@ def ensure_tournament():
             ))
             conn.commit()
             
-            # Get the ID
-            cur.execute("SELECT id FROM tournaments WHERE tournament_url = ?", (url,))
-            tournament_id = cur.fetchone()[0]
-            logger.info(f"✅ Added to tournaments.db with ID: {tournament_id}")
+            # Get the name to return
+            tournament_name = name
+            logger.info(f"✅ Added to tournaments.db with name: {tournament_name}")
             logger.info(f"   Saved dates:")
             logger.info(f"     registration_opens: {dates.get('registration_opens', '')}")
             logger.info(f"     registration_closes: {dates.get('registration_closes', '')}")
@@ -2070,14 +2059,14 @@ def ensure_tournament():
         except Exception as e:
             logger.warning(f"⚠️  Could not add to unified DB: {e}")
             logger.exception("Full traceback:")
-            tournament_id = None
+            tournament_name = None
         finally:
             conn.close()
 
         logger.info(f"✅ Tournament successfully added to unified tournaments.db")
         trigger_sync()  # Trigger debounced sync after tournament creation
         
-        return jsonify(success=True, tournament_id=tournament_id, db=tournament_id, created=True)
+        return jsonify(success=True, tournament_id=tournament_name, db=tournament_name, created=True)
     except Exception as e:
         logger.error(f"❌ Error in ensure_tournament: {e}")
         return jsonify(success=False, error=str(e)), 500
@@ -2123,9 +2112,9 @@ def get_tournament_events():
 @app.route("/api/tournament", methods=["GET"])
 def get_tournament_info():
     """Get tournament info including categories from tournaments.db"""
-    tournament_id = request.args.get("dbFile")  # This is the tournament ID from tournaments.db
+    tournament_name = request.args.get("dbFile")  # This is the tournament name from tournaments.db
     
-    if not tournament_id:
+    if not tournament_name:
         return jsonify(success=False, error="dbFile required"), 400
     
     try:
@@ -2134,8 +2123,8 @@ def get_tournament_info():
         
         cur.execute("""
             SELECT tournament_name, registration_closes, cancellation_deadline, categories
-            FROM tournaments WHERE id = ?
-        """, (tournament_id,))
+            FROM tournaments WHERE tournament_name = ?
+        """, (tournament_name,))
         
         row = cur.fetchone()
         
@@ -2143,14 +2132,14 @@ def get_tournament_info():
             # Tournament not found in tournaments table
             # Return minimal info from registrations if they exist
             cur.execute(
-                "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = ?",
-                (tournament_id,)
+                "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_name = ?",
+                (tournament_name,)
             )
             if cur.fetchone()[0] > 0:
                 # Registrations exist, return basic info
                 conn.close()
                 return jsonify(success=True, tournament={
-                    "name": f"Tournament {tournament_id}",
+                    "name": f"Tournament {tournament_name}",
                     "registration_closes": "",
                     "cancellation_deadline": "",
                     "categories": {}
@@ -2159,12 +2148,12 @@ def get_tournament_info():
                 conn.close()
                 return jsonify(success=False, error="Tournament not found"), 404
         
-        tournament_name, registration_closes, cancellation_deadline, categories_json = row
+        tournament_name_val, registration_closes, cancellation_deadline, categories_json = row
         categories = json.loads(categories_json) if categories_json else {}
         
         conn.close()
         return jsonify(success=True, tournament={
-            "name": tournament_name,
+            "name": tournament_name_val,
             "registration_closes": registration_closes or "",
             "cancellation_deadline": cancellation_deadline or "",
             "categories": categories
@@ -2179,11 +2168,11 @@ def get_tournament_info():
 @app.route("/api/tournament-players", methods=["GET"])
 def get_tournament_players():
     """Get registered players for a tournament"""
-    tournament_id = request.args.get("dbFile")  # This is the tournament ID from tournaments.db
+    tournament_name = request.args.get("dbFile")  # This is the tournament name from tournaments.db
     page = int(request.args.get("page", 1))
     page_size = int(request.args.get("pageSize", 20))
     
-    if not tournament_id:
+    if not tournament_name:
         return jsonify(success=False, error="dbFile required"), 400
     
     try:
@@ -2193,20 +2182,20 @@ def get_tournament_players():
         
         # Get total registered players
         cur.execute(
-            "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = ?",
-            (tournament_id,)
+            "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_name = ?",
+            (tournament_name,)
         )
         total = cur.fetchone()[0]
         
         # Get paginated registered players
         offset = (page - 1) * page_size
         cur.execute("""
-            SELECT id as player_id, tournament_id, license_id, singles_levels, doubles_levels, 
+            SELECT id as player_id, tournament_name, license_id, singles_levels, doubles_levels, 
                    mixed_levels, doubles_partner, mixed_partner, registration_date
             FROM tournament_registrations 
-            WHERE tournament_id = ? 
+            WHERE tournament_name = ? 
             LIMIT ? OFFSET ?
-        """, (tournament_id, page_size, offset))
+        """, (tournament_name, page_size, offset))
         
         players = [dict(row) for row in cur.fetchall()]
         conn.close()
@@ -2221,10 +2210,10 @@ def get_tournament_players():
 @app.route("/api/tournament-registrations", methods=["GET"])
 def get_tournament_registration():
     """Get a specific player's registration for a tournament"""
-    tournament_id = request.args.get("dbFile")
+    tournament_name = request.args.get("dbFile")
     license_id = request.args.get("license_id")
     
-    if not tournament_id or not license_id:
+    if not tournament_name or not license_id:
         return jsonify(success=False, error="dbFile and license_id required"), 400
     
     try:
@@ -2232,18 +2221,18 @@ def get_tournament_registration():
         cur = conn.cursor()
         
         # Verify tournament exists
-        cur.execute("SELECT id FROM tournaments WHERE id = ?", (tournament_id,))
+        cur.execute("SELECT tournament_name FROM tournaments WHERE tournament_name = ?", (tournament_name,))
         if not cur.fetchone():
             conn.close()
             return jsonify(success=False, error="Tournament not found"), 404
         
         # Get player's registration
         cur.execute("""
-            SELECT id, tournament_id, license_id, singles_levels, doubles_levels, 
+            SELECT id, tournament_name, license_id, singles_levels, doubles_levels, 
                    mixed_levels, doubles_partner, mixed_partner, registration_date
             FROM tournament_registrations 
-            WHERE tournament_id = ? AND license_id = ?
-        """, (tournament_id, license_id))
+            WHERE tournament_name = ? AND license_id = ?
+        """, (tournament_name, license_id))
         
         row = cur.fetchone()
         conn.close()
@@ -2254,7 +2243,7 @@ def get_tournament_registration():
         
         registration = {
             "player_id": row[0],
-            "tournament_id": row[1],
+            "tournament_name": row[1],
             "license_id": row[2],
             "singles_levels": row[3] or "",
             "doubles_levels": row[4] or "",
@@ -2275,10 +2264,10 @@ def get_tournament_registration():
 def add_player():
     """Register a player for a tournament"""
     data = request.json
-    tournament_id = data.get("dbFile")  # This is the tournament ID from tournaments.db
+    tournament_name = data.get("dbFile")  # This is the tournament name from tournaments.db
     player = data.get("player")
     
-    if not tournament_id or not player:
+    if not tournament_name or not player:
         return jsonify(success=False, error="Missing data"), 400
     
     license_id = player.get("license_id", "").strip()
@@ -2288,15 +2277,15 @@ def add_player():
         conn_main = sqlite3.connect(TOURNAMENTS_DB)
         cur_main = conn_main.cursor()
         
-        cur_main.execute("SELECT id FROM tournaments WHERE id = ?", (tournament_id,))
+        cur_main.execute("SELECT tournament_name FROM tournaments WHERE tournament_name = ?", (tournament_name,))
         if not cur_main.fetchone():
             conn_main.close()
             return jsonify(success=False, error="Tournament not found"), 404
         
         # Check if this player is already registered for this tournament
         cur_main.execute(
-            "SELECT id FROM tournament_registrations WHERE tournament_id = ? AND license_id = ?",
-            (tournament_id, license_id)
+            "SELECT id FROM tournament_registrations WHERE tournament_name = ? AND license_id = ?",
+            (tournament_name, license_id)
         )
         existing_registration = cur_main.fetchone()
         
@@ -2306,26 +2295,25 @@ def add_player():
                 UPDATE tournament_registrations
                 SET singles_levels = ?, doubles_levels = ?, mixed_levels = ?,
                     doubles_partner = ?, mixed_partner = ?, registration_date = CURRENT_TIMESTAMP
-                WHERE tournament_id = ? AND license_id = ?
+                WHERE tournament_name = ? AND license_id = ?
             """, (
                 player.get("singles_levels", ""),
                 player.get("doubles_levels", ""),
                 player.get("mixed_levels", ""),
                 player.get("doubles_partner", ""),
                 player.get("mixed_partner", ""),
-                tournament_id,
+                tournament_name,
                 license_id
             ))
-            logger.info(f"✅ Updated registration for {player.get('player_name')} in tournament {tournament_id}")
+            logger.info(f"✅ Updated registration for {player.get('player_name')} in tournament {tournament_name}")
         else:
             # Insert new registration
             cur_main.execute("""
-                INSERT INTO tournament_registrations
-                (tournament_id, license_id, singles_levels, doubles_levels, mixed_levels,
+                INSERT INTO tournament_registrations (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels,
                  doubles_partner, mixed_partner, registration_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
-                tournament_id,
+                tournament_name,
                 license_id,
                 player.get("singles_levels", ""),
                 player.get("doubles_levels", ""),
@@ -2333,7 +2321,7 @@ def add_player():
                 player.get("doubles_partner", ""),
                 player.get("mixed_partner", "")
             ))
-            logger.info(f"✅ Registered {player.get('player_name')} for tournament {tournament_id}")
+            logger.info(f"✅ Registered {player.get('player_name')} for tournament {tournament_name}")
         
         conn_main.commit()
         conn_main.close()
