@@ -209,45 +209,60 @@
         }
 
         async function loadPlayers() {
-            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=${currentPage}&pageSize=20`);
-            const data = await res.json();
-            if (!data.success) return;
+            try {
+                const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=${currentPage}&pageSize=20`);
+                const data = await res.json();
+                if (!data.success) {
+                    console.error("Error loading players:", data.error);
+                    return;
+                }
 
-            let players = data.players;
+                let players = data.players;
+                console.log("Loaded players:", players);
 
-            // For logged-in players, only show their own entries (match by license_id)
-            if (loggedInPlayer && !isAdmin) {
-                players = players.filter(p => p.license_id === loggedInPlayer.license_id);
-                document.getElementById("players-heading").textContent = "My Registration";
-            }
+                // For logged-in players, only show their own entries (match by license_id)
+                if (loggedInPlayer && !isAdmin) {
+                    const filteredPlayers = players.filter(p => p.license_id === loggedInPlayer.license_id);
+                    console.log("Filtered to user's registrations:", filteredPlayers);
+                    players = filteredPlayers;
+                    document.getElementById("players-heading").textContent = "My Registration";
+                }
 
-            const tbody = document.querySelector("#players-table tbody");
-            tbody.innerHTML = players.map(p => {
-                return `
-                <tr>
-                    <td>${p.license_id || ""}</td>
-                    <td>-</td>
-                    <td>-</td>
-                    <td>-</td>
-                    <td>-</td>
-                    <td>-</td>
-                    <td>${p.singles_levels || ""}</td>
-                    <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
-                    <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
-                    <td>
-                        ${isAdmin ?
-                            `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
-                             <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
-                        (loggedInPlayer && loggedInPlayer.license_id === p.license_id ?
-                            `<button onclick="editPlayer(${p.player_id})">Edit</button>
-                             <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>` :
-                            "")}
-                    </td>
-                </tr>
-            `}).join("");
+                const tbody = document.querySelector("#players-table tbody");
+                if (players.length === 0) {
+                    if (loggedInPlayer && !isAdmin) {
+                        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">You are not registered yet. Use the form above to register.</td></tr>';
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">No registrations yet.</td></tr>';
+                    }
+                    return;
+                }
 
-            if (loggedInPlayer && !isAdmin && players.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">You are not registered yet. Use the form above to register.</td></tr>';
+                tbody.innerHTML = players.map(p => {
+                    return `
+                    <tr>
+                        <td>${p.license_id || ""}</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>${p.singles_levels || ""}</td>
+                        <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
+                        <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
+                        <td>
+                            ${isAdmin ?
+                                `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
+                                 <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
+                            (loggedInPlayer && loggedInPlayer.license_id === p.license_id ?
+                                `<button onclick="editPlayer(${p.player_id})">Edit</button>
+                                 <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>` :
+                                "")}
+                        </td>
+                    </tr>
+                `}).join("");
+            } catch (error) {
+                console.error("Exception in loadPlayers:", error);
             }
         }
 
