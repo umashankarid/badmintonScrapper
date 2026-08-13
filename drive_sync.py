@@ -1,11 +1,13 @@
 """
 Dropbox sync module for SQLite databases
 Syncs .db files to/from Dropbox for persistent storage
+Includes auto-refresh of access tokens using refresh tokens
 """
 
 import os
 import logging
 import dropbox
+import requests
 from dropbox.exceptions import ApiError
 
 # Configure logging
@@ -20,6 +22,10 @@ DB_FILES = [
     "tournaments.db"  # Single unified tournaments database
 ]
 
+# Dropbox OAuth info
+DROPBOX_APP_KEY = "2e0bvquyns4t5sb"
+DROPBOX_APP_SECRET = os.getenv('DROPBOX_APP_SECRET', '9hljwc9w0c790w7')
+
 class DropboxSync:
     """Handle Dropbox sync for SQLite databases"""
     
@@ -30,8 +36,44 @@ class DropboxSync:
         self.authenticated = False
         self._init_dropbox_client()
     
+    def _refresh_access_token(self):
+        """Refresh access token using refresh token"""
+        try:
+            refresh_token = os.getenv('DROPBOX_REFRESH_TOKEN')
+            if not refresh_token:
+                logger.warning("⚠️  DROPBOX_REFRESH_TOKEN not set - cannot auto-refresh")
+                return False
+            
+            logger.info("🔄 Refreshing Dropbox access token...")
+            
+            response = requests.post('https://api.dropboxapi.com/oauth2/token', data={
+                'grant_type': 'refresh_token',
+                'refresh_token': refresh_token,
+                'client_id': DROPBOX_APP_KEY,
+                'client_secret': DROPBOX_APP_SECRET
+            }, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                new_access_token = data.get('access_token')
+                logger.info("✅ Access token refreshed successfully")
+                
+                # Update environment variable for this session
+                os.environ['DROPBOX_ACCESS_TOKEN'] = new_access_token
+                
+                # Reinitialize with new token
+                self.dbx = dropbox.Dropbox(new_access_token)
+                return True
+            else:
+                logger.error(f"❌ Failed to refresh token: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error refreshing access token: {str(e)}")
+            return False
+    
     def _init_dropbox_client(self):
-        """Initialize Dropbox client using access token"""
+        """Initialize Dropbox client using access token, with auto-refresh on expiry"""
         try:
             # Get access token from environment
             access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
@@ -44,8 +86,19 @@ class DropboxSync:
             self.dbx = dropbox.Dropbox(access_token)
             
             # Test connection
-            self.dbx.users_get_current_account()
-            logger.info("✅ Dropbox client initialized")
+            try:
+                self.dbx.users_get_current_account()
+                logger.info("✅ Dropbox client initialized")
+            except ApiError as e:
+                if 'expired_access_token' in str(e):
+                    logger.warning("⚠️  Access token expired, attempting refresh...")
+                    if self._refresh_access_token():
+                        logger.info("✅ Successfully refreshed token and reconnected")
+                    else:
+                        logger.error("❌ Could not refresh token - set DROPBOX_REFRESH_TOKEN in environment")
+                        return False
+                else:
+                    raise
             
             # Get folder path from environment
             self.folder_path = os.getenv('DROPBOX_SYNC_FOLDER', '/BadmintonScrapPython-Databases')
