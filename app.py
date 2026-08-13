@@ -2614,70 +2614,103 @@ def add_player():
 @app.route("/api/delete-player", methods=["POST"])
 def delete_player():
     data = request.json
-    db_file = data.get("dbFile")
-    player_id = data.get("playerId")
-    confirm = data.get("confirm", False)
+    db_file = data.get("dbFile")  # tournament_name
+    player_id = data.get("playerId")  # tournament_registrations.id
+    confirm_delete = data.get("confirm", False)
     if not db_file or not player_id:
         return jsonify(success=False, error="Missing data"), 400
-    conn = get_tournament_db(db_file)
-    if not conn:
-        return jsonify(success=False, error="Tournament not found"), 404
 
-    # Get the player being deleted
-    conn.row_factory = sqlite3.Row
-    player = conn.execute("SELECT * FROM players WHERE player_id=?", (player_id,)).fetchone()
-    if not player:
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # Get the registration being deleted
+        cur.execute("SELECT * FROM tournament_registrations WHERE id = ? AND tournament_name = ?", (player_id, db_file))
+        registration = cur.fetchone()
+        if not registration:
+            conn.close()
+            return jsonify(success=False, error="Registration not found"), 404
+
+        license_id = registration["license_id"]
+        doubles_partner_name = registration["doubles_partner"] or ""
+        mixed_partner_name = registration["mixed_partner"] or ""
+
+        # Check if this player has partners that reference them
+        partnerships = []
+        auto_remove = []
+
+        # Find others who have this player as their doubles partner
+        if doubles_partner_name or mixed_partner_name:
+            # Get player name from players.db
+            conn_p = sqlite3.connect(PLAYERS_DB)
+            cur_p = conn_p.cursor()
+            cur_p.execute("SELECT name FROM players WHERE license_id = ?", (license_id,))
+            player_row = cur_p.fetchone()
+            player_name = player_row[0] if player_row else ""
+            conn_p.close()
+        else:
+            player_name = ""
+
+        if player_name:
+            # Find registrations where this player is listed as a partner
+            cur.execute("""
+                SELECT id, license_id, doubles_partner, mixed_partner, singles_levels, doubles_levels, mixed_levels
+                FROM tournament_registrations 
+                WHERE tournament_name = ? AND (doubles_partner = ? OR mixed_partner = ?)
+            """, (db_file, player_name, player_name))
+            
+            for p in cur.fetchall():
+                if p["doubles_partner"] == player_name:
+                    partnerships.append(f"{player_name} is playing doubles with a partner")
+                    # If partner has no other categories, they'll be auto-removed
+                    if not p["singles_levels"] and not p["mixed_levels"]:
+                        auto_remove.append(p["id"])
+                if p["mixed_partner"] == player_name:
+                    partnerships.append(f"{player_name} is playing mixed with a partner")
+                    if not p["singles_levels"] and not p["doubles_levels"]:
+                        auto_remove.append(p["id"])
+
+        # If partnerships exist and not confirmed, return warning
+        if partnerships and not confirm_delete:
+            if auto_remove:
+                partnerships.append(f"\nPartners with no remaining categories will also be removed")
+            conn.close()
+            return jsonify(success=False, needsConfirm=True, warnings=partnerships)
+
+        # Delete the registration
+        cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (player_id,))
+
+        # Clear partner references from other registrations
+        if player_name:
+            cur.execute("""
+                UPDATE tournament_registrations 
+                SET doubles_partner = '', doubles_levels = '' 
+                WHERE tournament_name = ? AND doubles_partner = ?
+            """, (db_file, player_name))
+            cur.execute("""
+                UPDATE tournament_registrations 
+                SET mixed_partner = '', mixed_levels = '' 
+                WHERE tournament_name = ? AND mixed_partner = ?
+            """, (db_file, player_name))
+
+            # Remove registrations that now have no categories left
+            cur.execute("""
+                DELETE FROM tournament_registrations 
+                WHERE tournament_name = ? AND
+                    (singles_levels IS NULL OR singles_levels = '') AND
+                    (doubles_levels IS NULL OR doubles_levels = '') AND
+                    (mixed_levels IS NULL OR mixed_levels = '')
+            """, (db_file,))
+
+        conn.commit()
         conn.close()
-        return jsonify(success=False, error="Player not found"), 404
+        trigger_sync()
+        return jsonify(success=True)
 
-    player_name = player["player_name"]
-
-    # Find partners that reference this player
-    partnerships = []
-    auto_remove = []
-
-    doubles_partners = conn.execute(
-        "SELECT player_id, player_name, singles_levels, mixed_levels FROM players WHERE doubles_partner=?", (player_name,)
-    ).fetchall()
-    for p in doubles_partners:
-        partnerships.append(f"{player_name} is playing doubles with {p['player_name']}")
-        if not p["singles_levels"] and not p["mixed_levels"]:
-            auto_remove.append(p["player_name"])
-
-    mixed_partners = conn.execute(
-        "SELECT player_id, player_name, singles_levels, doubles_levels FROM players WHERE mixed_partner=?", (player_name,)
-    ).fetchall()
-    for p in mixed_partners:
-        partnerships.append(f"{player_name} is playing mixed with {p['player_name']}")
-        if not p["singles_levels"] and not p["doubles_levels"]:
-            auto_remove.append(p["player_name"])
-
-    # If partnerships exist and not confirmed, return warning
-    if partnerships and not confirm:
-        if auto_remove:
-            partnerships.append(f"\n{', '.join(auto_remove)} will also be removed (no remaining categories)")
-        conn.close()
-        return jsonify(success=False, needsConfirm=True, warnings=partnerships)
-
-    # Delete the player
-    conn.execute("DELETE FROM players WHERE player_id=?", (player_id,))
-
-    # Clear partner references from other players
-    conn.execute("UPDATE players SET doubles_partner='', doubles_levels='' WHERE doubles_partner=?", (player_name,))
-    conn.execute("UPDATE players SET mixed_partner='', mixed_levels='' WHERE mixed_partner=?", (player_name,))
-
-    # Remove players who now have no categories left
-    conn.execute("""
-        DELETE FROM players WHERE
-            (singles_levels IS NULL OR singles_levels = '') AND
-            (doubles_levels IS NULL OR doubles_levels = '') AND
-            (mixed_levels IS NULL OR mixed_levels = '')
-    """)
-
-    conn.commit()
-    conn.close()
-    trigger_sync()  # Trigger debounced sync after database change
-    return jsonify(success=True)
+    except Exception as e:
+        logger.error(f"❌ Error deleting player registration: {e}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 # --- Search players live from Badminton Sweden ---
