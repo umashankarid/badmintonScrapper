@@ -1638,7 +1638,7 @@ def get_all_bwf_tournaments():
                 # Check if tournament already exists by tournament_name
                 conn = sqlite3.connect(TOURNAMENTS_DB)
                 cur = conn.cursor()
-                cur.execute("SELECT id FROM tournaments WHERE tournament_name = ?", (t["name"],))
+                cur.execute("SELECT tournament_name FROM tournaments WHERE tournament_name = ?", (t["name"],))
                 existing = cur.fetchone()
                 conn.close()
                 
