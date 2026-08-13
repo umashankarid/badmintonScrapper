@@ -457,22 +457,104 @@
             }
         });
 
-        setupLiveSearch("doubles-partner", "doubles-partner-results", (player) => {
+        setupLiveSearch("doubles-partner", "doubles-partner-results", async (player) => {
+            // Validate partner is not already playing doubles with someone else
+            const playerName = loggedInPlayer ? loggedInPlayer.player_name : "";
+            const res = await fetch("/api/validate-partner", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    tournament_name: dbFile,
+                    partner_license_id: player.license_id,
+                    partner_name: player.name,
+                    category_type: "doubles",
+                    requesting_player_name: playerName
+                })
+            });
+            const result = await res.json();
+            if (!result.available) {
+                alert(result.message);
+                document.getElementById("doubles-partner").value = "";
+                return;
+            }
             document.getElementById("doubles-partner").value = player.name || "";
+            document.getElementById("doubles-partner").dataset.licenseId = player.license_id || "";
+            document.getElementById("doubles-partner").dataset.club = player.club || "";
+            document.getElementById("doubles-partner").dataset.profileUrl = player.profile_url || "";
         });
 
-        setupLiveSearch("mixed-partner", "mixed-partner-results", (player) => {
+        setupLiveSearch("mixed-partner", "mixed-partner-results", async (player) => {
+            // Validate partner is not already playing mixed with someone else
+            const playerName = loggedInPlayer ? loggedInPlayer.player_name : "";
+            const res = await fetch("/api/validate-partner", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    tournament_name: dbFile,
+                    partner_license_id: player.license_id,
+                    partner_name: player.name,
+                    category_type: "mixed",
+                    requesting_player_name: playerName
+                })
+            });
+            const result = await res.json();
+            if (!result.available) {
+                alert(result.message);
+                document.getElementById("mixed-partner").value = "";
+                return;
+            }
             document.getElementById("mixed-partner").value = player.name || "";
+            document.getElementById("mixed-partner").dataset.licenseId = player.license_id || "";
+            document.getElementById("mixed-partner").dataset.club = player.club || "";
+            document.getElementById("mixed-partner").dataset.profileUrl = player.profile_url || "";
         });
 
-        setupLiveSearch("admin-doubles-partner", "admin-doubles-partner-results", (player) => {
+        setupLiveSearch("admin-doubles-partner", "admin-doubles-partner-results", async (player) => {
+            // Validate partner is not already playing doubles with someone else
+            const playerName = document.getElementById("admin-edit-name").value;
+            const res = await fetch("/api/validate-partner", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    tournament_name: dbFile,
+                    partner_license_id: player.license_id,
+                    partner_name: player.name,
+                    category_type: "doubles",
+                    requesting_player_name: playerName
+                })
+            });
+            const result = await res.json();
+            if (!result.available) {
+                alert(result.message);
+                document.getElementById("admin-doubles-partner").value = "";
+                return;
+            }
             document.getElementById("admin-doubles-partner").value = player.name || "";
             document.getElementById("admin-doubles-partner").dataset.licenseId = player.license_id || "";
             document.getElementById("admin-doubles-partner").dataset.club = player.club || "";
             document.getElementById("admin-doubles-partner").dataset.profileUrl = player.profile_url || "";
         });
 
-        setupLiveSearch("admin-mixed-partner", "admin-mixed-partner-results", (player) => {
+        setupLiveSearch("admin-mixed-partner", "admin-mixed-partner-results", async (player) => {
+            // Validate partner is not already playing mixed with someone else
+            const playerName = document.getElementById("admin-edit-name").value;
+            const res = await fetch("/api/validate-partner", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    tournament_name: dbFile,
+                    partner_license_id: player.license_id,
+                    partner_name: player.name,
+                    category_type: "mixed",
+                    requesting_player_name: playerName
+                })
+            });
+            const result = await res.json();
+            if (!result.available) {
+                alert(result.message);
+                document.getElementById("admin-mixed-partner").value = "";
+                return;
+            }
             document.getElementById("admin-mixed-partner").value = player.name || "";
             document.getElementById("admin-mixed-partner").dataset.licenseId = player.license_id || "";
             document.getElementById("admin-mixed-partner").dataset.club = player.club || "";

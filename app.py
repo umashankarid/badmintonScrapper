@@ -2271,6 +2271,73 @@ def get_tournament_registration():
         return jsonify(success=False, error=str(e)), 500
 
 
+def _check_partner_availability(tournament_name, partner_license_id, partner_name, category_type, requesting_player_name):
+    """
+    Check if a partner is already registered for the same category with another player.
+    
+    Args:
+        tournament_name: Tournament name
+        partner_license_id: Partner's license ID
+        partner_name: Partner's name (for error messages)
+        category_type: 'doubles' or 'mixed'
+        requesting_player_name: Name of the player trying to add this partner
+    
+    Returns:
+        (available: bool, message: str)
+    """
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT doubles_levels, mixed_levels, doubles_partner, mixed_partner FROM tournament_registrations WHERE tournament_name = ? AND license_id = ?",
+            (tournament_name, partner_license_id)
+        )
+        row = cur.fetchone()
+        conn.close()
+        
+        if not row:
+            # Partner not registered yet - available
+            return True, ""
+        
+        doubles_levels, mixed_levels, existing_doubles_partner, existing_mixed_partner = row
+        
+        if category_type == "doubles":
+            # Check if partner already has doubles registered with someone else
+            if doubles_levels and existing_doubles_partner and existing_doubles_partner != requesting_player_name:
+                return False, f"{partner_name} is already playing doubles ({doubles_levels}) with {existing_doubles_partner} in this tournament."
+        elif category_type == "mixed":
+            # Check if partner already has mixed registered with someone else
+            if mixed_levels and existing_mixed_partner and existing_mixed_partner != requesting_player_name:
+                return False, f"{partner_name} is already playing mixed ({mixed_levels}) with {existing_mixed_partner} in this tournament."
+        
+        return True, ""
+    
+    except Exception as e:
+        logger.error(f"⚠️  Error checking partner availability: {e}")
+        return True, ""  # Allow if check fails
+
+
+@app.route("/api/validate-partner", methods=["POST"])
+def validate_partner():
+    """API endpoint to check if a partner is available for a category in a tournament"""
+    data = request.json
+    tournament_name = data.get("tournament_name", "")
+    partner_license_id = data.get("partner_license_id", "")
+    partner_name = data.get("partner_name", "")
+    category_type = data.get("category_type", "")  # 'doubles' or 'mixed'
+    requesting_player_name = data.get("requesting_player_name", "")
+    
+    if not tournament_name or not partner_license_id or not category_type:
+        return jsonify(success=True, available=True)
+    
+    available, message = _check_partner_availability(
+        tournament_name, partner_license_id, partner_name, category_type, requesting_player_name
+    )
+    
+    return jsonify(success=True, available=available, message=message)
+
+
 def _register_partner(tournament_name, partner_license_id, partner_name, partner_club="", partner_profile_url="", doubles_levels="", mixed_levels="", doubles_partner="", mixed_partner=""):
     """
     Register a partner player in both players.db and tournament_registrations.
@@ -2497,6 +2564,13 @@ def add_player():
         doubles_partner_license = player.get("doubles_partner_license_id", "").strip()
         doubles_level = player.get("doubles_levels", "")
         if doubles_partner_name and doubles_partner_license and doubles_level:
+            # Check if partner is available for doubles
+            available, message = _check_partner_availability(
+                tournament_name, doubles_partner_license, doubles_partner_name, "doubles", player_name
+            )
+            if not available:
+                return jsonify(success=False, error=message)
+            
             _register_partner(
                 tournament_name=tournament_name,
                 partner_license_id=doubles_partner_license,
@@ -2512,6 +2586,13 @@ def add_player():
         mixed_partner_license = player.get("mixed_partner_license_id", "").strip()
         mixed_level = player.get("mixed_levels", "")
         if mixed_partner_name and mixed_partner_license and mixed_level:
+            # Check if partner is available for mixed
+            available, message = _check_partner_availability(
+                tournament_name, mixed_partner_license, mixed_partner_name, "mixed", player_name
+            )
+            if not available:
+                return jsonify(success=False, error=message)
+            
             _register_partner(
                 tournament_name=tournament_name,
                 partner_license_id=mixed_partner_license,
