@@ -1611,59 +1611,138 @@ def get_all_bwf_tournaments():
 
         logger.info(f"Found {len(tournaments)} tournaments from Badminton Sweden")
         
-        # Sync tournaments to tournaments.db - preserve selected_for_view status
+        # STEP 1: Get current selection status before processing
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
+        cur.execute("SELECT tournament_url, selected_for_view FROM tournaments")
+        selection_map = {row[0]: row[1] for row in cur.fetchall()}
+        conn.close()
+        
+        # STEP 2: For each tournament, extract complete date details
+        logger.info(f"📝 Processing {len(tournaments)} tournaments to extract complete date details...")
+        added_count = 0
+        updated_count = 0
         
         for t in tournaments:
             try:
                 # Check if tournament already exists
-                cur.execute("SELECT selected_for_view FROM tournaments WHERE tournament_url = ?", (t["url"],))
+                conn = sqlite3.connect(TOURNAMENTS_DB)
+                cur = conn.cursor()
+                cur.execute("SELECT id FROM tournaments WHERE tournament_url = ?", (t["url"],))
                 existing = cur.fetchone()
+                conn.close()
+                
+                # Fetch tournament page directly to extract all dates
+                logger.debug(f"🔍 Extracting complete data for: {t['name']}")
+                
+                s_detail = ext_requests.Session()
+                s_detail.headers.update({"User-Agent": "Mozilla/5.0"})
+                s_detail.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+                    "ReturnUrl": "/",
+                    "SettingsOpen": "false",
+                    "CookieWallCategoryPreferences": "1,2,3"
+                }, allow_redirects=True, timeout=5)
+                
+                resp_detail = s_detail.get(t["url"], timeout=10)
+                soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
+                
+                # Extract detailed dates
+                dates = {}
+                timeline = soup_detail.select_one(".tournament-meta__timeline")
+                if timeline:
+                    for li in timeline.find_all("li"):
+                        label_el = li.select_one(".list__value")
+                        time_el = li.find("time")
+                        if label_el and time_el:
+                            label = label_el.get_text(strip=True)
+                            datetime_val = time_el.get("datetime", "")[:10]
+                            if "öppnar" in label.lower():
+                                dates["registration_opens"] = datetime_val
+                            elif "stänger" in label.lower():
+                                dates["registration_closes"] = datetime_val
+                            elif "återbud" in label.lower():
+                                dates["cancellation_deadline"] = datetime_val
+                            elif "start" in label.lower():
+                                dates["competition_start"] = datetime_val
+                            elif "slut" in label.lower():
+                                dates["competition_end"] = datetime_val
+                
+                logger.debug(f"✅ Extracted dates: {dates}")
+                
+                # Now update or insert with complete data
+                conn = sqlite3.connect(TOURNAMENTS_DB)
+                cur = conn.cursor()
                 
                 if existing:
-                    # Tournament exists - preserve selected_for_view, update dates only
+                    # Tournament exists - preserve selected_for_view, update all dates
+                    preserved_selected = selection_map.get(t["url"], 0)
                     cur.execute("""
                         UPDATE tournaments 
-                        SET tournament_name = ?, location = ?, date_start = ?, date_end = ?, last_updated = CURRENT_TIMESTAMP
+                        SET tournament_name = ?, location = ?, date_start = ?, date_end = ?,
+                            registration_opens = ?, registration_closes = ?, cancellation_deadline = ?,
+                            competition_start = ?, competition_end = ?, last_updated = CURRENT_TIMESTAMP
                         WHERE tournament_url = ?
-                    """, (t["name"], t["location"], t["date_start"], t["date_end"], t["url"]))
-                    logger.debug(f"Updated existing tournament: {t['name']} (kept selection status)")
+                    """, (
+                        t["name"], t["location"], t["date_start"], t["date_end"],
+                        dates.get("registration_opens", ""), dates.get("registration_closes", ""),
+                        dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
+                        dates.get("competition_end", ""), t["url"]
+                    ))
+                    logger.info(f"✅ Updated tournament: {t['name']} (preserved selection={preserved_selected})")
+                    updated_count += 1
                 else:
-                    # New tournament - insert with selected_for_view = 0
+                    # New tournament - insert with selected_for_view = 0 and complete dates
                     cur.execute("""
                         INSERT INTO tournaments 
-                        (tournament_url, tournament_name, location, date_start, date_end, selected_for_view, last_updated)
-                        VALUES (?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
-                    """, (t["url"], t["name"], t["location"], t["date_start"], t["date_end"]))
-                    logger.debug(f"Added new tournament: {t['name']}")
+                        (tournament_url, tournament_name, location, date_start, date_end,
+                         registration_opens, registration_closes, cancellation_deadline,
+                         competition_start, competition_end, selected_for_view, last_updated)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                    """, (
+                        t["url"], t["name"], t["location"], t["date_start"], t["date_end"],
+                        dates.get("registration_opens", ""), dates.get("registration_closes", ""),
+                        dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
+                        dates.get("competition_end", "")
+                    ))
+                    logger.info(f"✅ Added new tournament: {t['name']}")
+                    added_count += 1
+                
+                conn.commit()
+                conn.close()
+                
             except Exception as e:
-                logger.error(f"Error syncing tournament {t['name']}: {e}")
+                logger.error(f"❌ Error processing tournament {t.get('name', 'Unknown')}: {e}")
         
-        conn.commit()
+        logger.info(f"📊 Summary: Added {added_count}, Updated {updated_count} tournaments")
         
-        # Delete expired tournaments (where date_end < today)
+        # STEP 3: Delete expired tournaments (where date_end < today)
         from datetime import datetime as dt
         today = dt.now().strftime("%Y-%m-%d")
         try:
+            conn = sqlite3.connect(TOURNAMENTS_DB)
+            cur = conn.cursor()
             cur.execute("DELETE FROM tournaments WHERE date_end < ?", (today,))
             deleted_count = cur.rowcount
             conn.commit()
             if deleted_count > 0:
-                logger.info(f"Deleted {deleted_count} expired tournaments")
+                logger.info(f"🗑️  Deleted {deleted_count} expired tournaments")
+            conn.close()
         except Exception as e:
             logger.error(f"Error deleting expired tournaments: {e}")
         
-        # Get current selected_for_view status
+        # STEP 4: Get updated selection status
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
         cur.execute("SELECT tournament_url, selected_for_view FROM tournaments")
-        selection_map = {row[0]: row[1] for row in cur.fetchall()}
+        selection_map_updated = {row[0]: row[1] for row in cur.fetchall()}
         conn.close()
 
         # Add selected_for_view flag to each tournament
         for t in tournaments:
-            t["selected_for_view"] = selection_map.get(t["url"], 0)
+            t["selected_for_view"] = selection_map_updated.get(t["url"], 0)
 
         trigger_sync()
+        logger.info(f"✅ get_all_bwf_tournaments completed successfully")
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error in get_all_bwf_tournaments: {str(e)}", exc_info=True)
