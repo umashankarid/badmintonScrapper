@@ -75,12 +75,22 @@ if not run_startup_tests():
     sys.exit(1)
 
 # Sync databases on startup
-logger.info("🔄 Starting Google Drive database sync...")
+logger.info("🔄 Starting Dropbox database sync...")
 try:
     download_all()
 except Exception as e:
     logger.error(f"⚠️  Failed to download from Dropbox on startup: {str(e)}")
     logger.error("⚠️  Continuing with local databases (new data will NOT persist)")
+
+# Sync player data from Badminton Sweden on startup
+logger.info("🔄 Syncing player data from Badminton Sweden...")
+try:
+    from players_scraper import scrape_all_players
+    players_scraped = scrape_all_players()
+    logger.info(f"✅ Scraped {players_scraped} players from Badminton Sweden")
+except Exception as e:
+    logger.error(f"⚠️  Failed to scrape players: {str(e)}")
+    logger.error("⚠️  Continuing with existing player data")
 
 
 # ==================== DEBOUNCE SYNC SYSTEM ====================
@@ -97,7 +107,7 @@ def _debounced_sync():
     """Internal function to perform the sync"""
     global _sync_timer
     try:
-        logger.info("📤 Debounced sync: Uploading databases to Google Drive...")
+        logger.info("📤 Debounced sync: Uploading databases to Dropbox...")
         upload_all()
         logger.info("✅ Debounced sync completed")
     except Exception as e:
@@ -128,15 +138,15 @@ def periodic_sync_fallback():
     while True:
         try:
             time.sleep(PERIODIC_SYNC_INTERVAL)
-            logger.info("⏱️  Periodic fallback sync: Uploading databases to Google Drive...")
+            logger.info("⏱️  Periodic fallback sync: Uploading databases to Dropbox...")
             upload_all()
         except Exception as e:
             logger.error(f"❌ Error in periodic sync: {str(e)}")
 
 # Register upload on shutdown
 def sync_on_shutdown():
-    """Upload databases to Google Drive on shutdown"""
-    logger.info("💾 Syncing databases to Google Drive on shutdown...")
+    """Upload databases to Dropbox on shutdown"""
+    logger.info("💾 Syncing databases to Dropbox on shutdown...")
     # Cancel pending debounce timer
     global _sync_timer
     with _sync_lock:
@@ -315,8 +325,8 @@ def init_point_rules_db():
 
 init_point_rules_db()
 
-# Upload initialized databases to Google Drive immediately on startup
-logger.info("📤 Uploading initialized databases to Google Drive...")
+# Upload initialized databases to Dropbox immediately on startup
+logger.info("📤 Uploading initialized databases to Dropbox...")
 upload_all()
 logger.info("✅ Databases backed up on startup")
 
@@ -755,6 +765,17 @@ def bwf_login():
         session["bwf_age"] = age
         session["bwf_ranking"] = ranking
         session["admin"] = is_admin_user(login)
+        
+        # Scrape fresh player data from Badminton Sweden
+        try:
+            if license_id:
+                from players_scraper import scrape_player_by_license_id
+                player_data = scrape_player_by_license_id(license_id)
+                if player_data:
+                    logger.info(f"✅ Updated player data for {player_name}")
+        except Exception as e:
+            logger.debug(f"Could not update player data: {e}")
+        
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
     except ext_requests.RequestException as e:
