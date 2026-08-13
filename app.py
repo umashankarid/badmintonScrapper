@@ -11,6 +11,7 @@ import threading
 import time
 import os
 import sys
+import unittest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,60 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = "supersecretkey"
+
+# ==================== PRE-STARTUP TEST VERIFICATION ====================
+def run_startup_tests():
+    """Run unit tests before startup - block if any fail"""
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("🧪 Running Pre-Startup Unit Tests")
+    logger.info("=" * 70)
+    
+    try:
+        # Discover and run tests
+        loader = unittest.TestLoader()
+        suite = loader.discover('.', pattern='test_badminton.py')
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        
+        logger.info("")
+        logger.info("=" * 70)
+        
+        if result.wasSuccessful():
+            logger.info(f"✅ ALL {result.testsRun} TESTS PASSED - Startup approved")
+            logger.info("=" * 70)
+            return True
+        else:
+            logger.error(f"❌ TEST FAILURES DETECTED: {len(result.failures)} failures, {len(result.errors)} errors")
+            logger.error("=" * 70)
+            
+            # Show failures
+            if result.failures:
+                logger.error("\n❌ FAILURES:")
+                for test, trace in result.failures:
+                    logger.error(f"  {test}: {trace[:200]}")
+            
+            # Show errors
+            if result.errors:
+                logger.error("\n❌ ERRORS:")
+                for test, trace in result.errors:
+                    logger.error(f"  {test}: {trace[:200]}")
+            
+            logger.error("")
+            logger.error("=" * 70)
+            logger.error("❌ BUILD BLOCKED: Fix failing tests before startup")
+            logger.error("=" * 70)
+            return False
+    
+    except Exception as e:
+        logger.error(f"❌ Error running startup tests: {str(e)}")
+        logger.error("⚠️  Continuing anyway (tests may not be available)")
+        return True  # Don't block if tests can't be run
+
+# Run tests before startup
+if not run_startup_tests():
+    logger.error("❌ STARTUP ABORTED: Unit tests failed")
+    sys.exit(1)
 
 # Sync databases on startup
 logger.info("🔄 Starting Dropbox database sync...")
