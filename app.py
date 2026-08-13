@@ -188,6 +188,7 @@ def init_tournaments_db():
             cancellation_deadline TEXT,
             competition_start TEXT,
             competition_end TEXT,
+            categories TEXT,
             selected_for_view INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -1669,40 +1670,85 @@ def get_all_bwf_tournaments():
                 
                 logger.debug(f"✅ Extracted dates: {dates}")
                 
+                # Extract event categories/levels mapped to registration fields
+                categories = {
+                    "singles_levels": [],
+                    "doubles_levels": [],
+                    "mixed_levels": [],
+                    "doubles_partner": [],
+                    "mixed_partner": []
+                }
+                tid_match = re.search(r'/tournament/([^/]+)', t["url"])
+                if tid_match:
+                    tid = tid_match.group(1)
+                    try:
+                        events_resp = s_detail.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
+                        events_soup = BeautifulSoup(events_resp.text, "html.parser")
+                        
+                        # Extract event categories and map to registration fields
+                        all_events = set()
+                        for a in events_soup.select("a"):
+                            text = a.get_text(strip=True)
+                            if text and len(text) < 50:
+                                # Check for category codes
+                                for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
+                                    if cat in text:
+                                        all_events.add(text.strip())
+                                        break
+                        
+                        # Map events to registration fields
+                        for event in sorted(all_events):
+                            if event.startswith(("HS", "DS")):
+                                categories["singles_levels"].append(event)
+                            elif event.startswith(("HD", "DD")):
+                                categories["doubles_levels"].append(event)
+                            elif event.startswith("MD"):
+                                categories["mixed_levels"].append(event)
+                        
+                        # Set partner options (typical pattern)
+                        if categories["doubles_levels"]:
+                            categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+                        if categories["mixed_levels"]:
+                            categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+                        
+                        logger.debug(f"✅ Extracted categories: {categories}")
+                    except Exception as e:
+                        logger.debug(f"⚠️  Could not extract categories: {e}")
+                
                 # Now update or insert with complete data
                 conn = sqlite3.connect(TOURNAMENTS_DB)
                 cur = conn.cursor()
                 
                 if existing:
-                    # Tournament exists - preserve selected_for_view, update all dates
+                    # Tournament exists - preserve selected_for_view, update all dates and categories
                     preserved_selected = selection_map.get(t["url"], 0)
                     cur.execute("""
                         UPDATE tournaments 
                         SET tournament_name = ?, location = ?, date_start = ?, date_end = ?,
                             registration_opens = ?, registration_closes = ?, cancellation_deadline = ?,
-                            competition_start = ?, competition_end = ?, last_updated = CURRENT_TIMESTAMP
+                            competition_start = ?, competition_end = ?, categories = ?, last_updated = CURRENT_TIMESTAMP
                         WHERE tournament_url = ?
                     """, (
                         t["name"], t["location"], t["date_start"], t["date_end"],
                         dates.get("registration_opens", ""), dates.get("registration_closes", ""),
                         dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
-                        dates.get("competition_end", ""), t["url"]
+                        dates.get("competition_end", ""), json.dumps(categories), t["url"]
                     ))
                     logger.info(f"✅ Updated tournament: {t['name']} (preserved selection={preserved_selected})")
                     updated_count += 1
                 else:
-                    # New tournament - insert with selected_for_view = 0 and complete dates
+                    # New tournament - insert with selected_for_view = 0 and complete dates + categories
                     cur.execute("""
                         INSERT INTO tournaments 
                         (tournament_url, tournament_name, location, date_start, date_end,
                          registration_opens, registration_closes, cancellation_deadline,
-                         competition_start, competition_end, selected_for_view, last_updated)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                         competition_start, competition_end, categories, selected_for_view, last_updated)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
                     """, (
                         t["url"], t["name"], t["location"], t["date_start"], t["date_end"],
                         dates.get("registration_opens", ""), dates.get("registration_closes", ""),
                         dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
-                        dates.get("competition_end", "")
+                        dates.get("competition_end", ""), json.dumps(categories)
                     ))
                     logger.info(f"✅ Added new tournament: {t['name']}")
                     added_count += 1
@@ -1999,67 +2045,39 @@ def ensure_tournament():
 
 @app.route("/api/tournament-events", methods=["GET"])
 def get_tournament_events():
-    """Fetch event classes from Badminton Sweden for a tournament."""
+    """Fetch event classes from tournament database (cached during import)."""
     db_file = request.args.get("dbFile")
     if not db_file:
         return jsonify(success=False, error="dbFile required"), 400
-    conn = get_tournament_db(db_file)
-    if not conn:
-        return jsonify(success=False, error="Tournament not found"), 404
+    conn = sqlite3.connect(TOURNAMENTS_DB)
     cur = conn.cursor()
+    
     try:
-        cur.execute("SELECT bwf_url FROM tournaments LIMIT 1")
+        # First try to get categories from database (FAST - no scraping needed)
+        cur.execute("SELECT categories FROM tournaments LIMIT 1")
         row = cur.fetchone()
-    except sqlite3.OperationalError:
-        row = None
-    conn.close()
-
-    if not row or not row[0]:
-        # No BWF URL - fall back to levels stored in DB
-        conn = get_tournament_db(db_file)
-        cur = conn.cursor()
-        cur.execute("SELECT levels FROM tournaments LIMIT 1")
-        lrow = cur.fetchone()
-        conn.close()
-        levels = json.loads(lrow[0]) if lrow and lrow[0] else []
-        # Generate generic events from levels
-        singles = [f"HS {l}" for l in levels] + [f"DS {l}" for l in levels]
-        doubles = [f"HD {l}" for l in levels] + [f"DD {l}" for l in levels]
-        mixed = [f"MD {l}" for l in levels]
-        return jsonify(success=True, events=singles+doubles+mixed, singles=singles, doubles=doubles, mixed=mixed)
-
-    bwf_url = row[0]
-    import re
-    tid_match = re.search(r'/tournament/([^/]+)', bwf_url)
-    if not tid_match:
-        return jsonify(success=False, error="Invalid BWF URL"), 400
-
-    try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        tid = tid_match.group(1)
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        events = []
-        for a in soup.select("a"):
-            text = a.get_text(strip=True)
-            if text and len(text) < 50 and any(cat in text for cat in ["HS", "DS", "HD", "DD", "MD"]):
-                events.append(text)
-
-        singles = [e for e in events if e.startswith("HS") or e.startswith("DS")]
-        doubles = [e for e in events if e.startswith("HD") or e.startswith("DD")]
-        mixed = [e for e in events if e.startswith("MD")]
-
-        return jsonify(success=True, events=events, singles=singles, doubles=doubles, mixed=mixed)
+        
+        if row and row[0]:
+            categories = json.loads(row[0])
+            print(f"✅ Using cached categories from database: {categories}")
+            
+            # Return structured category data for registration form
+            conn.close()
+            return jsonify(success=True, categories=categories)
     except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+        logger.debug(f"Could not read categories from DB: {e}")
+    
+    conn.close()
+    
+    # Fallback: Return empty structured response
+    print("⚠️  No categories found in database")
+    return jsonify(success=True, categories={
+        "singles_levels": [],
+        "doubles_levels": [],
+        "mixed_levels": [],
+        "doubles_partner": [],
+        "mixed_partner": []
+    })
 
 
 @app.route("/api/tournament", methods=["GET"])
