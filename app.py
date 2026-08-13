@@ -3,7 +3,8 @@ import json
 import sqlite3
 import requests as ext_requests
 from bs4 import BeautifulSoup
-from flask import Flask, request, jsonify, session, send_from_directory
+from flask import Flask, request, jsonify, session, send_from_directory, redirect
+import urllib.parse
 from drive_sync import download_all, upload_all
 import atexit
 import logging
@@ -369,6 +370,93 @@ def init_players_db():
 
 
 init_players_db()
+
+
+# ==================== DROPBOX OAUTH ====================
+DROPBOX_APP_KEY = "2e0bvquyns4t5sb"
+DROPBOX_APP_SECRET = os.getenv('DROPBOX_APP_SECRET', '9hljwc9w0c790w7')
+DROPBOX_REDIRECT_URI = os.getenv('DROPBOX_REDIRECT_URI', 'http://localhost:3000/auth/dropbox/callback')
+
+@app.route("/auth/dropbox", methods=["GET"])
+def dropbox_oauth_login():
+    """Redirect to Dropbox for authorization"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Only admins can authorize Dropbox"), 401
+    
+    auth_url = "https://www.dropbox.com/oauth2/authorize?" + urllib.parse.urlencode({
+        "client_id": DROPBOX_APP_KEY,
+        "response_type": "code",
+        "redirect_uri": DROPBOX_REDIRECT_URI,
+        "scope": "files.content.write files.content.read"
+    })
+    
+    logger.info(f"🔐 Redirecting admin to Dropbox authorization...")
+    return redirect(auth_url)
+
+@app.route("/auth/dropbox/callback", methods=["GET"])
+def dropbox_oauth_callback():
+    """Dropbox redirects here with authorization code"""
+    code = request.args.get("code")
+    error = request.args.get("error")
+    
+    if error:
+        logger.error(f"❌ Dropbox authorization failed: {error}")
+        return f"<h1>Authorization Failed</h1><p>{error}</p><p><a href='/'>Back to home</a></p>"
+    
+    if not code:
+        logger.error("❌ No authorization code received from Dropbox")
+        return "<h1>Error</h1><p>No authorization code received</p><p><a href='/'>Back to home</a></p>"
+    
+    try:
+        # Exchange code for tokens
+        logger.info("🔄 Exchanging authorization code for tokens...")
+        token_response = ext_requests.post("https://api.dropboxapi.com/oauth2/token", data={
+            "code": code,
+            "grant_type": "authorization_code",
+            "client_id": DROPBOX_APP_KEY,
+            "client_secret": DROPBOX_APP_SECRET,
+            "redirect_uri": DROPBOX_REDIRECT_URI
+        }, timeout=10)
+        
+        if token_response.status_code != 200:
+            logger.error(f"❌ Failed to get tokens: {token_response.text}")
+            return f"<h1>Error</h1><p>Failed to get tokens: {token_response.text}</p><p><a href='/'>Back to home</a></p>"
+        
+        tokens = token_response.json()
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        
+        if not access_token or not refresh_token:
+            logger.error("❌ No access/refresh token in response")
+            return "<h1>Error</h1><p>No tokens in response</p><p><a href='/'>Back to home</a></p>"
+        
+        logger.info("✅ Successfully obtained access and refresh tokens")
+        
+        # Store in Render environment (user must add to Render dashboard)
+        return f"""
+        <h1>✅ Dropbox Authorization Successful!</h1>
+        <p><strong>Your app is now authorized to sync with Dropbox permanently.</strong></p>
+        
+        <h2>Next Steps:</h2>
+        <ol>
+            <li>Go to Render Dashboard → Your App → Environment</li>
+            <li>Add these environment variables:
+                <ul>
+                    <li><code>DROPBOX_ACCESS_TOKEN</code> = <code>{access_token}</code></li>
+                    <li><code>DROPBOX_REFRESH_TOKEN</code> = <code>{refresh_token}</code></li>
+                </ul>
+            </li>
+            <li>Redeploy your app</li>
+            <li>Your data will now sync automatically and persist forever!</li>
+        </ol>
+        
+        <p><strong>Important:</strong> Copy both tokens carefully. The refresh token is permanent and will never expire.</p>
+        <p><a href="/">Back to home</a></p>
+        """
+        
+    except Exception as e:
+        logger.error(f"❌ Error in OAuth callback: {str(e)}")
+        return f"<h1>Error</h1><p>{str(e)}</p><p><a href='/'>Back to home</a></p>"
 
 
 # --- Static pages ---
