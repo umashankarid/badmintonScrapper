@@ -225,21 +225,47 @@ class DropboxSync:
             logger.error(f"❌ Failed to download {filepath}: {str(e)}")
             return False
     
+    def _file_exists_in_dropbox(self, filepath):
+        """Check if file exists in Dropbox"""
+        try:
+            filename = os.path.basename(filepath)
+            dropbox_path = f"{self.folder_path}/{filename}"
+            self.dbx.files_get_metadata(dropbox_path)
+            return True
+        except ApiError as e:
+            if e.error.is_path() and e.error.get_path().is_not_found():
+                return False
+            else:
+                logger.error(f"❌ Error checking if file exists in Dropbox: {str(e)}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error checking if file exists in Dropbox: {str(e)}")
+            return False
+    
     def upload_databases(self):
-        """Upload all .db files to Dropbox"""
+        """Upload only missing .db files to Dropbox (don't overwrite existing)"""
         if not self.authenticated:
             logger.warning("⚠️  Dropbox not authenticated - skipping upload")
             return False
         
         success_count = 0
+        skipped_count = 0
         
         # Upload root level databases (including tournaments.db now)
         for db_file in DB_FILES:
             if os.path.exists(db_file):
-                if self._upload_file(db_file):
-                    success_count += 1
+                # Check if file already exists in Dropbox
+                if self._file_exists_in_dropbox(db_file):
+                    logger.info(f"⏭️  Skipping upload (already in Dropbox): {db_file}")
+                    skipped_count += 1
+                else:
+                    # File missing in Dropbox, upload it
+                    if self._upload_file(db_file):
+                        success_count += 1
+            else:
+                logger.debug(f"ℹ️  File not found locally (will download from Dropbox if available): {db_file}")
         
-        logger.info(f"✅ Uploaded {success_count} database files to Dropbox")
+        logger.info(f"✅ Uploaded {success_count} missing files | ⏭️  Skipped {skipped_count} existing files")
         return True
     
     def _upload_file(self, filepath):
