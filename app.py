@@ -418,17 +418,42 @@ def dropbox_oauth_callback():
             "redirect_uri": DROPBOX_REDIRECT_URI
         }, timeout=10)
         
+        logger.info(f"Token response status: {token_response.status_code}")
+        logger.info(f"Token response body: {token_response.text}")
+        
         if token_response.status_code != 200:
             logger.error(f"❌ Failed to get tokens: {token_response.text}")
             return f"<h1>Error</h1><p>Failed to get tokens: {token_response.text}</p><p><a href='/'>Back to home</a></p>"
         
         tokens = token_response.json()
+        logger.info(f"Tokens received: {list(tokens.keys())}")
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")
         
-        if not access_token or not refresh_token:
-            logger.error("❌ No access/refresh token in response")
-            return "<h1>Error</h1><p>No tokens in response</p><p><a href='/'>Back to home</a></p>"
+        if not access_token:
+            logger.error(f"❌ No access_token in response. Full response: {tokens}")
+            return f"<h1>Error</h1><p>No access_token in response: {tokens}</p><p><a href='/'>Back to home</a></p>"
+        
+        if not refresh_token:
+            logger.warning(f"⚠️  No refresh_token in response. App may be in Development mode. Response: {tokens}")
+            return f"""
+            <h1>⚠️  Partial Success</h1>
+            <p><strong>Got access token but NO refresh token.</strong></p>
+            <p><strong>Your Dropbox app is in Development mode.</strong></p>
+            
+            <h2>To get a refresh token:</h2>
+            <ol>
+                <li>Go to https://www.dropbox.com/developers/apps</li>
+                <li>Click your app (2e0bvquyns4t5sb)</li>
+                <li>Go to Settings tab</li>
+                <li>Find "App status" and change from "Development" to "Production"</li>
+                <li>Then try the authorization again: <a href="/auth/dropbox">Authorize Dropbox</a></li>
+            </ol>
+            
+            <h3>Or if you want to proceed with just the access token:</h3>
+            <p>Access Token: <code>{access_token}</code></p>
+            <p><a href="/">Back to home</a></p>
+            """
         
         logger.info("✅ Successfully obtained access and refresh tokens")
         
