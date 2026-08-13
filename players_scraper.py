@@ -183,48 +183,59 @@ def scrape_all_players():
             try:
                 logger.debug(f"Searching for players starting with: {letter}")
                 
-                # Use GET request with params (not POST)
-                resp = requests.get(
-                    SEARCH_URL,
-                    params={"Page": 1, "SportID": 2, "Query": letter},
-                    headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
-                    timeout=10
-                )
-                
-                soup = BeautifulSoup(resp.text, "html.parser")
-                items = soup.select("li.list__item")
-                logger.debug(f"  Letter '{letter}': Found {len(items)} items")
-                
-                for item in items:
-                    try:
-                        name_el = item.select_one("a.media__link span.nav-link__value")
-                        license_el = item.select_one(".media__title-aside")
-                        
-                        if name_el and license_el:
-                            name = name_el.get_text(strip=True)
-                            license_id = license_el.get_text(strip=True).strip("()")
-                            
-                            profile_url = item.select_one("a.media__link")
-                            profile_path = profile_url.get("href") if profile_url else ""
-                            
-                            # Only add valid entries (not temp_*, has name and license)
-                            if name and not name.startswith("temp_") and license_id and not license_id.startswith("temp_"):
-                                if update_player_in_db(
-                                    license_id=license_id,
-                                    name=name,
-                                    profile_url=profile_path
-                                ):
-                                    players_found += 1
-                                else:
-                                    players_failed += 1
-                                
-                                if players_found % 50 == 0:
-                                    logger.info(f"🔍 Scraped {players_found} players so far...")
+                # Iterate through all pages for this letter
+                page = 1
+                while True:
+                    # Use GET request with params (not POST)
+                    resp = requests.get(
+                        SEARCH_URL,
+                        params={"Page": page, "SportID": 2, "Query": letter},
+                        headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
+                        timeout=10
+                    )
                     
-                    except Exception as e:
-                        logger.debug(f"Error processing item: {e}")
-                        players_failed += 1
-                        continue
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    items = soup.select("li.list__item")
+                    
+                    if not items:
+                        # No more pages for this letter
+                        logger.debug(f"  Letter '{letter}': Complete (pages 1-{page-1})")
+                        break
+                    
+                    logger.debug(f"  Letter '{letter}', Page {page}: {len(items)} items")
+                    
+                    for item in items:
+                        try:
+                            name_el = item.select_one("a.media__link span.nav-link__value")
+                            license_el = item.select_one(".media__title-aside")
+                            
+                            if name_el and license_el:
+                                name = name_el.get_text(strip=True)
+                                license_id = license_el.get_text(strip=True).strip("()")
+                                
+                                profile_url = item.select_one("a.media__link")
+                                profile_path = profile_url.get("href") if profile_url else ""
+                                
+                                # Only add valid entries (not temp_*, has name and license)
+                                if name and not name.startswith("temp_") and license_id and not license_id.startswith("temp_"):
+                                    if update_player_in_db(
+                                        license_id=license_id,
+                                        name=name,
+                                        profile_url=profile_path
+                                    ):
+                                        players_found += 1
+                                    else:
+                                        players_failed += 1
+                                    
+                                    if players_found % 50 == 0:
+                                        logger.info(f"🔍 Scraped {players_found} players so far...")
+                        
+                        except Exception as e:
+                            logger.debug(f"Error processing item: {e}")
+                            players_failed += 1
+                            continue
+                    
+                    page += 1
             
             except Exception as e:
                 logger.warning(f"⚠️  Error searching for '{letter}': {e}")
