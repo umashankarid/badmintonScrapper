@@ -8,6 +8,46 @@
 
 ## [Unreleased]
 
+### Fixed - Tournament Data Scraping: Add Missing Date Fields to tournaments.db
+- **Problem**: Tournament data fields (registration_opens, registration_closes, cancellation_deadline, competition_start, competition_end) were NULL in tournaments.db
+  - Issue was that `ensure_tournament()` only created individual tournament databases
+  - Central unified `tournaments.db` was not being populated with scraped data
+  - Date fields were being extracted but not stored in unified database
+
+- **Solution**: Updated `ensure_tournament()` endpoint to populate unified tournaments.db
+  - Now extracts tournament name, location, and all date fields from Badminton Sweden
+  - Inserts into unified `tournaments.db` with complete data
+  - Maintains backward compatibility: still creates individual tournament databases
+  - Fixed date field extraction (registration_opens, registration_closes, cancellation_deadline, competition_start, competition_end)
+
+- **Testing**: Added comprehensive unit test suite
+  - Created test_tournament_scraping.py (299 lines, 6 tests)
+  - Test 1: Verifies all date fields exist in schema
+  - Test 2: Validates data insertion with all dates populated
+  - Test 3: Ensures no NULL values in date fields
+  - Test 4: Validates ISO format (YYYY-MM-DD)
+  - Test 5: Checks logical date ordering
+  - Test 6: Batch insert verification
+
+- **Code Changes**:
+  - app.py: Updated `ensure_tournament()` function (110 lines)
+    - Added location extraction from tournament page
+    - Added dual database write (unified tournaments.db + individual db)
+    - Improved logging for debugging
+  - test_tournament_scraping.py: New test file (299 lines)
+
+- **Verification**:
+  - ✅ All 58 tests passing (12 + 6 new + 40)
+  - ✅ App startup verified
+  - ✅ Date field extraction working correctly
+  - ✅ Foreign key constraints validated
+
+Result:
+  - tournaments.db now contains all tournament metadata
+  - All date fields properly populated when tournaments are added
+  - Single source of truth for tournament information
+  - Unified database ready for queries and analytics
+
 ### Changed - Database Normalization: tournament_registrations Schema Refactor
 - **Normalized tournament_registrations table** to eliminate data duplication
   - Removed 8 duplicate player columns: name, club, gender, email, phone, dob, age, ranking

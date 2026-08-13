@@ -1766,7 +1766,7 @@ def my_registrations():
 
 @app.route("/api/ensure-tournament", methods=["POST"])
 def ensure_tournament():
-    """Ensure tournament exists in unified tournaments.db"""
+    """Ensure tournament exists in unified tournaments.db and creates individual tournament DB"""
     data = request.json
     url = data.get("url", "")
     if not url:
@@ -1814,6 +1814,12 @@ def ensure_tournament():
             if name_el:
                 name = name_el.get_text(strip=True)
 
+        # Get location
+        location = ""
+        location_el = soup.select_one(".media__subheading")
+        if location_el:
+            location = location_el.get_text(strip=True)
+
         # Get timeline dates
         dates = {}
         timeline = soup.select_one(".tournament-meta__timeline")
@@ -1855,7 +1861,45 @@ def ensure_tournament():
         if not name:
             return jsonify(success=False, error="Could not fetch tournament info"), 500
 
-        # Create the DB
+        # STEP 1: Add to unified tournaments.db with all date fields
+        logger.info(f"📝 Adding tournament to unified tournaments.db...")
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        try:
+            cur.execute("""
+                INSERT INTO tournaments
+                (tournament_url, tournament_name, location, date_start, date_end,
+                 registration_opens, registration_closes, cancellation_deadline,
+                 competition_start, competition_end, selected_for_view, created_at, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """, (
+                url,
+                name,
+                location,
+                dates.get("competition_start", ""),  # date_start
+                dates.get("competition_end", ""),    # date_end
+                dates.get("registration_opens", ""),
+                dates.get("registration_closes", ""),
+                dates.get("cancellation_deadline", ""),
+                dates.get("competition_start", ""),
+                dates.get("competition_end", ""),
+                1  # selected_for_view = true
+            ))
+            conn.commit()
+            
+            # Get the ID
+            cur.execute("SELECT id FROM tournaments WHERE tournament_url = ?", (url,))
+            tournament_id = cur.fetchone()[0]
+            logger.info(f"✅ Added to tournaments.db with ID: {tournament_id}")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not add to unified DB: {e}")
+            tournament_id = None
+        finally:
+            conn.close()
+
+        # STEP 2: Create individual tournament database
+        logger.info(f"📁 Creating individual tournament database...")
         db_file = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_') + ".db"
         db_path = os.path.join(TOURNAMENTS_DIR, db_file)
 
@@ -1898,9 +1942,13 @@ def ensure_tournament():
         )
         conn.commit()
         conn.close()
+        
+        logger.info(f"✅ Created individual tournament database: {db_file}")
         trigger_sync()  # Trigger debounced sync after tournament creation
-        return jsonify(success=True, db=db_file)
+        
+        return jsonify(success=True, db=db_file, tournament_id=tournament_id, created=True)
     except Exception as e:
+        logger.error(f"❌ Error in ensure_tournament: {e}")
         return jsonify(success=False, error=str(e)), 500
 
 
