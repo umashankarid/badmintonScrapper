@@ -849,8 +849,8 @@ def validate_registration():
                 if check_date.year == year_turn_limit and check_date.month <= 6:
                     pass  # Allowed - still within grace period
                 else:
-                    return jsonify(success=True, allowed=False, age_restriction=False,
-                        message=f"Player is {age_at_comp} years old. {level} is for players under {age_limit}.")
+                    return jsonify(success=True, allowed=False, hard_block=True,
+                        message=f"Player is {age_at_comp} years old. {level} is for players under {age_limit}. NOT ALLOWED.")
 
             # Player is too young - can't play a lower age group
             # e.g., a 12-year-old can't play U9 or U11
@@ -868,7 +868,7 @@ def validate_registration():
                     correct_group = ag
                     break
             if correct_group and age_limit < correct_group and age_at_comp >= age_limit:
-                return jsonify(success=True, allowed=False, age_restriction=False,
+                return jsonify(success=True, allowed=False, hard_block=True,
                     message=f"Player is {age_at_comp} years old. Cannot play {level} (too old). Should play U{correct_group} or higher.")
 
         except Exception:
@@ -2857,6 +2857,67 @@ def add_player():
             conn_rules.close()
     except Exception as e:
         logger.debug(f"Could not validate points on server: {e}")
+    
+    # SERVER-SIDE VALIDATION: Reject if player is too old for age-based category (U9, U11, etc.)
+    # This is a hard block — cannot be overridden
+    try:
+        conn_players_age = sqlite3.connect(PLAYERS_DB)
+        cur_age = conn_players_age.cursor()
+        cur_age.execute("SELECT dob FROM players WHERE license_id = ?", (license_id,))
+        row_age = cur_age.fetchone()
+        player_dob = row_age[0] if row_age and row_age[0] else ""
+        conn_players_age.close()
+        
+        if player_dob:
+            from datetime import datetime as dt_cls
+            import re as re_mod
+            birth = dt_cls.strptime(player_dob, "%Y-%m-%d")
+            
+            # Get competition date for this tournament
+            conn_t = sqlite3.connect(TOURNAMENTS_DB)
+            cur_t = conn_t.cursor()
+            cur_t.execute("SELECT competition_start FROM tournaments WHERE tournament_name = ?", (tournament_name,))
+            t_row = cur_t.fetchone()
+            competition_date = t_row[0] if t_row else ""
+            conn_t.close()
+            
+            check_date = dt_cls.now()
+            if competition_date:
+                try:
+                    check_date = dt_cls.strptime(competition_date, "%Y-%m-%d")
+                except Exception:
+                    pass
+            
+            age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
+            
+            all_levels = []
+            for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
+                if lvl_str:
+                    for lvl in lvl_str.split(","):
+                        lvl = lvl.strip()
+                        if lvl:
+                            parts = lvl.split(" ", 1)
+                            if len(parts) == 2:
+                                all_levels.append({"event": lvl, "category": parts[0], "level": parts[1]})
+            
+            for entry in all_levels:
+                level = entry["level"]
+                # Check age-based categories (U9, U11, U13, U15, U17, U19)
+                if level.startswith("U"):
+                    match = re_mod.search(r'\d+', level)
+                    if match:
+                        age_limit = int(match.group())
+                        year_turn_limit = birth.year + age_limit
+                        
+                        if age_at_comp >= age_limit:
+                            # Grace period: can play until June of the year they age out
+                            if check_date.year == year_turn_limit and check_date.month <= 6:
+                                pass  # Allowed
+                            else:
+                                return jsonify(success=False,
+                                    error=f"Registration rejected: Player is {age_at_comp} years old. {level} is for players under {age_limit}. Not allowed to play {entry['event']}.")
+    except Exception as e:
+        logger.debug(f"Could not validate age on server: {e}")
     
     # STEP 1: Ensure player exists in players.db
     # From live search we have: name, license_id, club, profile_url
