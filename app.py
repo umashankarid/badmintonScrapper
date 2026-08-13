@@ -1773,17 +1773,26 @@ def get_all_bwf_tournaments():
         
         logger.info(f"📊 Summary: Added {added_count}, Updated {updated_count} tournaments")
         
-        # STEP 3: Delete expired tournaments (where date_end < today)
+        # STEP 3: Delete expired tournaments (where date_start < today - can't register after start)
         from datetime import datetime as dt
         today = dt.now().strftime("%Y-%m-%d")
         try:
             conn = sqlite3.connect(TOURNAMENTS_DB)
             cur = conn.cursor()
-            cur.execute("DELETE FROM tournaments WHERE date_end < ?", (today,))
-            deleted_count = cur.rowcount
-            conn.commit()
-            if deleted_count > 0:
-                logger.info(f"🗑️  Deleted {deleted_count} expired tournaments")
+            # Get tournament names that are expired (for cleaning registrations)
+            cur.execute("SELECT tournament_name FROM tournaments WHERE date_start < ?", (today,))
+            expired_names = [row[0] for row in cur.fetchall()]
+            
+            if expired_names:
+                # Delete registrations for expired tournaments
+                placeholders = ','.join(['?' for _ in expired_names])
+                cur.execute(f"DELETE FROM tournament_registrations WHERE tournament_name IN ({placeholders})", expired_names)
+                reg_deleted = cur.rowcount
+                # Delete the tournaments themselves
+                cur.execute(f"DELETE FROM tournaments WHERE tournament_name IN ({placeholders})", expired_names)
+                deleted_count = cur.rowcount
+                conn.commit()
+                logger.info(f"🗑️  Deleted {deleted_count} expired tournaments and {reg_deleted} registrations")
             conn.close()
         except Exception as e:
             logger.error(f"Error deleting expired tournaments: {e}")
@@ -1818,14 +1827,14 @@ def open_tournaments():
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get tournaments marked as selected_for_view = 1 AND date_end >= TODAY
+        # Get tournaments marked as selected_for_view = 1 AND date_start >= TODAY
         cur.execute("""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
                    competition_start, competition_end
             FROM tournaments 
             WHERE selected_for_view = 1 
-            AND date_end >= ?
+            AND date_start >= ?
             ORDER BY registration_closes ASC, tournament_name ASC
         """, (today,))
         rows = cur.fetchall()
