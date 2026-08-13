@@ -152,36 +152,29 @@ def scrape_ranking_from_page(soup):
 
 def scrape_all_players():
     """
-    Bulk scrape all players from Badminton Sweden
+    Bulk scrape all players from Badminton Sweden on startup.
     
-    This is an expensive operation - only run on startup.
-    Searches for all players and updates players.db
+    This completely replaces the players table with fresh data.
+    - Deletes all existing players
+    - Fetches all players from Badminton Sweden (A-Z search)
+    - Populates players table with complete data
     """
-    logger.info("🔄 Starting bulk scrape of all players from Badminton Sweden")
+    logger.info("🔄 Starting fresh bulk scrape of ALL players from Badminton Sweden")
     
-    # First, clean up old temp entries with no real data
     try:
+        # STEP 1: Clear existing players table to start fresh
         conn = sqlite3.connect(PLAYERS_DB)
         cur = conn.cursor()
-        cur.execute("""
-            DELETE FROM players 
-            WHERE name LIKE 'temp_%' 
-            AND (profile_url IS NULL OR name IS NULL OR club IS NULL)
-        """)
-        deleted = cur.rowcount
+        cur.execute("DELETE FROM players")
         conn.commit()
+        logger.info("🧹 Cleared players table for fresh data")
         conn.close()
-        if deleted > 0:
-            logger.info(f"🧹 Cleaned up {deleted} stale temp entries")
     except Exception as e:
-        logger.debug(f"⚠️  Could not clean up temp entries: {e}")
-    
-    # Note: This would require iterating through all letters/combinations
-    # For now, we'll do a basic implementation
-    # In production, this might use pagination or other mechanisms
+        logger.warning(f"⚠️  Could not clear players table: {e}")
     
     try:
         players_found = 0
+        players_failed = 0
         
         # Try searching common letters and combinations
         search_terms = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -212,27 +205,30 @@ def scrape_all_players():
                             profile_url = item.select_one("a.media__link")
                             profile_path = profile_url.get("href") if profile_url else ""
                             
-                            # Update players.db with real data
-                            if name and not name.startswith("temp_") and license_id:
-                                update_player_in_db(
+                            # Only add valid entries (not temp_*, has name and license)
+                            if name and not name.startswith("temp_") and license_id and not license_id.startswith("temp_"):
+                                if update_player_in_db(
                                     license_id=license_id,
                                     name=name,
                                     profile_url=profile_path
-                                )
-                                players_found += 1
+                                ):
+                                    players_found += 1
+                                else:
+                                    players_failed += 1
                                 
                                 if players_found % 50 == 0:
                                     logger.info(f"🔍 Scraped {players_found} players so far...")
                     
                     except Exception as e:
                         logger.debug(f"Error processing item: {e}")
+                        players_failed += 1
                         continue
             
             except Exception as e:
                 logger.warning(f"⚠️  Error searching for '{letter}': {e}")
                 continue
         
-        logger.info(f"✅ Bulk scrape complete: {players_found} players updated")
+        logger.info(f"✅ Bulk scrape complete: {players_found} players added, {players_failed} failed")
         return players_found
     
     except Exception as e:
