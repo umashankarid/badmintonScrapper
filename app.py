@@ -2187,13 +2187,20 @@ def get_tournament_players():
         )
         total = cur.fetchone()[0]
         
-        # Get paginated registered players
+        # Get paginated registered players with player details from players table
         offset = (page - 1) * page_size
         cur.execute("""
-            SELECT id as player_id, tournament_name, license_id, singles_levels, doubles_levels, 
-                   mixed_levels, doubles_partner, mixed_partner, registration_date
-            FROM tournament_registrations 
-            WHERE tournament_name = ? 
+            SELECT tr.id as player_id, tr.tournament_name, tr.license_id, 
+                   COALESCE(p.player_name, 'Unknown') as player_name,
+                   COALESCE(p.club, '') as club,
+                   COALESCE(p.gender, '') as gender,
+                   COALESCE(p.email, '') as email,
+                   COALESCE(p.phone, '') as phone,
+                   tr.singles_levels, tr.doubles_levels, 
+                   tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date
+            FROM tournament_registrations tr
+            LEFT JOIN players p ON tr.license_id = p.license_id
+            WHERE tr.tournament_name = ? 
             LIMIT ? OFFSET ?
         """, (tournament_name, page_size, offset))
         

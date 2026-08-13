@@ -241,12 +241,12 @@
                 tbody.innerHTML = players.map(p => {
                     return `
                     <tr>
+                        <td>${p.player_name || ""}</td>
                         <td>${p.license_id || ""}</td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
+                        <td>${p.club || ""}</td>
+                        <td>${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
+                        <td>${p.email || ""}</td>
+                        <td>${p.phone || ""}</td>
                         <td>${p.singles_levels || ""}</td>
                         <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
                         <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
