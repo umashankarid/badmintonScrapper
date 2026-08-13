@@ -107,8 +107,10 @@ ADMIN_DB = os.path.join(os.path.dirname(__file__), "admin.db")
 TOURNAMENTS_DB = os.path.join(os.path.dirname(__file__), "tournaments.db")
 
 def init_tournaments_db():
-    """Initialize tournaments.db with metadata table"""
+    """Initialize tournaments.db with tournament and registration tables"""
     conn = sqlite3.connect(TOURNAMENTS_DB)
+    
+    # Tournament metadata table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournaments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,9 +129,34 @@ def init_tournaments_db():
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Player registrations for tournaments
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tournament_registrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER NOT NULL,
+            player_name TEXT NOT NULL,
+            license_id TEXT,
+            club TEXT,
+            gender TEXT,
+            email TEXT,
+            phone TEXT,
+            dob TEXT,
+            age TEXT,
+            ranking TEXT,
+            singles_levels TEXT,
+            doubles_levels TEXT,
+            mixed_levels TEXT,
+            doubles_partner TEXT,
+            mixed_partner TEXT,
+            registration_date TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+        )
+    """)
+    
     conn.commit()
     conn.close()
-    logger.info("✅ tournaments.db initialized")
+    logger.info("✅ tournaments.db initialized with tournaments and tournament_registrations tables")
 
 
 def init_admin_db():
@@ -1146,78 +1173,28 @@ def fetch_tournament_info():
 
 @app.route("/admin/create-tournament", methods=["POST"])
 def create_tournament():
+    """Manual tournament creation deprecated - tournaments are synced from Badminton Sweden"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
-    data = request.json
-    name = data.get("name")
-    levels = data.get("levels", [])
-    bwf_url = data.get("bwf_url", "")
-    registration_opens = data.get("registration_opens", "")
-    final_registration_date = data.get("final_registration_date", "")
-    final_cancellation_date = data.get("final_cancellation_date", "")
-    competition_date = data.get("competition_date", "")
-    competition_end = data.get("competition_end", "")
-
-    if not name:
-        return jsonify(success=False, error="Name required"), 400
-
-    db_file = name.lower().replace(" ", "_") + ".db"
-    db_path = os.path.join(TOURNAMENTS_DIR, db_file)
-
-    conn = sqlite3.connect(db_path)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tournaments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            bwf_url TEXT,
-            levels TEXT,
-            registration_opens TEXT,
-            final_registration_date TEXT,
-            final_cancellation_date TEXT,
-            competition_date TEXT,
-            competition_end TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS players (
-            player_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            player_name TEXT,
-            license_id TEXT,
-            club TEXT,
-            gender TEXT,
-            email TEXT,
-            phone TEXT,
-            ranking TEXT,
-            singles_levels TEXT,
-            doubles_levels TEXT,
-            mixed_levels TEXT,
-            doubles_partner TEXT,
-            mixed_partner TEXT
-        )
-    """)
-    conn.execute(
-        "INSERT INTO tournaments (name, bwf_url, levels, registration_opens, final_registration_date, final_cancellation_date, competition_date, competition_end) VALUES (?,?,?,?,?,?,?,?)",
-        (name, bwf_url, json.dumps(levels), registration_opens, final_registration_date, final_cancellation_date, competition_date, competition_end)
-    )
-    conn.commit()
-    conn.close()
-    trigger_sync()  # Sync new tournament to Dropbox
-    return jsonify(success=True, db=db_file)
+    
+    return jsonify(
+        success=False, 
+        error="Manual tournament creation is deprecated.",
+        message="Tournaments are automatically synced from Badminton Sweden. Use the Manage Tournaments tab to select tournaments."
+    ), 400
 
 
 @app.route("/admin/delete-tournament", methods=["POST"])
 def delete_tournament():
+    """Manual tournament deletion deprecated"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
-    data = request.json
-    db_file = data.get("db")
-    if not db_file:
-        return jsonify(success=False, error="db required"), 400
-    path = os.path.join(TOURNAMENTS_DIR, db_file)
-    if os.path.exists(path):
-        os.remove(path)
-    trigger_sync()  # Sync deletion to Dropbox
-    return jsonify(success=True)
+    
+    return jsonify(
+        success=False,
+        error="Manual tournament deletion is deprecated.",
+        message="Deselect tournaments in the Manage Tournaments tab instead."
+    ), 400
 
 
 @app.route("/admin/submit-tournament", methods=["POST"])
