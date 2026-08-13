@@ -1169,7 +1169,7 @@ def send_test_email():
 # --- Tournament CRUD ---
 @app.route("/api/tournaments", methods=["GET"])
 def list_tournaments():
-    """List tournaments with registration count"""
+    """List tournaments with registration count from unified tournaments.db"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
@@ -1183,20 +1183,25 @@ def list_tournaments():
         
         tournaments = []
         for row in cur.fetchall():
-            # Get registration count for this tournament
-            reg_table = f"tournament_{row[0]}_registrations"
-            try:
-                cur.execute(f"SELECT COUNT(*) FROM {reg_table}")
-                reg_count = cur.fetchone()[0]
-            except:
-                reg_count = 0
+            tournament_id = row[0]
+            
+            # Get registration count from unified tournament_registrations table
+            cur.execute(
+                "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = ?",
+                (tournament_id,)
+            )
+            reg_count = cur.fetchone()[0]
             
             tournaments.append({
-                "id": row[0],
+                "id": tournament_id,
+                "db": tournament_id,  # For backward compatibility with frontend
+                "name": row[1],  # Keep both name formats
                 "tournament_name": row[1],
                 "location": row[2],
                 "date_start": row[3],
                 "date_end": row[4],
+                "competition_date": row[3],  # For compatibility
+                "final_registration_date": row[4],  # For compatibility
                 "registrations": reg_count
             })
         
