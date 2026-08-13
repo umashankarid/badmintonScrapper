@@ -287,7 +287,7 @@ def check_player_data_stale(license_id, max_age_hours=24):
 
 def update_player_in_db(license_id, name, profile_url, ranking=None, email=None, phone=None):
     """
-    Insert or replace player in players.db (simple insert, PRIMARY KEY handles duplicates)
+    Insert player in players.db (insert all entries, no deduplication)
     """
     try:
         conn = sqlite3.connect(PLAYERS_DB)
@@ -295,9 +295,9 @@ def update_player_in_db(license_id, name, profile_url, ranking=None, email=None,
         
         now = datetime.now().isoformat()
         
-        # Simple INSERT OR REPLACE - PRIMARY KEY handles duplicates automatically
+        # Simple INSERT - store all 5,200 entries without deduplication
         cur.execute("""
-            INSERT OR REPLACE INTO players
+            INSERT INTO players
             (license_id, name, profile_url, ranking, email, phone, last_updated, last_scraped)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (license_id, name, profile_url, ranking, email, phone, now, now))

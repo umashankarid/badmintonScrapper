@@ -551,7 +551,8 @@ def init_players_db():
     conn = sqlite3.connect(PLAYERS_DB)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS players (
-            license_id TEXT PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_id TEXT,
             name TEXT NOT NULL,
             profile_url TEXT,
             club TEXT,
