@@ -168,23 +168,24 @@
                     }
                 }
             }
-            // Fetch event classes from Badminton Sweden
+            // Fetch event classes from tournament database
             const evRes = await fetch(`/api/tournament-events?dbFile=${dbFile}`);
             const evData = await evRes.json();
             if (evData.success) {
                 const container = document.getElementById("levels-container");
+                const cats = evData.categories || {};
                 container.innerHTML = 
                     "<label>Singles (HS/DS):</label>" +
                     `<select class="singles-level"><option value="">-- None --</option>` +
-                    evData.singles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    (cats.singles_levels || []).map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
                     "<label>Doubles (HD/DD):</label>" +
                     `<select class="doubles-level"><option value="">-- None --</option>` +
-                    evData.doubles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    (cats.doubles_levels || []).map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
                     "<label>Mixed (MD):</label>" +
                     `<select class="mixed-level"><option value="">-- None --</option>` +
-                    evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    (cats.mixed_levels || []).map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>`;
             }
         }
@@ -489,17 +490,18 @@
             const evData = await evRes.json();
             if (evData.success) {
                 const container = document.getElementById("admin-levels-container");
+                const cats = evData.categories || {};
                 container.innerHTML = "<label>Singles (HS/DS):</label>" +
                     `<select class="admin-singles-level"><option value="">-- None --</option>` +
-                    evData.singles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    (cats.singles_levels || []).map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
                     "<label>Doubles (HD/DD):</label>" +
                     `<select class="admin-doubles-level"><option value="">-- None --</option>` +
-                    evData.doubles.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    (cats.doubles_levels || []).map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>` +
                     "<label>Mixed (MD):</label>" +
                     `<select class="admin-mixed-level"><option value="">-- None --</option>` +
-                    evData.mixed.map(e => `<option value="${e}">${e}</option>`).join("") +
+                    (cats.mixed_levels || []).map(e => `<option value="${e}">${e}</option>`).join("") +
                     `</select>`;
 
                 // Show/hide partner fields based on admin level selection
