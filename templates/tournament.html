@@ -291,6 +291,8 @@
 
             const editId = document.getElementById("edit-player-id").value;
             const club = loggedInPlayer.club || document.getElementById("logged-player-club").textContent;
+            const doublesPartnerEl = document.getElementById("doubles-partner");
+            const mixedPartnerEl = document.getElementById("mixed-partner");
             const player = {
                 player_name: loggedInPlayer.player_name,
                 club: club,
@@ -304,8 +306,14 @@
                 singles_levels: singlesLevels,
                 doubles_levels: doublesLevels,
                 mixed_levels: mixedLevels,
-                doubles_partner: document.getElementById("doubles-partner").value,
-                mixed_partner: document.getElementById("mixed-partner").value,
+                doubles_partner: doublesPartnerEl.value,
+                mixed_partner: mixedPartnerEl.value,
+                doubles_partner_license_id: doublesPartnerEl.dataset.licenseId || "",
+                doubles_partner_club: doublesPartnerEl.dataset.club || "",
+                doubles_partner_profile_url: doublesPartnerEl.dataset.profileUrl || "",
+                mixed_partner_license_id: mixedPartnerEl.dataset.licenseId || "",
+                mixed_partner_club: mixedPartnerEl.dataset.club || "",
+                mixed_partner_profile_url: mixedPartnerEl.dataset.profileUrl || "",
             };
             if (editId) player.player_id = parseInt(editId);
 
