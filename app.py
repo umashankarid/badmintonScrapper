@@ -2112,39 +2112,40 @@ def get_tournament_events():
 
 @app.route("/api/tournament", methods=["GET"])
 def get_tournament_info():
-    db_file = request.args.get("dbFile")
-    if not db_file:
+    """Get tournament info including categories from tournaments.db"""
+    tournament_id = request.args.get("dbFile")  # This is the tournament ID from tournaments.db
+    
+    if not tournament_id:
         return jsonify(success=False, error="dbFile required"), 400
-    conn = get_tournament_db(db_file)
-    if not conn:
-        return jsonify(success=False, error="Tournament not found"), 404
-    cur = conn.cursor()
+    
     try:
-        cur.execute("SELECT name, levels, competition_date, final_registration_date, final_cancellation_date FROM tournaments LIMIT 1")
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT tournament_name, registration_closes, cancellation_deadline, categories
+            FROM tournaments WHERE id = ?
+        """, (tournament_id,))
+        
         row = cur.fetchone()
-        if row and len(row) >= 5:
-            registration_closes = row[3]
-            cancellation_deadline = row[4]
-        else:
-            registration_closes = ""
-            cancellation_deadline = ""
-    except sqlite3.OperationalError:
-        cur.execute("SELECT name, levels, competition_date FROM tournaments LIMIT 1")
-        row = cur.fetchone()
-        row = (row[0], row[1], row[2] if len(row) > 2 else "") if row else None
-        registration_closes = ""
-        cancellation_deadline = ""
-    conn.close()
-    if not row:
-        return jsonify(success=False, error="No tournament info"), 500
-    levels = json.loads(row[1]) if row[1] else []
-    return jsonify(success=True, tournament={
-        "name": row[0], 
-        "levels": levels, 
-        "competition_date": row[2] or "",
-        "registration_closes": registration_closes or "",
-        "cancellation_deadline": cancellation_deadline or ""
-    })
+        conn.close()
+        
+        if not row:
+            return jsonify(success=False, error="Tournament not found"), 404
+        
+        tournament_name, registration_closes, cancellation_deadline, categories_json = row
+        categories = json.loads(categories_json) if categories_json else {}
+        
+        return jsonify(success=True, tournament={
+            "name": tournament_name,
+            "registration_closes": registration_closes or "",
+            "cancellation_deadline": cancellation_deadline or "",
+            "categories": categories
+        })
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching tournament info: {e}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 # --- Players in tournament ---
@@ -2193,6 +2194,59 @@ def get_tournament_players():
     
     except Exception as e:
         logger.error(f"❌ Error fetching tournament players: {e}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/tournament-registrations", methods=["GET"])
+def get_tournament_registration():
+    """Get a specific player's registration for a tournament"""
+    tournament_id = request.args.get("dbFile")
+    license_id = request.args.get("license_id")
+    
+    if not tournament_id or not license_id:
+        return jsonify(success=False, error="dbFile and license_id required"), 400
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        # Verify tournament exists
+        cur.execute("SELECT id FROM tournaments WHERE id = ?", (tournament_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify(success=False, error="Tournament not found"), 404
+        
+        # Get player's registration
+        cur.execute("""
+            SELECT id, tournament_id, license_id, singles_levels, doubles_levels, 
+                   mixed_levels, doubles_partner, mixed_partner, registration_date
+            FROM tournament_registrations 
+            WHERE tournament_id = ? AND license_id = ?
+        """, (tournament_id, license_id))
+        
+        row = cur.fetchone()
+        conn.close()
+        
+        if not row:
+            # No existing registration
+            return jsonify(success=True, registration=None)
+        
+        registration = {
+            "player_id": row[0],
+            "tournament_id": row[1],
+            "license_id": row[2],
+            "singles_levels": row[3] or "",
+            "doubles_levels": row[4] or "",
+            "mixed_levels": row[5] or "",
+            "doubles_partner": row[6] or "",
+            "mixed_partner": row[7] or "",
+            "registration_date": row[8]
+        }
+        
+        return jsonify(success=True, registration=registration)
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching tournament registration: {e}")
         return jsonify(success=False, error=str(e)), 500
 
 

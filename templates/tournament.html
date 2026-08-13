@@ -167,13 +167,10 @@
                         showRegistrationClosed();
                     }
                 }
-            }
-            // Fetch event classes from tournament database
-            const evRes = await fetch(`/api/tournament-events?dbFile=${dbFile}`);
-            const evData = await evRes.json();
-            if (evData.success) {
+                
+                // Load categories from tournament data
                 const container = document.getElementById("levels-container");
-                const cats = evData.categories || {};
+                const cats = data.tournament.categories || {};
                 container.innerHTML = 
                     "<label>Singles (HS/DS):</label>" +
                     `<select class="singles-level"><option value="">-- None --</option>` +
@@ -315,25 +312,29 @@
         });
 
         async function editPlayer(id) {
+            // Get the player's registration from tournament_registrations table
             const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
             const data = await res.json();
             const player = data.players.find(p => p.player_id === id);
             if (!player) return;
 
+            // Fetch the detailed registration
+            const regRes = await fetch(`/api/tournament-registrations?dbFile=${dbFile}&license_id=${encodeURIComponent(player.license_id)}`);
+            const regData = await regRes.json();
+            if (!regData.success || !regData.registration) return;
+            
+            const registration = regData.registration;
+
             document.getElementById("edit-player-id").value = player.player_id;
-            document.getElementById("doubles-partner").value = player.doubles_partner || "";
-            document.getElementById("mixed-partner").value = player.mixed_partner || "";
+            document.getElementById("doubles-partner").value = registration.doubles_partner || "";
+            document.getElementById("mixed-partner").value = registration.mixed_partner || "";
 
-            const singlesLevels = (player.singles_levels || "").split(",").filter(Boolean);
-            const doublesLevels = (player.doubles_levels || "").split(",").filter(Boolean);
-            const mixedLevels = (player.mixed_levels || "").split(",").filter(Boolean);
+            document.querySelector(".singles-level").value = registration.singles_levels || "";
+            document.querySelector(".doubles-level").value = registration.doubles_levels || "";
+            document.querySelector(".mixed-level").value = registration.mixed_levels || "";
 
-            document.querySelector(".singles-level").value = singlesLevels[0] || "";
-            document.querySelector(".doubles-level").value = doublesLevels[0] || "";
-            document.querySelector(".mixed-level").value = mixedLevels[0] || "";
-
-            document.getElementById("doubles-partner-container").style.display = doublesLevels.length ? "block" : "none";
-            document.getElementById("mixed-partner-container").style.display = mixedLevels.length ? "block" : "none";
+            document.getElementById("doubles-partner-container").style.display = registration.doubles_levels ? "block" : "none";
+            document.getElementById("mixed-partner-container").style.display = registration.mixed_levels ? "block" : "none";
 
             document.getElementById("submit-btn").textContent = "Update";
             document.getElementById("cancel-edit-btn").style.display = "block";
