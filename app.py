@@ -1169,18 +1169,21 @@ def send_test_email():
 # --- Tournament CRUD ---
 @app.route("/api/tournaments", methods=["GET"])
 def list_tournaments():
-    """List tournaments that have registrations from unified tournament_registrations table"""
+    """List tournaments that have registrations from tournament_registrations table"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get tournaments that have at least one registration
+        # Get distinct tournament_ids from registrations, with their data if available
         cur.execute("""
-            SELECT DISTINCT t.id, t.tournament_name, t.location, t.date_start, t.date_end
-            FROM tournaments t
-            INNER JOIN tournament_registrations tr ON t.id = tr.tournament_id
-            WHERE t.date_end >= date('now')
-            ORDER BY t.date_start ASC
+            SELECT DISTINCT tr.tournament_id, 
+                   COALESCE(t.tournament_name, 'Unknown Tournament'),
+                   COALESCE(t.location, ''),
+                   COALESCE(t.date_start, ''),
+                   COALESCE(t.date_end, '')
+            FROM tournament_registrations tr
+            LEFT JOIN tournaments t ON tr.tournament_id = t.id
+            ORDER BY COALESCE(t.date_start, '')
         """)
         
         tournaments = []
