@@ -2150,168 +2150,124 @@ def get_tournament_info():
 # --- Players in tournament ---
 @app.route("/api/tournament-players", methods=["GET"])
 def get_tournament_players():
-    db_file = request.args.get("dbFile")
+    """Get registered players for a tournament"""
+    tournament_id = request.args.get("dbFile")  # This is the tournament ID from tournaments.db
     page = int(request.args.get("page", 1))
     page_size = int(request.args.get("pageSize", 20))
-    if not db_file:
+    
+    if not tournament_id:
         return jsonify(success=False, error="dbFile required"), 400
-    conn = get_tournament_db(db_file)
-    if not conn:
-        return jsonify(success=False, error="Tournament not found"), 404
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM players")
-    total = cur.fetchone()[0]
-    offset = (page - 1) * page_size
-    cur.execute("SELECT * FROM players LIMIT ? OFFSET ?", (page_size, offset))
-    players = [dict(row) for row in cur.fetchall()]
-    conn.close()
-    return jsonify(success=True, total=total, players=players)
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        # Verify tournament exists
+        cur.execute("SELECT id FROM tournaments WHERE id = ?", (tournament_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify(success=False, error="Tournament not found"), 404
+        
+        # Get total registered players
+        cur.execute(
+            "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = ?",
+            (tournament_id,)
+        )
+        total = cur.fetchone()[0]
+        
+        # Get paginated registered players
+        offset = (page - 1) * page_size
+        cur.execute("""
+            SELECT id as player_id, tournament_id, license_id, singles_levels, doubles_levels, 
+                   mixed_levels, doubles_partner, mixed_partner, registration_date
+            FROM tournament_registrations 
+            WHERE tournament_id = ? 
+            LIMIT ? OFFSET ?
+        """, (tournament_id, page_size, offset))
+        
+        players = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        
+        return jsonify(success=True, total=total, players=players)
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching tournament players: {e}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route("/api/add-player", methods=["POST"])
 def add_player():
+    """Register a player for a tournament"""
     data = request.json
-    db_file = data.get("dbFile")
+    tournament_id = data.get("dbFile")  # This is the tournament ID from tournaments.db
     player = data.get("player")
-    if not db_file or not player:
+    
+    if not tournament_id or not player:
         return jsonify(success=False, error="Missing data"), 400
-    conn = get_tournament_db(db_file)
-    if not conn:
-        return jsonify(success=False, error="Tournament not found"), 404
-
-    player_id = player.get("player_id")
-    if not player_id and not player.get("club", "").strip():
-        conn.close()
-        return jsonify(success=False, error="Club is required"), 400
-
-    # Check if player already exists by license_id or name
-    if not player_id:
-        license_id = player.get("license_id", "").strip()
-        if license_id:
-            existing = conn.execute("SELECT player_id FROM players WHERE license_id=?", (license_id,)).fetchone()
-            if existing:
-                player_id = existing[0]
-        if not player_id:
-            existing = conn.execute("SELECT player_id FROM players WHERE player_name=?", (player["player_name"],)).fetchone()
-            if existing:
-                player_id = existing[0]
-
-    if player_id:
-        # Merge levels with existing entry
-        existing_row = conn.execute("SELECT singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner FROM players WHERE player_id=?", (player_id,)).fetchone()
-        if existing_row:
-            def merge_levels(existing, new):
-                existing_set = set(filter(None, (existing or "").split(",")))
-                new_set = set(filter(None, (new or "").split(",")))
-                merged = existing_set | new_set
-                return ",".join(sorted(merged)) if merged else ""
-
-            merged_singles = merge_levels(existing_row[0], player.get("singles_levels", ""))
-            merged_doubles = merge_levels(existing_row[1], player.get("doubles_levels", ""))
-            merged_mixed = merge_levels(existing_row[2], player.get("mixed_levels", ""))
-            new_doubles_partner = player.get("doubles_partner", "").strip()
-            new_mixed_partner = player.get("mixed_partner", "").strip()
-            old_doubles_partner = (existing_row[3] or "").strip()
-            old_mixed_partner = (existing_row[4] or "").strip()
-
-            # Partner is only "changed" if a different non-empty name was submitted
-            doubles_partner_changed = (new_doubles_partner and new_doubles_partner != old_doubles_partner)
-            mixed_partner_changed = (new_mixed_partner and new_mixed_partner != old_mixed_partner)
-
-            # If doubles partner changed, clear old partner's reference
-            if old_doubles_partner and doubles_partner_changed:
-                conn.execute(
-                    "UPDATE players SET doubles_partner='', doubles_levels='' WHERE player_name=? AND doubles_partner=?",
-                    (old_doubles_partner, player["player_name"])
-                )
-
-            # If mixed partner changed, clear old partner's reference
-            if old_mixed_partner and mixed_partner_changed:
-                conn.execute(
-                    "UPDATE players SET mixed_partner='', mixed_levels='' WHERE player_name=? AND mixed_partner=?",
-                    (old_mixed_partner, player["player_name"])
-                )
-
-            # Keep old partner if new one wasn't provided
-            doubles_partner_final = new_doubles_partner if doubles_partner_changed else old_doubles_partner
-            mixed_partner_final = new_mixed_partner if mixed_partner_changed else old_mixed_partner
-
-            conn.execute(
-                "UPDATE players SET player_name=?, license_id=?, club=?, gender=?, email=?, phone=?, dob=?, age=?, ranking=?, singles_levels=?, doubles_levels=?, mixed_levels=?, doubles_partner=?, mixed_partner=? WHERE player_id=?",
-                (player["player_name"], player.get("license_id", ""), player["club"], player["gender"],
-                 player.get("email", ""), player.get("phone", ""), player.get("dob", ""), player.get("age", ""), player.get("ranking", ""),
-                 merged_singles, merged_doubles, merged_mixed, doubles_partner_final, mixed_partner_final, player_id)
-            )
-
-            # Remove players who now have no categories left
-            conn.execute("""
-                DELETE FROM players WHERE
-                    (singles_levels IS NULL OR singles_levels = '') AND
-                    (doubles_levels IS NULL OR doubles_levels = '') AND
-                    (mixed_levels IS NULL OR mixed_levels = '')
-            """)
-        else:
-            conn.execute(
-                "UPDATE players SET player_name=?, license_id=?, club=?, gender=?, email=?, phone=?, dob=?, age=?, ranking=?, singles_levels=?, doubles_levels=?, mixed_levels=?, doubles_partner=?, mixed_partner=? WHERE player_id=?",
-                (player["player_name"], player.get("license_id", ""), player["club"], player["gender"],
-                 player.get("email", ""), player.get("phone", ""), player.get("dob", ""), player.get("age", ""), player.get("ranking", ""),
-                 player.get("singles_levels", ""), player.get("doubles_levels", ""),
-                 player.get("mixed_levels", ""), player.get("doubles_partner", ""),
-                 player.get("mixed_partner", ""), player_id)
-            )
-    else:
-        cur = conn.execute(
-            "INSERT INTO players (player_name, license_id, club, gender, email, phone, dob, age, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (player["player_name"], player.get("license_id", ""), player["club"], player["gender"],
-             player.get("email", ""), player.get("phone", ""), player.get("dob", ""), player.get("age", ""), player.get("ranking", ""),
-             player.get("singles_levels", ""), player.get("doubles_levels", ""),
-             player.get("mixed_levels", ""), player.get("doubles_partner", ""),
-             player.get("mixed_partner", ""))
+    
+    license_id = player.get("license_id", "").strip()
+    
+    # Validate tournament exists
+    try:
+        conn_main = sqlite3.connect(TOURNAMENTS_DB)
+        cur_main = conn_main.cursor()
+        
+        cur_main.execute("SELECT id FROM tournaments WHERE id = ?", (tournament_id,))
+        if not cur_main.fetchone():
+            conn_main.close()
+            return jsonify(success=False, error="Tournament not found"), 404
+        
+        # Check if this player is already registered for this tournament
+        cur_main.execute(
+            "SELECT id FROM tournament_registrations WHERE tournament_id = ? AND license_id = ?",
+            (tournament_id, license_id)
         )
-        player_id = cur.lastrowid
-
-    # Auto-create mirrored entry for doubles partner
-    doubles_partner = player.get("doubles_partner", "").strip()
-    if doubles_partner:
-        existing = conn.execute(
-            "SELECT player_id FROM players WHERE player_name=? AND doubles_partner=?",
-            (doubles_partner, player["player_name"])
-        ).fetchone()
-        if not existing:
-            partner_club = get_player_club(doubles_partner)
-            partner_license = get_player_license(doubles_partner)
-            partner_ranking = get_player_ranking(doubles_partner)
-            # Doubles partner has same gender
-            partner_gender = player.get("gender", "")
-            conn.execute(
-                "INSERT INTO players (player_name, license_id, club, gender, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (doubles_partner, partner_license, partner_club, partner_gender, partner_ranking, "", player.get("doubles_levels", ""), "", player["player_name"], "")
-            )
-
-    # Auto-create mirrored entry for mixed partner
-    mixed_partner = player.get("mixed_partner", "").strip()
-    if mixed_partner:
-        existing = conn.execute(
-            "SELECT player_id FROM players WHERE player_name=? AND mixed_partner=?",
-            (mixed_partner, player["player_name"])
-        ).fetchone()
-        if not existing:
-            partner_club = get_player_club(mixed_partner)
-            partner_license = get_player_license(mixed_partner)
-            partner_ranking = get_player_ranking(mixed_partner)
-            # Mixed partner has opposite gender
-            player_gender = player.get("gender", "")
-            partner_gender = "M" if player_gender == "F" else "F" if player_gender == "M" else ""
-            conn.execute(
-                "INSERT INTO players (player_name, license_id, club, gender, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (mixed_partner, partner_license, partner_club, partner_gender, partner_ranking, "", "", player.get("mixed_levels", ""), "", player["player_name"])
-            )
-
-    conn.commit()
-    conn.close()
-    trigger_sync()  # Trigger debounced sync after database change
-    return jsonify(success=True, player_id=player_id)
+        existing_registration = cur_main.fetchone()
+        
+        if existing_registration:
+            # Update existing registration
+            cur_main.execute("""
+                UPDATE tournament_registrations
+                SET singles_levels = ?, doubles_levels = ?, mixed_levels = ?,
+                    doubles_partner = ?, mixed_partner = ?, registration_date = CURRENT_TIMESTAMP
+                WHERE tournament_id = ? AND license_id = ?
+            """, (
+                player.get("singles_levels", ""),
+                player.get("doubles_levels", ""),
+                player.get("mixed_levels", ""),
+                player.get("doubles_partner", ""),
+                player.get("mixed_partner", ""),
+                tournament_id,
+                license_id
+            ))
+            logger.info(f"✅ Updated registration for {player.get('player_name')} in tournament {tournament_id}")
+        else:
+            # Insert new registration
+            cur_main.execute("""
+                INSERT INTO tournament_registrations
+                (tournament_id, license_id, singles_levels, doubles_levels, mixed_levels,
+                 doubles_partner, mixed_partner, registration_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (
+                tournament_id,
+                license_id,
+                player.get("singles_levels", ""),
+                player.get("doubles_levels", ""),
+                player.get("mixed_levels", ""),
+                player.get("doubles_partner", ""),
+                player.get("mixed_partner", "")
+            ))
+            logger.info(f"✅ Registered {player.get('player_name')} for tournament {tournament_id}")
+        
+        conn_main.commit()
+        conn_main.close()
+        
+        return jsonify(success=True, message="Registration saved successfully")
+    
+    except Exception as e:
+        logger.error(f"❌ Error registering player: {e}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route("/api/delete-player", methods=["POST"])
