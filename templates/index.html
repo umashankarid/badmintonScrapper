@@ -14,9 +14,9 @@
         </div>
         <div id="admin-info" style="display:none;align-items:center;gap:8px;">
             <span id="admin-player-info" style="font-weight:bold;"></span>
-            <a href="/manage-tournaments.html"><button style="width:auto;padding:8px 16px;">Manage Tournaments</button></a>
+            <a href="/manage-tournaments.html"><button style="width:auto;padding:8px 16px;background:#0d47a1;">Add/Remove Tournaments</button></a>
+            <a href="/manage-db.html"><button style="width:auto;padding:8px 16px;background:#455a64;">Manage DB</button></a>
             <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;background:#666;">Logout</button>
-            <a href="/results.html"><button style="width:auto;padding:8px 16px;background:#0066cc;">Show Results</button></a>
         </div>
     </div>
 
@@ -111,30 +111,16 @@
             document.getElementById("loading-msg").style.display = "block";
             container.innerHTML = "";
 
-            // Fetch open tournaments from Badminton Sweden
+            // Fetch open tournaments
             const res = await fetch("/api/open-tournaments");
             const data = await res.json();
-            
-            // Fetch local visible tournaments
-            let localTournaments = [];
-            try {
-                const localRes = await fetch("/api/tournament-visibility");
-                if (localRes.ok) {
-                    const localData = await localRes.json();
-                    if (localData.success && localData.tournaments) {
-                        localTournaments = localData.tournaments.filter(t => t.visible);
-                    }
-                }
-            } catch(e) {
-                // Not admin, ignore
-            }
 
             document.getElementById("loading-msg").style.display = "none";
 
             const tournaments = data.tournaments || [];
             
-            if (!tournaments.length && !localTournaments.length) {
-                container.innerHTML = "<p>No tournaments found.</p>";
+            if (!tournaments.length) {
+                container.innerHTML = "<p>No tournaments with open registration found.</p>";
                 return;
             }
 
@@ -150,8 +136,8 @@
                 }
             }
 
-            // Display Badminton Sweden tournaments
-            const bwfHtml = tournaments.map(t => {
+            // Display open tournaments
+            const html = tournaments.map(t => {
                 const isRegistered = registeredUrls.has(t.url);
                 const badge = statusData.logged_in ? (isRegistered ?
                     `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
@@ -191,20 +177,7 @@
                 </div>
             `}).join("");
 
-            // Display local tournaments
-            const localHtml = localTournaments.map(t => {
-                return `
-                <div class="tournament-card">
-                    <div>
-                        <h2><a href="/tournament.html?db=${t.db}">${t.name}</a></h2>
-                        <div class="details">
-                            <span class="date">📅 ${t.competition_date || 'N/A'}</span>
-                        </div>
-                    </div>
-                </div>
-            `}).join("");
-
-            container.innerHTML = bwfHtml + localHtml;
+            container.innerHTML = html;
         }
 
         checkBwfStatus();
