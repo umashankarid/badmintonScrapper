@@ -1,8 +1,36 @@
 # Code Guidelines for badmintonScrapPython
 
 **Effective Date**: 2026-08-13  
-**Version**: 1.0  
+**Version**: 1.1  
 **Status**: Active - All Work Must Follow These Guidelines
+
+---
+
+## ⚠️ CRITICAL RULES (Non-Negotiable)
+
+### Rule 1: NEVER PUSH WITHOUT USER APPROVAL
+- **ALWAYS ask the user for explicit approval before pushing**
+- Show what will be committed
+- Show what will be pushed
+- Wait for user to respond with "yes" or approval
+- **DO NOT assume silence, absence, or indirect approval**
+- **DO NOT push based on "looks good" or test passing**
+- **Explicit user confirmation is MANDATORY**
+
+### Rule 2: ALWAYS Write Tests FIRST (TDD)
+- Test must be written BEFORE feature code
+- Test must pass before commit
+- No exceptions for "simple" changes
+
+### Rule 3: ALWAYS Add Logging
+- Every operation gets logged at INFO level
+- Errors get logged at ERROR level
+- Debug info at DEBUG level
+- No operation should be silent
+
+### Rule 4: ALWAYS Update CHANGES.md
+- Every commit must update CHANGES.md
+- Record what changed, why, and how
 
 ---
 
@@ -294,7 +322,7 @@ git status  # Should show badmintonScrapPython repo
 
 ## Git Workflow
 
-### Rule 1: Commit Requirements (BEFORE PUSH)
+### Rule 1: Commit Requirements (BEFORE PUSH) - ⚠️ MANDATORY
 
 ✅ **MUST DO**:
 1. Write unit test for new code
@@ -303,14 +331,19 @@ git status  # Should show badmintonScrapPython repo
 4. Update CHANGES.md
 5. Review changes: `git diff --staged`
 6. Verify no secrets: `git diff | grep -i password`
-7. **ASK USER**: "Ready to push X commits?"
+7. **⚠️ MANDATORY: ASK USER FOR APPROVAL BEFORE PUSHING**
+   - Show what will be pushed
+   - Wait for explicit user confirmation
+   - DO NOT PUSH WITHOUT EXPLICIT APPROVAL
 
 ❌ **MUST NOT DO**:
 - Push without testing
 - Push without unit tests
-- Push without user approval
+- **Push without user approval** (CRITICAL - NEVER bypass this)
 - Push with uncommitted changes to CHANGES.md
 - Push with secrets/credentials visible
+- Assume silence means approval
+- Push multiple commits without asking for each batch
 
 ### Rule 2: Commit Message Format
 

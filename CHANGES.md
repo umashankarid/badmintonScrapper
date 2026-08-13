@@ -8,7 +8,27 @@
 
 ## [Unreleased]
 
-### Added - Database Viewer with Endpoint Tests (NEW)
+### Changed - CODE_GUIDELINES.md (CRITICAL UPDATE)
+- **Updated CODE_GUIDELINES.md v1.1** - Added mandatory user approval enforcement
+  - Added ⚠️ CRITICAL RULES section at top
+  - Made "NEVER PUSH WITHOUT USER APPROVAL" Rule #1
+  - Clarified: Explicit confirmation is MANDATORY before any push
+  - Clarified: Do NOT assume silence or indirect approval
+  - Added: "Show what will be pushed" requirement
+  - Version bumped to 1.1 to reflect critical nature of change
+
+### Added - Bug Fixes (Awaiting User Approval)
+- Fixed NameError: TOURNAMENTS_DIR is not defined
+  - Refactored GET /api/tournament-visibility to use tournaments.db
+  - Refactored GET /api/my-registrations to use tournaments.db
+  - Refactored POST /api/ensure-tournament to use tournaments.db
+  - All 52 tests passing
+  
+- Added "📊 Manage DB" button to admin panel
+  - Located in manage-tournaments.html tab bar
+  - Provides easy access to database viewer
+
+---
 - **test_db_viewer_endpoints.py** (258 lines)
   - 18 comprehensive endpoint tests
   - Tests verify all API endpoints work correctly for reading database tables
