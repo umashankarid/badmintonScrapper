@@ -504,6 +504,12 @@
         loadTournaments();
         loadRules();
         loadSmtpSettings();
+        
+        // Auto-switch to correct tab based on URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get("tab") === "add-remove") {
+            switchTab("add-remove");
+        }
     </script>
 </body>
 </html>
