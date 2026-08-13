@@ -215,40 +215,31 @@
 
             let players = data.players;
 
-            // For logged-in players, only show their own entries
+            // For logged-in players, only show their own entries (match by license_id)
             if (loggedInPlayer && !isAdmin) {
-                players = players.filter(p => p.player_name === loggedInPlayer.player_name);
+                players = players.filter(p => p.license_id === loggedInPlayer.license_id);
                 document.getElementById("players-heading").textContent = "My Registration";
             }
 
             const tbody = document.querySelector("#players-table tbody");
             tbody.innerHTML = players.map(p => {
-                let rankingHtml = "";
-                try {
-                    const ranking = p.ranking ? JSON.parse(p.ranking) : {};
-                    rankingHtml = Object.entries(ranking).map(([cat, info]) =>
-                        `${cat}: #${info.rank} (${info.points}pts)`
-                    ).join("\n");
-                } catch(e) {}
                 return `
                 <tr>
-                    <td>${p.player_name}</td>
                     <td>${p.license_id || ""}</td>
-                    <td>${p.club || ""}</td>
-                    <td>${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
-                    <td>${p.email || ""}</td>
-                    <td>${p.phone || ""}</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
                     <td>${p.singles_levels || ""}</td>
                     <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
                     <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
                     <td>
                         ${isAdmin ?
-                            `<button onclick="viewRanking(${p.player_id})">Points</button>
-                             <button onclick="adminEditPlayer(${p.player_id})">Edit</button>
+                            `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
                              <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
-                        (loggedInPlayer && loggedInPlayer.player_name === p.player_name ?
-                            `<button onclick="viewRanking(${p.player_id})">Points</button>
-                             <button onclick="editPlayer(${p.player_id})">Edit</button>
+                        (loggedInPlayer && loggedInPlayer.license_id === p.license_id ?
+                            `<button onclick="editPlayer(${p.player_id})">Edit</button>
                              <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>` :
                             "")}
                     </td>
