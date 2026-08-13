@@ -9,6 +9,9 @@ import logging
 import dropbox
 import requests
 from dropbox.exceptions import ApiError
+from cryptography.fernet import Fernet
+import base64
+import hashlib
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,21 +43,47 @@ class DropboxSync:
         self.authenticated = False
         self._init_dropbox_client()
     
-    def _generate_access_token(self):
-        """Generate new access token using app-specific password"""
+    @staticmethod
+    def _decrypt_credentials(encrypted_creds):
+        """Decrypt hashed credentials using a derived key"""
         try:
-            if not DROPBOX_APP_PASSWORD or not DROPBOX_EMAIL:
-                logger.warning("⚠️  DROPBOX_APP_PASSWORD or DROPBOX_EMAIL not set - cannot auto-generate token")
+            # Get encryption key from app secret (deterministic)
+            key = base64.urlsafe_b64encode(
+                hashlib.sha256(DROPBOX_APP_SECRET.encode()).digest()
+            )
+            cipher = Fernet(key)
+            decrypted = cipher.decrypt(encrypted_creds.encode()).decode()
+            parts = decrypted.split('|')
+            if len(parts) == 2:
+                return parts[0], parts[1]  # email, password
+            return None, None
+        except Exception as e:
+            logger.error(f"❌ Failed to decrypt credentials: {str(e)}")
+            return None, None
+    
+    def _generate_access_token(self):
+        """Generate new access token using Dropbox credentials"""
+        try:
+            # Get encrypted credentials from environment
+            encrypted_creds = os.getenv('DROPBOX_ENCRYPTED_CREDS')
+            if not encrypted_creds:
+                logger.warning("⚠️  DROPBOX_ENCRYPTED_CREDS not set - cannot auto-generate token")
+                return None
+            
+            # Decrypt credentials
+            email, password = self._decrypt_credentials(encrypted_creds)
+            if not email or not password:
+                logger.error("❌ Failed to decrypt Dropbox credentials")
                 return None
             
             logger.info("🔄 Generating new Dropbox access token...")
             
-            # Use OAuth 2 password flow with app-specific password
+            # Use OAuth 2 password flow with Dropbox credentials
             response = requests.post('https://api.dropboxapi.com/oauth2/token', 
                 data={
                     'grant_type': 'password',
-                    'username': DROPBOX_EMAIL,
-                    'password': DROPBOX_APP_PASSWORD,
+                    'username': email,
+                    'password': password,
                     'client_id': DROPBOX_APP_KEY,
                     'client_secret': DROPBOX_APP_SECRET,
                     'scope': 'files.content.read files.content.write'
@@ -88,9 +117,7 @@ class DropboxSync:
             access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
             if not access_token:
                 logger.error("❌ DROPBOX_ACCESS_TOKEN environment variable not set - sync DISABLED")
-                logger.error("❌ To enable auto-token generation, set:")
-                logger.error("   - DROPBOX_EMAIL: Your Dropbox email")
-                logger.error("   - DROPBOX_APP_PASSWORD: App-specific password from Dropbox settings")
+                logger.error("❌ To enable auto-token generation, set DROPBOX_ENCRYPTED_CREDS in Render")
                 return False
             
             # Initialize Dropbox client
