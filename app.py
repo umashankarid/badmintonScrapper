@@ -1855,7 +1855,7 @@ def open_tournaments():
 @app.route("/api/my-registrations", methods=["GET"])
 def my_registrations():
     """Check which tournaments the logged-in player is registered in."""
-    license_id = session.get("license_id")
+    license_id = session.get("bwf_license_id")
     if not license_id:
         return jsonify(success=False, registered_urls=[])
     
@@ -2180,6 +2180,7 @@ def get_tournament_players():
     
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         
@@ -2190,11 +2191,11 @@ def get_tournament_players():
         )
         total = cur.fetchone()[0]
         
-        # Get paginated registered players with player details from players table
+        # Get paginated registered players with player details from players.db
         offset = (page - 1) * page_size
         cur.execute("""
             SELECT tr.id as player_id, tr.tournament_name, tr.license_id, 
-                   COALESCE(p.player_name, 'Unknown') as player_name,
+                   COALESCE(p.name, 'Unknown') as player_name,
                    COALESCE(p.club, '') as club,
                    COALESCE(p.gender, '') as gender,
                    COALESCE(p.email, '') as email,
@@ -2202,7 +2203,7 @@ def get_tournament_players():
                    tr.singles_levels, tr.doubles_levels, 
                    tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date
             FROM tournament_registrations tr
-            LEFT JOIN players p ON tr.license_id = p.license_id
+            LEFT JOIN players_db.players p ON tr.license_id = p.license_id
             WHERE tr.tournament_name = ? 
             LIMIT ? OFFSET ?
         """, (tournament_name, page_size, offset))
