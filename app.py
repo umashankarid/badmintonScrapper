@@ -2085,13 +2085,13 @@ def get_tournament_events():
     cur = conn.cursor()
     
     try:
-        # First try to get categories from database (FAST - no scraping needed)
-        cur.execute("SELECT categories FROM tournaments LIMIT 1")
+        # Get categories for the specific tournament
+        cur.execute("SELECT categories FROM tournaments WHERE tournament_name = ?", (db_file,))
         row = cur.fetchone()
         
         if row and row[0]:
             categories = json.loads(row[0])
-            print(f"✅ Using cached categories from database: {categories}")
+            logger.debug(f"✅ Using cached categories for {db_file}: {categories}")
             
             # Return structured category data for registration form
             conn.close()
@@ -2102,7 +2102,7 @@ def get_tournament_events():
     conn.close()
     
     # Fallback: Return empty structured response
-    print("⚠️  No categories found in database")
+    logger.warning(f"⚠️  No categories found for tournament: {db_file}")
     return jsonify(success=True, categories={
         "singles_levels": [],
         "doubles_levels": [],
