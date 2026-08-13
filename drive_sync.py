@@ -26,6 +26,10 @@ DB_FILES = [
 DROPBOX_APP_KEY = "2e0bvquyns4t5sb"
 DROPBOX_APP_SECRET = os.getenv('DROPBOX_APP_SECRET', '9hljwc9w0c790w7')
 
+# Dropbox app-specific password (stored securely in Render)
+DROPBOX_APP_PASSWORD = os.getenv('DROPBOX_APP_PASSWORD')
+DROPBOX_EMAIL = os.getenv('DROPBOX_EMAIL')
+
 class DropboxSync:
     """Handle Dropbox sync for SQLite databases"""
     
@@ -36,15 +40,57 @@ class DropboxSync:
         self.authenticated = False
         self._init_dropbox_client()
     
+    def _generate_access_token(self):
+        """Generate new access token using app-specific password"""
+        try:
+            if not DROPBOX_APP_PASSWORD or not DROPBOX_EMAIL:
+                logger.warning("⚠️  DROPBOX_APP_PASSWORD or DROPBOX_EMAIL not set - cannot auto-generate token")
+                return None
+            
+            logger.info("🔄 Generating new Dropbox access token...")
+            
+            # Use OAuth 2 password flow with app-specific password
+            response = requests.post('https://api.dropboxapi.com/oauth2/token', 
+                data={
+                    'grant_type': 'password',
+                    'username': DROPBOX_EMAIL,
+                    'password': DROPBOX_APP_PASSWORD,
+                    'client_id': DROPBOX_APP_KEY,
+                    'client_secret': DROPBOX_APP_SECRET,
+                    'scope': 'files.content.read files.content.write'
+                }, 
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                new_token = data.get('access_token')
+                if new_token:
+                    logger.info("✅ Successfully generated new access token")
+                    # Update environment variable for this session
+                    os.environ['DROPBOX_ACCESS_TOKEN'] = new_token
+                    return new_token
+                else:
+                    logger.error(f"❌ No token in response: {data}")
+                    return None
+            else:
+                logger.error(f"❌ Failed to generate token: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error generating access token: {str(e)}")
+            return None
     
     def _init_dropbox_client(self):
-        """Initialize Dropbox client using access token"""
+        """Initialize Dropbox client using access token, with auto-generation on expiry"""
         try:
             # Get access token from environment
             access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
             if not access_token:
                 logger.error("❌ DROPBOX_ACCESS_TOKEN environment variable not set - sync DISABLED")
-                logger.error("❌ Please set DROPBOX_ACCESS_TOKEN in Render environment variables")
+                logger.error("❌ To enable auto-token generation, set:")
+                logger.error("   - DROPBOX_EMAIL: Your Dropbox email")
+                logger.error("   - DROPBOX_APP_PASSWORD: App-specific password from Dropbox settings")
                 return False
             
             # Initialize Dropbox client
@@ -53,13 +99,26 @@ class DropboxSync:
             # Test connection
             try:
                 self.dbx.users_get_current_account()
-                logger.info("✅ Dropbox client initialized")
+                logger.info("✅ Dropbox client initialized with valid token")
             except ApiError as e:
                 if 'expired_access_token' in str(e):
-                    logger.error("❌ Access token expired!")
-                    logger.error("❌ To fix: Go to Dropbox app page → 'Generated access token' → Generate new token")
-                    logger.error("❌ Then add it to Render environment variables as DROPBOX_ACCESS_TOKEN")
-                    return False
+                    logger.warning("⚠️  Access token expired - attempting to generate new one...")
+                    
+                    # Try to auto-generate new token
+                    new_token = self._generate_access_token()
+                    if new_token:
+                        # Reinitialize with new token
+                        self.dbx = dropbox.Dropbox(new_token)
+                        try:
+                            self.dbx.users_get_current_account()
+                            logger.info("✅ Successfully regenerated token and reconnected")
+                        except ApiError as retry_error:
+                            logger.error(f"❌ Failed to connect with regenerated token: {str(retry_error)}")
+                            return False
+                    else:
+                        logger.error("❌ Auto-token generation failed")
+                        logger.error("❌ Set DROPBOX_CREDENTIALS in Render or manually update DROPBOX_ACCESS_TOKEN")
+                        return False
                 else:
                     raise
             
