@@ -251,7 +251,7 @@
                         <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
                         <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
                         <td>
-                            ${isAdmin && !cameFromHomepage ?
+                            ${isAdmin ?
                                 `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
                                  <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
                             (loggedInPlayer && loggedInPlayer.license_id === p.license_id ?
@@ -793,6 +793,9 @@
             const player = data.players.find(p => p.player_id === id);
             if (!player) return;
 
+            // Show the edit form
+            document.getElementById("admin-edit-section").style.display = "block";
+
             document.getElementById("admin-form-title").textContent = "Edit Player (Admin)";
             document.getElementById("admin-submit-btn").textContent = "Update";
             document.getElementById("admin-edit-id").value = player.player_id;
@@ -826,13 +829,17 @@
             document.getElementById("admin-edit-form").reset();
             document.getElementById("admin-edit-id").value = "";
             document.getElementById("admin-edit-gender").dataset.code = "";
-            document.getElementById("admin-form-title").textContent = "Add / Edit Player (Admin)";
-            document.getElementById("admin-submit-btn").textContent = "Add Player";
+            document.getElementById("admin-form-title").textContent = "Edit Player (Admin)";
+            document.getElementById("admin-submit-btn").textContent = "Update";
             if (document.querySelector(".admin-singles-level")) document.querySelector(".admin-singles-level").value = "";
             if (document.querySelector(".admin-doubles-level")) document.querySelector(".admin-doubles-level").value = "";
             if (document.querySelector(".admin-mixed-level")) document.querySelector(".admin-mixed-level").value = "";
             document.getElementById("admin-doubles-partner-container").style.display = "none";
             document.getElementById("admin-mixed-partner-container").style.display = "none";
+            // Hide form again when coming from homepage (no add, only edit)
+            if (cameFromHomepage) {
+                document.getElementById("admin-edit-section").style.display = "none";
+            }
         }
 
         document.getElementById("admin-edit-form").addEventListener("submit", async (e) => {
