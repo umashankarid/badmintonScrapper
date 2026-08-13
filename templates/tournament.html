@@ -467,10 +467,16 @@
 
         setupLiveSearch("admin-doubles-partner", "admin-doubles-partner-results", (player) => {
             document.getElementById("admin-doubles-partner").value = player.name || "";
+            document.getElementById("admin-doubles-partner").dataset.licenseId = player.license_id || "";
+            document.getElementById("admin-doubles-partner").dataset.club = player.club || "";
+            document.getElementById("admin-doubles-partner").dataset.profileUrl = player.profile_url || "";
         });
 
         setupLiveSearch("admin-mixed-partner", "admin-mixed-partner-results", (player) => {
             document.getElementById("admin-mixed-partner").value = player.name || "";
+            document.getElementById("admin-mixed-partner").dataset.licenseId = player.license_id || "";
+            document.getElementById("admin-mixed-partner").dataset.club = player.club || "";
+            document.getElementById("admin-mixed-partner").dataset.profileUrl = player.profile_url || "";
         });
 
         setupLiveSearch("admin-edit-name", "admin-search-results", async (player) => {
@@ -597,6 +603,9 @@
             const doublesLevels = document.querySelector(".admin-doubles-level").value;
             const mixedLevels = document.querySelector(".admin-mixed-level").value;
 
+            const doublesPartnerEl = document.getElementById("admin-doubles-partner");
+            const mixedPartnerEl = document.getElementById("admin-mixed-partner");
+
             const editId = document.getElementById("admin-edit-id").value;
             const player = {
                 player_name: document.getElementById("admin-edit-name").value,
@@ -608,8 +617,14 @@
                 singles_levels: singlesLevels,
                 doubles_levels: doublesLevels,
                 mixed_levels: mixedLevels,
-                doubles_partner: document.getElementById("admin-doubles-partner").value,
-                mixed_partner: document.getElementById("admin-mixed-partner").value,
+                doubles_partner: doublesPartnerEl.value,
+                mixed_partner: mixedPartnerEl.value,
+                doubles_partner_license_id: doublesPartnerEl.dataset.licenseId || "",
+                doubles_partner_club: doublesPartnerEl.dataset.club || "",
+                doubles_partner_profile_url: doublesPartnerEl.dataset.profileUrl || "",
+                mixed_partner_license_id: mixedPartnerEl.dataset.licenseId || "",
+                mixed_partner_club: mixedPartnerEl.dataset.club || "",
+                mixed_partner_profile_url: mixedPartnerEl.dataset.profileUrl || "",
             };
             if (editId) player.player_id = parseInt(editId);
 

@@ -2271,6 +2271,97 @@ def get_tournament_registration():
         return jsonify(success=False, error=str(e)), 500
 
 
+def _register_partner(tournament_name, partner_license_id, partner_name, partner_club="", partner_profile_url="", doubles_levels="", mixed_levels="", doubles_partner="", mixed_partner=""):
+    """
+    Register a partner player in both players.db and tournament_registrations.
+    Called when admin registers a player with a doubles/mixed partner.
+    """
+    now = __import__('datetime').datetime.now().isoformat()
+    
+    # Insert/update partner in players.db
+    try:
+        conn_players = sqlite3.connect(PLAYERS_DB)
+        cur_players = conn_players.cursor()
+        
+        cur_players.execute("SELECT id FROM players WHERE license_id = ?", (partner_license_id,))
+        existing = cur_players.fetchone()
+        
+        if existing:
+            # Update existing - preserve login data
+            cur_players.execute("""
+                UPDATE players SET
+                    name = ?,
+                    profile_url = COALESCE(?, profile_url),
+                    club = COALESCE(?, club),
+                    last_updated = ?
+                WHERE license_id = ?
+            """, (partner_name, partner_profile_url or None, partner_club or None, now, partner_license_id))
+        else:
+            # Insert new partner player
+            cur_players.execute("""
+                INSERT INTO players (license_id, name, profile_url, club, last_updated)
+                VALUES (?, ?, ?, ?, ?)
+            """, (partner_license_id, partner_name, partner_profile_url, partner_club, now))
+        
+        conn_players.commit()
+        conn_players.close()
+        logger.info(f"✅ Partner {partner_name} ({partner_license_id}) saved to players.db")
+    except Exception as e:
+        logger.error(f"⚠️  Error saving partner to players.db: {e}")
+    
+    # Insert/update partner registration in tournament_registrations
+    try:
+        conn_tour = sqlite3.connect(TOURNAMENTS_DB)
+        cur_tour = conn_tour.cursor()
+        
+        cur_tour.execute(
+            "SELECT id FROM tournament_registrations WHERE tournament_name = ? AND license_id = ?",
+            (tournament_name, partner_license_id)
+        )
+        existing_reg = cur_tour.fetchone()
+        
+        if existing_reg:
+            # Update existing registration - add the partner category
+            if doubles_levels:
+                cur_tour.execute("""
+                    UPDATE tournament_registrations
+                    SET doubles_levels = COALESCE(?, doubles_levels),
+                        doubles_partner = ?,
+                        registration_date = CURRENT_TIMESTAMP
+                    WHERE tournament_name = ? AND license_id = ?
+                """, (doubles_levels, doubles_partner, tournament_name, partner_license_id))
+            if mixed_levels:
+                cur_tour.execute("""
+                    UPDATE tournament_registrations
+                    SET mixed_levels = COALESCE(?, mixed_levels),
+                        mixed_partner = ?,
+                        registration_date = CURRENT_TIMESTAMP
+                    WHERE tournament_name = ? AND license_id = ?
+                """, (mixed_levels, mixed_partner, tournament_name, partner_license_id))
+        else:
+            # Insert new registration for partner
+            cur_tour.execute("""
+                INSERT INTO tournament_registrations 
+                (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels,
+                 doubles_partner, mixed_partner, registration_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (
+                tournament_name,
+                partner_license_id,
+                "",  # Partner might not play singles
+                doubles_levels,
+                mixed_levels,
+                doubles_partner,
+                mixed_partner
+            ))
+        
+        conn_tour.commit()
+        conn_tour.close()
+        logger.info(f"✅ Partner {partner_name} registered for tournament {tournament_name}")
+    except Exception as e:
+        logger.error(f"⚠️  Error registering partner for tournament: {e}")
+
+
 @app.route("/api/add-player", methods=["POST"])
 def add_player():
     """Register a player for a tournament"""
@@ -2397,6 +2488,39 @@ def add_player():
         
         conn_main.commit()
         conn_main.close()
+        
+        # STEP 3: Register partners (doubles/mixed) in players.db and tournament_registrations
+        player_name = player.get("player_name", "")
+        
+        # Register doubles partner
+        doubles_partner_name = player.get("doubles_partner", "").strip()
+        doubles_partner_license = player.get("doubles_partner_license_id", "").strip()
+        doubles_level = player.get("doubles_levels", "")
+        if doubles_partner_name and doubles_partner_license and doubles_level:
+            _register_partner(
+                tournament_name=tournament_name,
+                partner_license_id=doubles_partner_license,
+                partner_name=doubles_partner_name,
+                partner_club=player.get("doubles_partner_club", ""),
+                partner_profile_url=player.get("doubles_partner_profile_url", ""),
+                doubles_levels=doubles_level,
+                doubles_partner=player_name
+            )
+        
+        # Register mixed partner
+        mixed_partner_name = player.get("mixed_partner", "").strip()
+        mixed_partner_license = player.get("mixed_partner_license_id", "").strip()
+        mixed_level = player.get("mixed_levels", "")
+        if mixed_partner_name and mixed_partner_license and mixed_level:
+            _register_partner(
+                tournament_name=tournament_name,
+                partner_license_id=mixed_partner_license,
+                partner_name=mixed_partner_name,
+                partner_club=player.get("mixed_partner_club", ""),
+                partner_profile_url=player.get("mixed_partner_profile_url", ""),
+                mixed_levels=mixed_level,
+                mixed_partner=player_name
+            )
         
         trigger_sync()  # Sync after registration
         return jsonify(success=True, message="Registration saved successfully")
