@@ -159,6 +159,23 @@ def scrape_all_players():
     """
     logger.info("🔄 Starting bulk scrape of all players from Badminton Sweden")
     
+    # First, clean up old temp entries with no real data
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM players 
+            WHERE name LIKE 'temp_%' 
+            AND (profile_url IS NULL OR name IS NULL OR club IS NULL)
+        """)
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        if deleted > 0:
+            logger.info(f"🧹 Cleaned up {deleted} stale temp entries")
+    except Exception as e:
+        logger.debug(f"⚠️  Could not clean up temp entries: {e}")
+    
     # Note: This would require iterating through all letters/combinations
     # For now, we'll do a basic implementation
     # In production, this might use pagination or other mechanisms
@@ -195,17 +212,17 @@ def scrape_all_players():
                             profile_url = item.select_one("a.media__link")
                             profile_path = profile_url.get("href") if profile_url else ""
                             
-                            # Update players.db
-                            update_player_in_db(
-                                license_id=license_id,
-                                name=name,
-                                profile_url=profile_path
-                            )
-                            
-                            players_found += 1
-                            
-                            if players_found % 50 == 0:
-                                logger.info(f"🔍 Scraped {players_found} players so far...")
+                            # Update players.db with real data
+                            if name and not name.startswith("temp_") and license_id:
+                                update_player_in_db(
+                                    license_id=license_id,
+                                    name=name,
+                                    profile_url=profile_path
+                                )
+                                players_found += 1
+                                
+                                if players_found % 50 == 0:
+                                    logger.info(f"🔍 Scraped {players_found} players so far...")
                     
                     except Exception as e:
                         logger.debug(f"Error processing item: {e}")
@@ -282,9 +299,11 @@ def update_player_in_db(license_id, name, profile_url, ranking=None, email=None,
                     ranking=?,
                     email=?,
                     phone=?,
-                    last_updated=?
+                    last_updated=?,
+                    last_scraped=?
                 WHERE license_id=?
-            """, (name, profile_url, ranking, email, phone, now, license_id))
+            """, (name, profile_url, ranking, email, phone, now, now, license_id))
+            logger.debug(f"✅ Updated player {license_id}: {name}")
         else:
             # Insert new player
             cur.execute("""
@@ -292,6 +311,7 @@ def update_player_in_db(license_id, name, profile_url, ranking=None, email=None,
                 (license_id, name, profile_url, ranking, email, phone, last_updated, last_scraped)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (license_id, name, profile_url, ranking, email, phone, now, now))
+            logger.debug(f"✅ Inserted new player {license_id}: {name}")
         
         conn.commit()
         conn.close()
@@ -299,6 +319,7 @@ def update_player_in_db(license_id, name, profile_url, ranking=None, email=None,
     
     except Exception as e:
         logger.error(f"❌ Error updating player in DB: {e}")
+        return False
         return False
 
 
