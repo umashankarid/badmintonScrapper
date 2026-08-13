@@ -8,7 +8,32 @@
 
 ## [Unreleased]
 
-### Changed - CODE_GUIDELINES.md (CRITICAL UPDATE)
+### Removed - Legacy tournament_visibility Table
+- **Removed tournament_visibility table** from admin.db
+  - This table was legacy code from old per-tournament design
+  - No longer needed - visibility now tracked in tournaments.db with `selected_for_view` flag
+  - Removed table creation code from app.py (lines 254-263)
+  - Cleaned admin.db: Now contains only admin_users, smtp_settings, reminders_sent
+  - Created cleanup_admin_db.py migration script (safe with backup)
+  
+Why This Happened:
+  - During database refactor, we transitioned to unified tournaments.db
+  - The old tournament_visibility table was kept for backward compatibility
+  - No code was using it (legacy endpoints now refactored)
+  - Table was dead code
+  - Dropbox database was stale from before the refactoring
+  
+Testing:
+  - ✅ All 52 tests passing after removal
+  - ✅ App compiles without errors
+  - ✅ No code references removed tables
+
+Result:
+  - admin.db is now clean with only necessary tables
+  - Dropbox database will be updated on next sync
+  - Legacy code completely removed
+
+---
 - **Updated CODE_GUIDELINES.md v1.1** - Added mandatory user approval enforcement
   - Added ⚠️ CRITICAL RULES section at top
   - Made "NEVER PUSH WITHOUT USER APPROVAL" Rule #1

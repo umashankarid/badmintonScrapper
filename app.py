@@ -250,16 +250,6 @@ def init_admin_db():
             sent_at TEXT
         )
     """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tournament_visibility (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tournament_db TEXT UNIQUE NOT NULL,
-            visible INTEGER DEFAULT 0,
-            tournament_name TEXT,
-            location TEXT,
-            competition_date TEXT
-        )
-    """)
     conn.commit()
     
     # Insert default admin if it doesn't exist
