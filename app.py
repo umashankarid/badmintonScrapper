@@ -1909,55 +1909,10 @@ def ensure_tournament():
         finally:
             conn.close()
 
-        # STEP 2: Create individual tournament database
-        logger.info(f"📁 Creating individual tournament database...")
-        db_file = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_') + ".db"
-        db_path = os.path.join(TOURNAMENTS_DIR, db_file)
-
-        conn = sqlite3.connect(db_path)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS tournaments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                bwf_url TEXT,
-                levels TEXT,
-                registration_opens TEXT,
-                final_registration_date TEXT,
-                final_cancellation_date TEXT,
-                competition_date TEXT,
-                competition_end TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS players (
-                player_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                player_name TEXT,
-                license_id TEXT,
-                club TEXT,
-                gender TEXT,
-                email TEXT,
-                phone TEXT,
-                ranking TEXT,
-                singles_levels TEXT,
-                doubles_levels TEXT,
-                mixed_levels TEXT,
-                doubles_partner TEXT,
-                mixed_partner TEXT
-            )
-        """)
-        conn.execute(
-            "INSERT INTO tournaments (name, bwf_url, levels, registration_opens, final_registration_date, final_cancellation_date, competition_date, competition_end) VALUES (?,?,?,?,?,?,?,?)",
-            (name, url, json.dumps(levels), dates.get("registration_opens", ""),
-             dates.get("registration_closes", ""), dates.get("cancellation_deadline", ""),
-             dates.get("competition_start", ""), dates.get("competition_end", ""))
-        )
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"✅ Created individual tournament database: {db_file}")
+        logger.info(f"✅ Tournament successfully added to unified tournaments.db")
         trigger_sync()  # Trigger debounced sync after tournament creation
         
-        return jsonify(success=True, db=db_file, tournament_id=tournament_id, created=True)
+        return jsonify(success=True, tournament_id=tournament_id, created=True)
     except Exception as e:
         logger.error(f"❌ Error in ensure_tournament: {e}")
         return jsonify(success=False, error=str(e)), 500
