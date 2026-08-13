@@ -84,20 +84,11 @@ except Exception as e:
 
 # Sync player data from Badminton Sweden on startup
 logger.info("=" * 80)
-logger.info("🔄 STARTUP: Syncing player data from Badminton Sweden...")
+logger.info("🔄 STARTUP: Player sync strategy")
 logger.info("=" * 80)
-try:
-    from players_scraper import scrape_all_players
-    logger.info("📋 Starting bulk scrape of ALL players...")
-    players_scraped = scrape_all_players()
-    logger.info(f"✅ STARTUP COMPLETE: Scraped {players_scraped} players from Badminton Sweden")
-    if players_scraped == 0:
-        logger.warning("⚠️  WARNING: No players found in scrape. This may indicate a parsing issue with Badminton Sweden.")
-except Exception as e:
-    logger.error(f"❌ STARTUP FAILED: Failed to scrape players: {str(e)}")
-    import traceback
-    logger.error(traceback.format_exc())
-    logger.error("⚠️  Continuing with existing player data")
+logger.info("ℹ️  Bulk player scrape disabled (Badminton Sweden search doesn't support letter queries)")
+logger.info("ℹ️  Players will be scraped on-demand when they login or register")
+logger.info("✅ This ensures accurate, current player data from their live profiles")
 logger.info("=" * 80)
 
 
