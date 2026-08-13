@@ -3,7 +3,7 @@ import json
 import sqlite3
 import requests as ext_requests
 from bs4 import BeautifulSoup
-from flask import Flask, request, jsonify, session, send_from_directory
+from flask import Flask, request, jsonify, session, send_from_directory, redirect
 from drive_sync import download_all, upload_all
 import atexit
 import logging
@@ -599,6 +599,17 @@ def manage_tournaments_page():
 @app.route("/login.html")
 def login_page():
     return send_from_directory("templates", "login.html")
+
+
+@app.route("/manage-db.html")
+def manage_db_page():
+    """Admin-only page for viewing and managing databases"""
+    if not session.get("admin"):
+        logger.warning("⚠️  Unauthenticated user attempted to access /manage-db.html")
+        return redirect("/login.html")
+    
+    logger.info("📊 Admin accessed Manage DB page")
+    return send_from_directory("templates", "manage-db.html")
 
 
 # --- Badminton Sweden Login ---
@@ -2805,6 +2816,145 @@ def tournament_clubs():
         return jsonify(success=True, players=unique_players)
     except Exception as e:
         return jsonify(success=False, error=str(e), players=[]), 500
+
+
+# ==================== DATABASE VIEWER ENDPOINTS ====================
+
+@app.route("/api/databases", methods=["GET"])
+def api_get_databases():
+    """Get list of all databases"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        from db_viewer import get_database_list, get_database_statistics
+        
+        logger.info("📊 Admin viewing database list")
+        databases = get_database_list()
+        stats = get_database_statistics()
+        
+        logger.debug(f"📊 Returning {len(databases)} databases")
+        return jsonify(success=True, databases=databases, statistics=stats)
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching databases: {str(e)}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/database/<db_name>/tables", methods=["GET"])
+def api_get_tables(db_name):
+    """Get list of tables in a database"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        from db_viewer import get_database_list, get_tables_in_database
+        
+        logger.info(f"📋 Admin viewing tables in {db_name}")
+        
+        # Get database path
+        databases = get_database_list()
+        db_path = next((db["path"] for db in databases if db["name"] == db_name), None)
+        
+        if not db_path or not os.path.exists(db_path):
+            logger.error(f"❌ Database not found: {db_name}")
+            return jsonify(success=False, error="Database not found"), 404
+        
+        tables = get_tables_in_database(db_path)
+        logger.debug(f"📋 Found {len(tables)} tables in {db_name}")
+        
+        return jsonify(success=True, database=db_name, tables=tables)
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching tables from {db_name}: {str(e)}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/database/<db_name>/table/<table_name>", methods=["GET"])
+def api_get_table_data(db_name, table_name):
+    """Get table data with pagination"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        from db_viewer import get_database_list, get_table_data
+        
+        # Get parameters
+        page = request.args.get("page", 1, type=int)
+        page_size = request.args.get("page_size", 10, type=int)
+        search = request.args.get("search", None, type=str)
+        
+        logger.info(f"📖 Admin viewing {db_name}.{table_name} (page {page})")
+        
+        # Limit page size for security
+        page_size = min(page_size, 100)
+        page = max(page, 1)
+        
+        # Get database path
+        databases = get_database_list()
+        db_path = next((db["path"] for db in databases if db["name"] == db_name), None)
+        
+        if not db_path or not os.path.exists(db_path):
+            logger.error(f"❌ Database not found: {db_name}")
+            return jsonify(success=False, error="Database not found"), 404
+        
+        # Get table data
+        result = get_table_data(db_path, table_name, page=page, page_size=page_size, search=search)
+        
+        if "error" in result:
+            logger.error(f"❌ Error fetching table data: {result['error']}")
+            return jsonify(success=False, error=result["error"]), 500
+        
+        logger.debug(f"📖 Returning {len(result['rows'])} rows from {table_name}")
+        return jsonify(result)
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching table {table_name}: {str(e)}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/database/<db_name>/table/<table_name>/export", methods=["GET"])
+def api_export_table(db_name, table_name):
+    """Export table data as JSON or CSV"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        from db_viewer import get_database_list, export_table_as_json, export_table_as_csv
+        
+        # Get parameters
+        format_type = request.args.get("format", "json", type=str).lower()
+        limit = request.args.get("limit", None, type=int)
+        
+        logger.info(f"📤 Admin exporting {db_name}.{table_name} as {format_type}")
+        
+        # Get database path
+        databases = get_database_list()
+        db_path = next((db["path"] for db in databases if db["name"] == db_name), None)
+        
+        if not db_path or not os.path.exists(db_path):
+            logger.error(f"❌ Database not found: {db_name}")
+            return jsonify(success=False, error="Database not found"), 404
+        
+        # Export data
+        if format_type == "csv":
+            data = export_table_as_csv(db_path, table_name, limit=limit)
+            response_headers = {
+                'Content-Disposition': f'attachment; filename="{table_name}.csv"'
+            }
+            logger.info(f"✅ Exported {table_name} as CSV")
+            return data, 200, response_headers
+        else:  # json
+            data = export_table_as_json(db_path, table_name, limit=limit)
+            response_headers = {
+                'Content-Disposition': f'attachment; filename="{table_name}.json"'
+            }
+            logger.info(f"✅ Exported {table_name} as JSON")
+            return data, 200, response_headers
+    
+    except Exception as e:
+        logger.error(f"❌ Error exporting {table_name}: {str(e)}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 def reminder_scheduler():
