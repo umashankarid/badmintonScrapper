@@ -942,11 +942,13 @@ def validate_registration():
     if min_pts is not None and points < min_pts:
         blocked = True
         message = f"Your {category} points ({points}) are below the minimum ({min_pts}) for class {level}."
+        return jsonify(success=True, allowed=False, hard_block=False, message=message)
     elif max_pts is not None and points > max_pts:
         blocked = True
-        message = f"Your {category} points ({points}) exceed the maximum ({max_pts}) for class {level}."
+        message = f"Your {category} points ({points}) exceed the maximum ({max_pts}) for class {level}. Not allowed to play this category."
+        return jsonify(success=True, allowed=False, hard_block=True, message=message)
 
-    return jsonify(success=True, allowed=not blocked, message=message)
+    return jsonify(success=True, allowed=True)
 
 
 @app.route("/api/tournament-warnings", methods=["GET"])
@@ -1103,7 +1105,7 @@ def get_tournament_warnings():
                                     warnings.append({
                                         "license_id": reg_license_id,
                                         "player_name": player_name,
-                                        "type": "points",
+                                        "type": "points_low",
                                         "event": event,
                                         "message": f"{player_name}: {category} points ({points}) below minimum ({min_pts}) for {level} class."
                                     })
@@ -1111,9 +1113,9 @@ def get_tournament_warnings():
                                     warnings.append({
                                         "license_id": reg_license_id,
                                         "player_name": player_name,
-                                        "type": "points",
+                                        "type": "points_high",
                                         "event": event,
-                                        "message": f"{player_name}: {category} points ({points}) exceed maximum ({max_pts}) for {level} class."
+                                        "message": f"{player_name}: {category} points ({points}) exceed maximum ({max_pts}) for {level} class. NOT ALLOWED."
                                     })
                             except ValueError:
                                 pass
@@ -2613,6 +2615,11 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
         try:
             s = ext_requests.Session()
             s.headers.update({"User-Agent": "Mozilla/5.0"})
+            s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3"
+            }, allow_redirects=True, timeout=5)
             ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{partner_profile_url}/ranking", timeout=10)
             ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
             table = ranking_soup.find("table")

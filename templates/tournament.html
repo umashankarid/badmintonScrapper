@@ -464,10 +464,15 @@
                     if (!confirm(data.message + "\n\nDo you have dispense (special permission) to play in this category?")) {
                         changedSelect.value = "";
                     }
-                } else {
-                    // Point restriction - block completely
+                } else if (data.hard_block) {
+                    // Points above max - NEVER allowed
                     alert(data.message);
                     changedSelect.value = "";
+                } else {
+                    // Points below min - warn but allow with permission
+                    if (!confirm(data.message + "\n\nDo you have special permission to play in this category?")) {
+                        changedSelect.value = "";
+                    }
                 }
             } else if (data.warning) {
                 // Just show warning, don't block
@@ -513,9 +518,13 @@
                         if (!confirm(`${playerName}: ${valData.message}\n\nDoes this player have special permission (dispens) to play in this category?`)) {
                             return false;
                         }
+                    } else if (valData.hard_block) {
+                        // Points above max - NEVER allowed
+                        alert(`${playerName}: ${valData.message}`);
+                        return false;
                     } else {
-                        // Point restriction - ask for exception
-                        if (!confirm(`${playerName}: ${valData.message}\n\nDoes this player have exception permission?`)) {
+                        // Points below min - warn but allow with permission
+                        if (!confirm(`${playerName}: ${valData.message}\n\nDoes this player have special permission to play in this category?`)) {
                             return false;
                         }
                     }
@@ -578,9 +587,13 @@
                 if (valData.age_restriction) {
                     // Age restriction - allow with dispense
                     return confirm(`Partner ${player.name}: ${valData.message}\n\nDoes the partner have dispense (special permission) to play in this category?`);
+                } else if (valData.hard_block) {
+                    // Points above max - NEVER allowed
+                    alert(`Partner ${player.name}: ${valData.message}`);
+                    return false;
                 } else {
-                    // Point restriction - ask for exception permission
-                    return confirm(`Partner ${player.name}: ${valData.message}\n\nDoes the partner have exception permission to play in this category?`);
+                    // Points below min - warn but allow with permission
+                    return confirm(`Partner ${player.name}: ${valData.message}\n\nDoes the partner have special permission to play in this category?`);
                 }
             }
             return true;
@@ -998,36 +1011,46 @@
                     // Admin sees all warnings grouped by player, then by type with categories combined
                     const grouped = {};
                     data.warnings.forEach(w => {
-                        if (!grouped[w.player_name]) grouped[w.player_name] = {age: [], points: []};
-                        grouped[w.player_name][w.type].push(w);
+                        if (!grouped[w.player_name]) grouped[w.player_name] = {age: [], points_low: [], points_high: []};
+                        if (w.type === "age") grouped[w.player_name].age.push(w);
+                        else if (w.type === "points_high") grouped[w.player_name].points_high.push(w);
+                        else grouped[w.player_name].points_low.push(w);
                     });
                     
                     list.innerHTML = Object.entries(grouped).map(([name, types]) => {
                         let lines = [];
                         if (types.age.length) {
                             const categories = types.age.map(w => w.event).join(", ");
-                            const ageMsg = types.age[0].message.split(".")[0]; // Get the age part
                             lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;font-size:0.9em;">🟠 Must be at least 13 to play ${categories}</div>`);
                         }
-                        if (types.points.length) {
-                            const pointLines = types.points.map(w => w.event + ": " + w.message.split(": ").slice(1).join(": ")).join(", ");
-                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;font-size:0.9em;">🔴 Point restriction: ${pointLines}</div>`);
+                        if (types.points_high.length) {
+                            const categories = types.points_high.map(w => w.event).join(", ");
+                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;font-size:0.9em;">🔴 Points too high for ${categories} — NOT ALLOWED</div>`);
+                        }
+                        if (types.points_low.length) {
+                            const categories = types.points_low.map(w => w.event).join(", ");
+                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;font-size:0.9em;">🟠 Points below minimum for ${categories}</div>`);
                         }
                         return `<div style="margin-bottom:10px;"><strong>${name}</strong>${lines.join("")}</div>`;
                     }).join("");
                 } else {
                     // Player sees only their own warnings, grouped by type
                     const ageWarnings = data.warnings.filter(w => w.type === "age");
-                    const pointWarnings = data.warnings.filter(w => w.type === "points");
+                    const pointsHighWarnings = data.warnings.filter(w => w.type === "points_high");
+                    const pointsLowWarnings = data.warnings.filter(w => w.type === "points_low");
                     let lines = [];
                     
                     if (ageWarnings.length) {
                         const categories = ageWarnings.map(w => w.event).join(", ");
                         lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;">🟠 Must be at least 13 to play ${categories}</div>`);
                     }
-                    if (pointWarnings.length) {
-                        const details = pointWarnings.map(w => w.message).join("<br>");
-                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;">🔴 ${details}</div>`);
+                    if (pointsHighWarnings.length) {
+                        const categories = pointsHighWarnings.map(w => w.event).join(", ");
+                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;">🔴 Points too high for ${categories} — NOT ALLOWED</div>`);
+                    }
+                    if (pointsLowWarnings.length) {
+                        const categories = pointsLowWarnings.map(w => w.event).join(", ");
+                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;">🟠 Points below minimum for ${categories}</div>`);
                     }
                     
                     list.innerHTML = lines.join("");
