@@ -2138,14 +2138,31 @@ def get_tournament_info():
         """, (tournament_id,))
         
         row = cur.fetchone()
-        conn.close()
         
         if not row:
-            return jsonify(success=False, error="Tournament not found"), 404
+            # Tournament not found in tournaments table
+            # Return minimal info from registrations if they exist
+            cur.execute(
+                "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = ?",
+                (tournament_id,)
+            )
+            if cur.fetchone()[0] > 0:
+                # Registrations exist, return basic info
+                conn.close()
+                return jsonify(success=True, tournament={
+                    "name": f"Tournament {tournament_id}",
+                    "registration_closes": "",
+                    "cancellation_deadline": "",
+                    "categories": {}
+                })
+            else:
+                conn.close()
+                return jsonify(success=False, error="Tournament not found"), 404
         
         tournament_name, registration_closes, cancellation_deadline, categories_json = row
         categories = json.loads(categories_json) if categories_json else {}
         
+        conn.close()
         return jsonify(success=True, tournament={
             "name": tournament_name,
             "registration_closes": registration_closes or "",
@@ -2173,12 +2190,6 @@ def get_tournament_players():
         conn = sqlite3.connect(TOURNAMENTS_DB)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        
-        # Verify tournament exists
-        cur.execute("SELECT id FROM tournaments WHERE id = ?", (tournament_id,))
-        if not cur.fetchone():
-            conn.close()
-            return jsonify(success=False, error="Tournament not found"), 404
         
         # Get total registered players
         cur.execute(
