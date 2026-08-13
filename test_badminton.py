@@ -54,27 +54,20 @@ class TestDatabaseSchema(unittest.TestCase):
             )
         """)
         
-        # Create tournament_registrations table
+        # Create tournament_registrations table (NORMALIZED - uses license_id FK)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS tournament_registrations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tournament_id INTEGER NOT NULL,
-                player_name TEXT NOT NULL,
-                license_id TEXT,
-                club TEXT,
-                gender TEXT,
-                email TEXT,
-                phone TEXT,
-                dob TEXT,
-                age TEXT,
-                ranking TEXT,
+                license_id TEXT NOT NULL,
                 singles_levels TEXT,
                 doubles_levels TEXT,
                 mixed_levels TEXT,
                 doubles_partner TEXT,
                 mixed_partner TEXT,
                 registration_date TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+                FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+                FOREIGN KEY (license_id) REFERENCES players(license_id)
             )
         """)
         conn.commit()
@@ -91,7 +84,7 @@ class TestDatabaseSchema(unittest.TestCase):
         cur.execute("PRAGMA table_info(tournament_registrations)")
         reg_columns = {row[1] for row in cur.fetchall()}
         
-        required_reg_cols = {'id', 'tournament_id', 'player_name', 'registration_date'}
+        required_reg_cols = {'id', 'tournament_id', 'license_id', 'registration_date'}
         self.assertTrue(required_reg_cols.issubset(reg_columns),
                        f"Missing registration columns: {required_reg_cols - reg_columns}")
         
@@ -160,12 +153,12 @@ class TestTournamentRegistrations(unittest.TestCase):
             CREATE TABLE tournament_registrations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tournament_id INTEGER NOT NULL,
-                player_name TEXT NOT NULL,
-                club TEXT,
+                license_id TEXT NOT NULL,
                 singles_levels TEXT,
                 doubles_levels TEXT,
                 mixed_levels TEXT,
-                FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+                FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+                FOREIGN KEY (license_id) REFERENCES players(license_id)
             )
         """)
         
@@ -187,26 +180,25 @@ class TestTournamentRegistrations(unittest.TestCase):
         cur.execute("SELECT id FROM tournaments WHERE tournament_name=?", ("Test Tournament",))
         tournament_id = cur.fetchone()[0]
         
-        # Register player
+        # Register player (normalized: use license_id FK)
         cur.execute("""
             INSERT INTO tournament_registrations 
-            (tournament_id, player_name, club, singles_levels, doubles_levels)
-            VALUES (?,?,?,?,?)
-        """, (tournament_id, "John Doe", "Local Club", "A,B", "C"))
+            (tournament_id, license_id, singles_levels, doubles_levels)
+            VALUES (?,?,?,?)
+        """, (tournament_id, "lic_001", "A,B", "C"))
         
         conn.commit()
         
         # Verify registration
         cur.execute(
-            "SELECT player_name, club, singles_levels FROM tournament_registrations WHERE tournament_id=?",
+            "SELECT license_id, singles_levels FROM tournament_registrations WHERE tournament_id=?",
             (tournament_id,)
         )
         result = cur.fetchone()
         
         self.assertIsNotNone(result)
-        self.assertEqual(result[0], "John Doe")
-        self.assertEqual(result[1], "Local Club")
-        self.assertEqual(result[2], "A,B")
+        self.assertEqual(result[0], "lic_001")
+        self.assertEqual(result[1], "A,B")
         
         conn.close()
     
@@ -218,18 +210,18 @@ class TestTournamentRegistrations(unittest.TestCase):
         tournament_id = 1
         
         players = [
-            ("Alice", "Club A", "A"),
-            ("Bob", "Club B", "B"),
-            ("Charlie", "Club C", "C"),
+            ("lic_001", "A"),
+            ("lic_002", "B"),
+            ("lic_003", "C"),
         ]
         
-        # Register multiple players
-        for name, club, level in players:
+        # Register multiple players (normalized: license_id + level only)
+        for license_id, level in players:
             cur.execute("""
                 INSERT INTO tournament_registrations 
-                (tournament_id, player_name, club, singles_levels)
-                VALUES (?,?,?,?)
-            """, (tournament_id, name, club, level))
+                (tournament_id, license_id, singles_levels)
+                VALUES (?,?,?)
+            """, (tournament_id, license_id, level))
         
         conn.commit()
         
@@ -249,18 +241,19 @@ class TestTournamentRegistrations(unittest.TestCase):
         cur = conn.cursor()
         
         tournament_id = 1
+        license_id = "lic_test"
         
-        # Register player
+        # Register player (normalized: license_id only)
         cur.execute("""
             INSERT INTO tournament_registrations 
-            (tournament_id, player_name, club)
-            VALUES (?,?,?)
-        """, (tournament_id, "Test Player", "Test Club"))
+            (tournament_id, license_id)
+            VALUES (?,?)
+        """, (tournament_id, license_id))
         
         conn.commit()
         
         # Get registration ID
-        cur.execute("SELECT id FROM tournament_registrations WHERE player_name=?", ("Test Player",))
+        cur.execute("SELECT id FROM tournament_registrations WHERE license_id=?", (license_id,))
         reg_id = cur.fetchone()[0]
         
         # Delete registration
@@ -455,12 +448,21 @@ class TestDataIntegrity(unittest.TestCase):
             )
         """)
         
+        # Create minimal players table for FK integrity
+        cur.execute("""
+            CREATE TABLE players (
+                license_id TEXT PRIMARY KEY,
+                name TEXT
+            )
+        """)
+        
         cur.execute("""
             CREATE TABLE tournament_registrations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tournament_id INTEGER NOT NULL,
-                player_name TEXT NOT NULL,
-                FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+                license_id TEXT NOT NULL,
+                FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+                FOREIGN KEY (license_id) REFERENCES players(license_id)
             )
         """)
         
@@ -473,11 +475,11 @@ class TestDataIntegrity(unittest.TestCase):
         conn.execute("PRAGMA foreign_keys = ON")
         cur = conn.cursor()
         
-        # Try to insert registration with invalid tournament_id
+        # Check that tournament_id FK is enforced by trying invalid ID
         with self.assertRaises(sqlite3.IntegrityError):
             cur.execute(
-                "INSERT INTO tournament_registrations (tournament_id, player_name) VALUES (?,?)",
-                (999, "Invalid Player")
+                "INSERT INTO tournament_registrations (tournament_id, license_id) VALUES (?,?)",
+                (999, "test_lic")  # tournament_id 999 doesn't exist
             )
             conn.commit()
         

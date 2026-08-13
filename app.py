@@ -194,27 +194,20 @@ def init_tournaments_db():
         )
     """)
     
-    # Player registrations for tournaments
+    # Player registrations for tournaments (NORMALIZED - references players table)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournament_registrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tournament_id INTEGER NOT NULL,
-            player_name TEXT NOT NULL,
-            license_id TEXT,
-            club TEXT,
-            gender TEXT,
-            email TEXT,
-            phone TEXT,
-            dob TEXT,
-            age TEXT,
-            ranking TEXT,
+            license_id TEXT NOT NULL,
             singles_levels TEXT,
             doubles_levels TEXT,
             mixed_levels TEXT,
             doubles_partner TEXT,
             mixed_partner TEXT,
             registration_date TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+            FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+            FOREIGN KEY (license_id) REFERENCES players(license_id)
         )
     """)
     
@@ -370,18 +363,22 @@ def get_tournament_by_url(tournament_url):
 
 
 def get_player_registrations_for_tournament(tournament_id):
-    """Get all player registrations for a tournament with player data"""
+    """Get all player registrations for a tournament with player data via JOIN"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
+        # Need to attach players database to query it
+        conn.execute(f"ATTACH DATABASE 'players.db' AS players_db")
         cur = conn.cursor()
         
+        # NORMALIZED QUERY: JOIN with players table to get player data
         cur.execute("""
-            SELECT player_name, license_id, club, gender, email, phone,
-                   singles_levels, doubles_levels, mixed_levels,
-                   doubles_partner, mixed_partner, registration_date
-            FROM tournament_registrations
-            WHERE tournament_id=?
-            ORDER BY registration_date DESC
+            SELECT p.name, r.license_id, p.club, p.gender, p.email, p.phone,
+                   r.singles_levels, r.doubles_levels, r.mixed_levels,
+                   r.doubles_partner, r.mixed_partner, r.registration_date
+            FROM tournament_registrations r
+            JOIN players_db.players p ON r.license_id = p.license_id
+            WHERE r.tournament_id=?
+            ORDER BY r.registration_date DESC
         """, (tournament_id,))
         
         rows = cur.fetchall()
@@ -411,21 +408,23 @@ def get_player_registrations_for_tournament(tournament_id):
 
 
 def register_player_in_tournament(tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner):
-    """Register a player for a tournament"""
+    """Register a player for a tournament (uses normalized schema with FK to players)"""
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
         
+        # NORMALIZED: Store only tournament-specific fields + license_id FK
+        # Player data (name, club, gender, email, phone, dob, age, ranking) come from players table
         conn.execute("""
             INSERT INTO tournament_registrations
-            (tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking,
-             singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking,
-              singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner))
+            (tournament_id, license_id, singles_levels, doubles_levels, mixed_levels, 
+             doubles_partner, mixed_partner)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (tournament_id, license_id, singles_levels, doubles_levels, mixed_levels, 
+              doubles_partner, mixed_partner))
         
         conn.commit()
         conn.close()
-        logger.info(f"✅ Registered {player_name} for tournament {tournament_id}")
+        logger.info(f"✅ Registered {player_name} ({license_id}) for tournament {tournament_id}")
         return True
     except Exception as e:
         logger.error(f"❌ Error registering player: {e}")
