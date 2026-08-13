@@ -192,6 +192,7 @@ def scrape_all_players():
                 
                 soup = BeautifulSoup(resp.text, "html.parser")
                 items = soup.select("li.list__item")
+                logger.debug(f"  Letter '{letter}': Found {len(items)} items")
                 
                 for item in items:
                     try:

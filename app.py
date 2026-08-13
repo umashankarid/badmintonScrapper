@@ -83,14 +83,22 @@ except Exception as e:
     logger.error("⚠️  Continuing with local databases (new data will NOT persist)")
 
 # Sync player data from Badminton Sweden on startup
-logger.info("🔄 Syncing player data from Badminton Sweden...")
+logger.info("=" * 80)
+logger.info("🔄 STARTUP: Syncing player data from Badminton Sweden...")
+logger.info("=" * 80)
 try:
     from players_scraper import scrape_all_players
+    logger.info("📋 Starting bulk scrape of ALL players...")
     players_scraped = scrape_all_players()
-    logger.info(f"✅ Scraped {players_scraped} players from Badminton Sweden")
+    logger.info(f"✅ STARTUP COMPLETE: Scraped {players_scraped} players from Badminton Sweden")
+    if players_scraped == 0:
+        logger.warning("⚠️  WARNING: No players found in scrape. This may indicate a parsing issue with Badminton Sweden.")
 except Exception as e:
-    logger.error(f"⚠️  Failed to scrape players: {str(e)}")
+    logger.error(f"❌ STARTUP FAILED: Failed to scrape players: {str(e)}")
+    import traceback
+    logger.error(traceback.format_exc())
     logger.error("⚠️  Continuing with existing player data")
+logger.info("=" * 80)
 
 
 # ==================== DEBOUNCE SYNC SYSTEM ====================
