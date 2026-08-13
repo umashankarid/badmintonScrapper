@@ -91,6 +91,7 @@
         const params = new URLSearchParams(window.location.search);
         let dbFile = params.get("db");
         const tournamentUrl = params.get("url");
+        const cameFromHomepage = !params.get("db") && !!tournamentUrl;
         let currentPage = 1;
         let loggedInPlayer = null;
         let isAdmin = false;
@@ -131,8 +132,7 @@
                 isAdmin = true;
                 document.getElementById("register-section").style.display = "none";
                 document.getElementById("login-prompt").style.display = "none";
-                document.getElementById("admin-edit-section").style.display = "block";
-                document.getElementById("admin-player-search").style.display = "block";
+                document.getElementById("admin-edit-section").style.display = "none";
             } else if (data.logged_in) {
                 loggedInPlayer = data;
                 document.getElementById("register-section").style.display = "block";
@@ -251,7 +251,7 @@
                         <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
                         <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
                         <td>
-                            ${isAdmin ?
+                            ${isAdmin && !cameFromHomepage ?
                                 `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
                                  <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
                             (loggedInPlayer && loggedInPlayer.license_id === p.license_id ?

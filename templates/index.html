@@ -127,8 +127,17 @@
             const statusRes = await fetch("/api/bwf-status");
             const statusData = await statusRes.json();
             let registeredUrls = new Set();
+            let regCounts = {};
 
-            if (statusData.logged_in && statusData.player_name) {
+            if (statusData.logged_in && statusData.is_admin) {
+                // Admin: fetch registration counts per tournament
+                const countRes = await fetch("/api/tournament-registration-counts");
+                const countData = await countRes.json();
+                if (countData.success) {
+                    regCounts = countData.counts || {};
+                }
+            } else if (statusData.logged_in && statusData.player_name) {
+                // Player: fetch their own registration status
                 const regRes = await fetch("/api/my-registrations");
                 const regData = await regRes.json();
                 if (regData.success) {
@@ -138,10 +147,18 @@
 
             // Display open tournaments
             const html = tournaments.map(t => {
-                const isRegistered = registeredUrls.has(t.url);
-                const badge = statusData.logged_in ? (isRegistered ?
-                    `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
-                    `<span style="background:#f0a000;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Not Registered</span>`) : "";
+                let badge = "";
+                if (statusData.logged_in && statusData.is_admin) {
+                    const count = regCounts[t.url] || 0;
+                    badge = count > 0 ?
+                        `<span style="background:#0d47a1;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">${count} player${count !== 1 ? 's' : ''} registered</span>` :
+                        `<span style="background:#999;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">No registrations</span>`;
+                } else if (statusData.logged_in) {
+                    const isRegistered = registeredUrls.has(t.url);
+                    badge = isRegistered ?
+                        `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
+                        `<span style="background:#f0a000;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Not Registered</span>`;
+                }
                 
                 // Check if registration closes within 7 days and calculate days left
                 let urgentStyle = "";

@@ -1901,6 +1901,32 @@ def my_registrations():
         return jsonify(success=True, registered_urls=[])
 
 
+@app.route("/api/tournament-registration-counts", methods=["GET"])
+def tournament_registration_counts():
+    """Get registration counts per tournament (for admin homepage view)"""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT t.tournament_url, COUNT(tr.id) as reg_count
+            FROM tournaments t
+            LEFT JOIN tournament_registrations tr ON t.tournament_name = tr.tournament_name
+            WHERE t.selected_for_view = 1
+            GROUP BY t.tournament_url
+        """)
+        
+        counts = {}
+        for row in cur.fetchall():
+            counts[row[0]] = row[1]
+        
+        conn.close()
+        return jsonify(success=True, counts=counts)
+    except Exception as e:
+        logger.error(f"❌ Error fetching registration counts: {e}")
+        return jsonify(success=True, counts={})
+
+
 @app.route("/api/ensure-tournament", methods=["POST"])
 def ensure_tournament():
     """Ensure tournament exists in unified tournaments.db and creates individual tournament DB"""
