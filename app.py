@@ -1437,40 +1437,37 @@ def get_tournament_visibility():
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
-    # Get all tournaments from filesystem
-    tournaments = []
-    if os.path.exists(TOURNAMENTS_DIR):
-        for f in os.listdir(TOURNAMENTS_DIR):
-            if f.endswith(".db"):
-                conn = get_tournament_db(f)
-                if conn:
-                    cur = conn.cursor()
-                    try:
-                        cur.execute("SELECT name, location, competition_date FROM tournaments LIMIT 1")
-                        row = cur.fetchone()
-                        if row:
-                            tournaments.append({
-                                "db": f,
-                                "name": row[0],
-                                "location": row[1] if len(row) > 1 else "",
-                                "competition_date": row[2] if len(row) > 2 else ""
-                            })
-                    except:
-                        pass
-                    conn.close()
+    logger.info("📋 Admin viewing tournament visibility")
     
-    # Get visibility status from admin.db
-    conn = sqlite3.connect(ADMIN_DB)
-    cur = conn.cursor()
-    cur.execute("SELECT tournament_db, visible FROM tournament_visibility")
-    visibility_map = {row[0]: row[1] for row in cur.fetchall()}
-    conn.close()
+    # Get all tournaments from unified tournaments.db
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT id, tournament_name, location, date_start, date_end, selected_for_view
+            FROM tournaments
+            ORDER BY date_start DESC
+        """)
+        
+        tournaments = []
+        for row in cur.fetchall():
+            tournaments.append({
+                "id": row[0],
+                "name": row[1],
+                "location": row[2],
+                "date_start": row[3],
+                "date_end": row[4],
+                "visible": row[5]
+            })
+        
+        conn.close()
+        logger.info(f"✅ Retrieved {len(tournaments)} tournaments for visibility view")
+        return jsonify(success=True, tournaments=tournaments)
     
-    # Merge visibility data
-    for t in tournaments:
-        t["visible"] = visibility_map.get(t["db"], 0)
-    
-    return jsonify(success=True, tournaments=tournaments)
+    except Exception as e:
+        logger.error(f"❌ Error fetching tournament visibility: {str(e)}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route("/api/tournament-visibility/toggle", methods=["POST"])
@@ -1732,66 +1729,82 @@ def open_tournaments():
 @app.route("/api/my-registrations", methods=["GET"])
 def my_registrations():
     """Check which tournaments the logged-in player is registered in."""
-    player_name = session.get("bwf_player")
-    if not player_name:
+    license_id = session.get("license_id")
+    if not license_id:
         return jsonify(success=False, registered_urls=[])
-
-    registered_urls = []
-    if not os.path.exists(TOURNAMENTS_DIR):
-        return jsonify(success=True, registered_urls=[])
-
-    for f in os.listdir(TOURNAMENTS_DIR):
-        if not f.endswith(".db"):
-            continue
-        conn = get_tournament_db(f)
-        if not conn:
-            continue
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT bwf_url FROM tournaments LIMIT 1")
-            row = cur.fetchone()
-            if row and row[0]:
-                cur.execute("SELECT player_id FROM players WHERE player_name=?", (player_name,))
+    
+    logger.info(f"📋 Checking registrations for license_id: {license_id}")
+    
+    try:
+        # Get all tournaments
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT id, tournament_url, tournament_name
+            FROM tournaments
+        """)
+        
+        registered_urls = []
+        for tournament_id, tournament_url, tournament_name in cur.fetchall():
+            # Check if player is registered in this tournament
+            table_name = f"tournament_{tournament_id}_registrations"
+            
+            # Check if table exists
+            cur.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name=?
+            """, (table_name,))
+            
+            if cur.fetchone():
+                # Check if player is in this table
+                cur.execute(f"""
+                    SELECT id FROM {table_name} WHERE license_id=?
+                """, (license_id,))
+                
                 if cur.fetchone():
-                    registered_urls.append(row[0])
-        except sqlite3.OperationalError:
-            pass
-        finally:
-            conn.close()
-
-    return jsonify(success=True, registered_urls=registered_urls)
+                    registered_urls.append(tournament_url)
+                    logger.debug(f"✅ Player registered for: {tournament_name}")
+        
+        conn.close()
+        logger.info(f"✅ Found {len(registered_urls)} registrations for player")
+        return jsonify(success=True, registered_urls=registered_urls)
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching registrations: {str(e)}")
+        return jsonify(success=True, registered_urls=[])
 
 
 @app.route("/api/ensure-tournament", methods=["POST"])
 def ensure_tournament():
-    """Auto-create tournament DB from BWF URL if it doesn't exist."""
+    """Ensure tournament exists in unified tournaments.db"""
     data = request.json
     url = data.get("url", "")
     if not url:
         return jsonify(success=False, error="URL required"), 400
 
-    # Check if we already have this tournament
-    if os.path.exists(TOURNAMENTS_DIR):
-        for f in os.listdir(TOURNAMENTS_DIR):
-            if not f.endswith(".db"):
-                continue
-            conn = get_tournament_db(f)
-            if not conn:
-                continue
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT bwf_url FROM tournaments LIMIT 1")
-                row = cur.fetchone()
-                if row and row[0] == url:
-                    conn.close()
-                    return jsonify(success=True, db=f)
-            except sqlite3.OperationalError:
-                pass
-            finally:
-                conn.close()
-
-    # Fetch tournament info from BWF
+    logger.info(f"📋 Ensuring tournament exists for URL: {url}")
+    
     try:
+        # Check if tournament already exists in unified schema
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT id FROM tournaments WHERE tournament_url=?
+        """, (url,))
+        
+        result = cur.fetchone()
+        if result:
+            tournament_id = result[0]
+            conn.close()
+            logger.info(f"✅ Tournament already exists with ID: {tournament_id}")
+            return jsonify(success=True, tournament_id=tournament_id, created=False)
+        
+        conn.close()
+        
+        # Fetch tournament info from BWF
+        logger.info(f"🔍 Fetching tournament info from Badminton Sweden...")
         s = ext_requests.Session()
         s.headers.update({"User-Agent": "Mozilla/5.0"})
         s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
