@@ -881,8 +881,10 @@ def validate_registration():
         return jsonify(success=True, allowed=True)
 
     # Adult classes: Elit, A, B, C, D
-    # Kids can only play adult classes (B, A, Elit) after they turn 13
-    # AND only after June of the year they turn 13
+    # Junior rules for senior categories:
+    # - Under 13: can play B, A, Elit with special permission (dispens) — NOT C or D
+    # - Under 18 (junior): can play B, A, Elit — NOT C or D
+    # - C and D classes are for seniors (18+) only
     adult_classes = {"Elit", "A", "B", "C", "D"}
     if level in adult_classes and dob:
         try:
@@ -904,6 +906,12 @@ def validate_registration():
             # Calculate age at competition date
             age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
 
+            # HARD BLOCK: Under 18 cannot play C or D class (seniors only)
+            if age_at_comp < 18 and level in {"C", "D"}:
+                return jsonify(success=True, allowed=False, hard_block=True,
+                    message=f"Player is {age_at_comp} years old. {level} class is for seniors (18+) only. Juniors can only play B, A, or Elit.")
+
+            # WARNING: Under 13 needs special permission for any senior class (B, A, Elit)
             if age_at_comp < 13:
                 return jsonify(success=True, allowed=False, age_restriction=True,
                     message=f"Player must be at least 13 years old to play {level} class. Current age: {age_at_comp}")
@@ -1067,6 +1075,17 @@ def get_tournament_warnings():
                         
                         year_turn_13 = birth.year + 13
                         age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
+                        
+                        # HARD BLOCK: Under 18 cannot play C or D (seniors only)
+                        if age_at_comp < 18 and level in {"C", "D"}:
+                            warnings.append({
+                                "license_id": reg_license_id,
+                                "player_name": player_name,
+                                "type": "points_high",
+                                "event": event,
+                                "message": f"{player_name} is {age_at_comp} years old. {level} class is for seniors (18+) only."
+                            })
+                            continue
                         
                         if age_at_comp < 13:
                             warnings.append({
@@ -2915,6 +2934,11 @@ def add_player():
             
             for entry in all_levels:
                 level = entry["level"]
+                # HARD BLOCK: Under 18 cannot play C or D class (seniors only)
+                if level in {"C", "D"} and age_at_comp < 18:
+                    return jsonify(success=False,
+                        error=f"Registration rejected: Player is {age_at_comp} years old. {level} class is for seniors (18+) only. Juniors can only play B, A, or Elit.")
+                
                 # Check age-based categories (U9, U11, U13, U15, U17, U19)
                 if level.startswith("U"):
                     match = re_mod.search(r'\d+', level)
