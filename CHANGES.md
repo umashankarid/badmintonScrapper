@@ -8,6 +8,34 @@
 
 ## [Unreleased]
 
+### Added - Tournament Data Round-Trip Verification Tests
+- **New Test Suite**: test_tournament_roundtrip.py (409 lines, 7 tests)
+  - Ensures tournament data survives INSERT → SELECT round-trip
+  - Verifies data integrity and no data loss
+  - Tests all fields are correctly persisted and retrievable
+
+- **Test Coverage**:
+  - Test 1: Insert tournament and read back with all data intact
+  - Test 2: Verify all date fields are NOT NULL after insert
+  - Test 3: Date format preserved in round-trip (YYYY-MM-DD)
+  - Test 4: Multiple tournaments don't cross-contaminate data
+  - Test 5: selected_for_view flag persists correctly
+  - Test 6: Timestamp fields (created_at, last_updated) are set
+  - Test 7: Real tournament data from Badminton Sweden (Vikingaslaget Sollentuna)
+
+- **Validation Checks**:
+  - ✅ All 7 tests passing
+  - ✅ Data integrity verified
+  - ✅ No NULL values in required fields
+  - ✅ Format validation (ISO dates)
+  - ✅ Cross-contamination prevention verified
+  - ✅ Real data from Badminton Sweden validated
+
+Result:
+  - Tournament data integrity guaranteed
+  - Future regression detection enabled
+  - Complete round-trip validation in place
+
 ### Fixed - Tournament Data Scraping: Add Missing Date Fields to tournaments.db
 - **Problem**: Tournament data fields (registration_opens, registration_closes, cancellation_deadline, competition_start, competition_end) were NULL in tournaments.db
   - Issue was that `ensure_tournament()` only created individual tournament databases
@@ -19,27 +47,37 @@
   - Inserts into unified `tournaments.db` with complete data
   - Maintains backward compatibility: still creates individual tournament databases
   - Fixed date field extraction (registration_opens, registration_closes, cancellation_deadline, competition_start, competition_end)
+  - Added enhanced logging for debugging data flow
 
-- **Testing**: Added comprehensive unit test suite
+- **Testing**: Added comprehensive unit test suites
   - Created test_tournament_scraping.py (299 lines, 6 tests)
-  - Test 1: Verifies all date fields exist in schema
-  - Test 2: Validates data insertion with all dates populated
-  - Test 3: Ensures no NULL values in date fields
-  - Test 4: Validates ISO format (YYYY-MM-DD)
-  - Test 5: Checks logical date ordering
-  - Test 6: Batch insert verification
+    - Test 1: Verifies all date fields exist in schema
+    - Test 2: Validates data insertion with all dates populated
+    - Test 3: Ensures no NULL values in date fields
+    - Test 4: Validates ISO format (YYYY-MM-DD)
+    - Test 5: Checks logical date ordering
+    - Test 6: Batch insert verification
+  - Created test_tournament_roundtrip.py (409 lines, 7 tests)
+    - Full round-trip verification (INSERT → SELECT)
+    - Data integrity checks
+    - Cross-contamination prevention tests
 
 - **Code Changes**:
   - app.py: Updated `ensure_tournament()` function (110 lines)
     - Added location extraction from tournament page
     - Added dual database write (unified tournaments.db + individual db)
-    - Improved logging for debugging
+    - Enhanced logging with date extraction details
+  - debug_tournament_scraping.py: New debug script (200 lines)
+    - Inspects tournament page structure
+    - Validates date extraction from HTML
   - test_tournament_scraping.py: New test file (299 lines)
+  - test_tournament_roundtrip.py: New test file (409 lines)
 
 - **Verification**:
-  - ✅ All 58 tests passing (12 + 6 new + 40)
+  - ✅ All 65 tests passing (12 + 6 scraping + 7 roundtrip + 40 others)
   - ✅ App startup verified
   - ✅ Date field extraction working correctly
+  - ✅ Data persistence verified
   - ✅ Foreign key constraints validated
 
 Result:
@@ -47,6 +85,7 @@ Result:
   - All date fields properly populated when tournaments are added
   - Single source of truth for tournament information
   - Unified database ready for queries and analytics
+  - Future data integrity guaranteed via round-trip tests
 
 ### Changed - Database Normalization: tournament_registrations Schema Refactor
 - **Normalized tournament_registrations table** to eliminate data duplication

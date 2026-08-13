@@ -1863,6 +1863,10 @@ def ensure_tournament():
 
         # STEP 1: Add to unified tournaments.db with all date fields
         logger.info(f"📝 Adding tournament to unified tournaments.db...")
+        logger.info(f"   Tournament: {name}")
+        logger.info(f"   Location: {location}")
+        logger.info(f"   Extracted dates: {dates}")
+        
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
@@ -1892,8 +1896,15 @@ def ensure_tournament():
             cur.execute("SELECT id FROM tournaments WHERE tournament_url = ?", (url,))
             tournament_id = cur.fetchone()[0]
             logger.info(f"✅ Added to tournaments.db with ID: {tournament_id}")
+            logger.info(f"   Saved dates:")
+            logger.info(f"     registration_opens: {dates.get('registration_opens', '')}")
+            logger.info(f"     registration_closes: {dates.get('registration_closes', '')}")
+            logger.info(f"     cancellation_deadline: {dates.get('cancellation_deadline', '')}")
+            logger.info(f"     competition_start: {dates.get('competition_start', '')}")
+            logger.info(f"     competition_end: {dates.get('competition_end', '')}")
         except Exception as e:
             logger.warning(f"⚠️  Could not add to unified DB: {e}")
+            logger.exception("Full traceback:")
             tournament_id = None
         finally:
             conn.close()
