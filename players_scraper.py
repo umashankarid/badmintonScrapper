@@ -223,6 +223,42 @@ def scrape_all_players():
         return 0
 
 
+def check_player_data_stale(license_id, max_age_hours=24):
+    """
+    Check if player data is stale (older than max_age_hours)
+    
+    Returns: True if stale or not found, False if current
+    """
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT last_updated FROM players WHERE license_id = ?",
+            (license_id,)
+        )
+        row = cur.fetchone()
+        conn.close()
+        
+        if not row or not row[0]:
+            # Player not found or no last_updated timestamp
+            return True
+        
+        # Check if data is older than max_age_hours
+        from datetime import datetime, timedelta
+        last_updated = datetime.fromisoformat(row[0])
+        age = datetime.now() - last_updated
+        
+        is_stale = age > timedelta(hours=max_age_hours)
+        logger.debug(f"Player {license_id} data age: {age.total_seconds() / 3600:.1f} hours, stale={is_stale}")
+        
+        return is_stale
+    
+    except Exception as e:
+        logger.warning(f"⚠️  Could not check player data freshness: {e}")
+        return True  # Assume stale if we can't check
+
+
 def update_player_in_db(license_id, name, profile_url, ranking=None, email=None, phone=None):
     """
     Insert or update player in players.db

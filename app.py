@@ -769,12 +769,20 @@ def bwf_login():
         # Scrape fresh player data from Badminton Sweden
         try:
             if license_id:
-                from players_scraper import scrape_player_by_license_id
-                player_data = scrape_player_by_license_id(license_id)
-                if player_data:
-                    logger.info(f"✅ Updated player data for {player_name}")
+                from players_scraper import scrape_player_by_license_id, check_player_data_stale
+                
+                # Check if player data is stale (older than 24 hours)
+                is_stale = check_player_data_stale(license_id)
+                
+                if is_stale:
+                    logger.info(f"🔄 Player data is stale, refreshing for {license_id}...")
+                    player_data = scrape_player_by_license_id(license_id)
+                    if player_data:
+                        logger.info(f"✅ Refreshed player data for {player_name}")
+                else:
+                    logger.info(f"✅ Player data is current for {license_id}")
         except Exception as e:
-            logger.debug(f"Could not update player data: {e}")
+            logger.debug(f"Could not refresh player data: {e}")
         
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
