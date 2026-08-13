@@ -29,6 +29,7 @@ HEADERS = {
 def scrape_player_by_license_id(license_id):
     """
     Scrape player data from Badminton Sweden by license ID
+    Updates players.db with the scraped data
     
     Returns: dict with player data or None if not found
     """
@@ -67,6 +68,7 @@ def scrape_player_by_license_id(license_id):
         player_data["gender"] = ""
         
         # Scrape ranking
+        ranking = {}
         try:
             ranking_resp = requests.get(f"{profile_url}/ranking", headers=HEADERS, timeout=10)
             ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
@@ -77,6 +79,19 @@ def scrape_player_by_license_id(license_id):
             player_data["ranking"] = None
         
         logger.info(f"✅ Scraped player: {player_data.get('name', 'Unknown')}")
+        
+        # Update players.db with scraped data
+        try:
+            update_player_in_db(
+                license_id=player_data.get("license_id"),
+                name=player_data.get("name"),
+                profile_url=player_data.get("profile_url"),
+                ranking=player_data.get("ranking")
+            )
+            logger.info(f"✅ Updated players.db with {player_data.get('name', 'Unknown')}")
+        except Exception as e:
+            logger.error(f"❌ Could not update players.db: {e}")
+        
         return player_data
     
     except Exception as e:
