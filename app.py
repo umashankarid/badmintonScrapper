@@ -2607,6 +2607,30 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
     """
     now = __import__('datetime').datetime.now().isoformat()
     
+    # Fetch partner's ranking from public profile
+    partner_ranking = None
+    if partner_profile_url:
+        try:
+            s = ext_requests.Session()
+            s.headers.update({"User-Agent": "Mozilla/5.0"})
+            ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{partner_profile_url}/ranking", timeout=10)
+            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
+            table = ranking_soup.find("table")
+            if table:
+                ranking_data = {}
+                for row in table.find_all("tr")[1:]:
+                    th = row.find("th", scope="row")
+                    tds = row.find_all("td")
+                    if th and len(tds) >= 2:
+                        category = th.get_text(strip=True)
+                        if category:
+                            ranking_data[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
+                if ranking_data:
+                    partner_ranking = json.dumps(ranking_data)
+                    logger.info(f"✅ Fetched ranking for partner {partner_name}")
+        except Exception as e:
+            logger.debug(f"Could not fetch partner ranking: {e}")
+    
     # Insert/update partner in players.db
     try:
         conn_players = sqlite3.connect(PLAYERS_DB)
@@ -2622,15 +2646,16 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
                     name = ?,
                     profile_url = COALESCE(?, profile_url),
                     club = COALESCE(?, club),
+                    ranking = COALESCE(?, ranking),
                     last_updated = ?
                 WHERE license_id = ?
-            """, (partner_name, partner_profile_url or None, partner_club or None, now, partner_license_id))
+            """, (partner_name, partner_profile_url or None, partner_club or None, partner_ranking, now, partner_license_id))
         else:
             # Insert new partner player
             cur_players.execute("""
-                INSERT INTO players (license_id, name, profile_url, club, last_updated)
-                VALUES (?, ?, ?, ?, ?)
-            """, (partner_license_id, partner_name, partner_profile_url, partner_club, now))
+                INSERT INTO players (license_id, name, profile_url, club, ranking, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (partner_license_id, partner_name, partner_profile_url, partner_club, partner_ranking, now))
         
         conn_players.commit()
         conn_players.close()
