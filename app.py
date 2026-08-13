@@ -1147,39 +1147,42 @@ def send_test_email():
 # --- Tournament CRUD ---
 @app.route("/api/tournaments", methods=["GET"])
 def list_tournaments():
-    """List only tournaments that have registered players"""
-    if not os.path.exists(TOURNAMENTS_DIR):
-        return jsonify([])
-    files = [f for f in os.listdir(TOURNAMENTS_DIR) if f.endswith(".db")]
-    tournaments = []
-    for f in files:
-        conn = get_tournament_db(f)
-        if not conn:
-            continue
+    """List tournaments with registration count"""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
-        try:
-            # Check if tournament has any registered players
-            cur.execute("SELECT COUNT(*) FROM players")
-            player_count = cur.fetchone()[0]
+        
+        cur.execute("""
+            SELECT id, tournament_name, location, date_start, date_end, selected_for_view
+            FROM tournaments
+            WHERE selected_for_view = 1 AND date_end >= date('now')
+            ORDER BY date_start ASC
+        """)
+        
+        tournaments = []
+        for row in cur.fetchall():
+            # Get registration count for this tournament
+            reg_table = f"tournament_{row[0]}_registrations"
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM {reg_table}")
+                reg_count = cur.fetchone()[0]
+            except:
+                reg_count = 0
             
-            if player_count > 0:
-                cur.execute("SELECT name, levels, competition_date, final_registration_date, final_cancellation_date FROM tournaments LIMIT 1")
-                row = cur.fetchone()
-                if row:
-                    levels = json.loads(row[1]) if row[1] else []
-                    tournaments.append({
-                        "name": row[0],
-                        "db": f,
-                        "levels": levels,
-                        "competition_date": row[2],
-                        "final_registration_date": row[3],
-                        "final_cancellation_date": row[4],
-                    })
-        except sqlite3.OperationalError:
-            pass
-        finally:
-            conn.close()
-    return jsonify(tournaments)
+            tournaments.append({
+                "id": row[0],
+                "tournament_name": row[1],
+                "location": row[2],
+                "date_start": row[3],
+                "date_end": row[4],
+                "registrations": reg_count
+            })
+        
+        conn.close()
+        return jsonify(tournaments)
+    except Exception as e:
+        logger.error(f"❌ Error listing tournaments: {e}")
+        return jsonify([])
 
 
 @app.route("/admin/search-tournaments", methods=["GET"])
