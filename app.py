@@ -1017,6 +1017,9 @@ def get_tournament_warnings():
             
             try:
                 player_ranking = json.loads(player_ranking_json) if player_ranking_json else {}
+                # Handle double-encoded JSON
+                if isinstance(player_ranking, str):
+                    player_ranking = json.loads(player_ranking)
             except Exception:
                 player_ranking = {}
             
@@ -2519,6 +2522,9 @@ def _check_points_too_high(license_id, event_class):
             return False, ""
         
         player_ranking = json.loads(row[0])
+        # Handle double-encoded JSON
+        if isinstance(player_ranking, str):
+            player_ranking = json.loads(player_ranking)
         cat_ranking = player_ranking.get(category, {})
         points_str = cat_ranking.get("points", "")
         if not points_str:
@@ -2809,7 +2815,14 @@ def add_player():
         cur_check = conn_players_check.cursor()
         cur_check.execute("SELECT ranking FROM players WHERE license_id = ?", (license_id,))
         row = cur_check.fetchone()
-        player_ranking = json.loads(row[0]) if row and row[0] else {}
+        player_ranking = {}
+        if row and row[0]:
+            decoded = json.loads(row[0])
+            # Handle double-encoded JSON (string inside string)
+            if isinstance(decoded, str):
+                decoded = json.loads(decoded)
+            if isinstance(decoded, dict):
+                player_ranking = decoded
         conn_players_check.close()
         
         if player_ranking:
