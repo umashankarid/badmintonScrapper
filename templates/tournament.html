@@ -418,6 +418,19 @@
             const mixedSelected = document.querySelector(".mixed-level") && document.querySelector(".mixed-level").value;
             document.getElementById("doubles-partner-container").style.display = doublesSelected ? "block" : "none";
             document.getElementById("mixed-partner-container").style.display = mixedSelected ? "block" : "none";
+            // Clear partner values when level is set to NONE
+            if (!doublesSelected) {
+                document.getElementById("doubles-partner").value = "";
+                document.getElementById("doubles-partner").dataset.licenseId = "";
+                document.getElementById("doubles-partner").dataset.club = "";
+                document.getElementById("doubles-partner").dataset.profileUrl = "";
+            }
+            if (!mixedSelected) {
+                document.getElementById("mixed-partner").value = "";
+                document.getElementById("mixed-partner").dataset.licenseId = "";
+                document.getElementById("mixed-partner").dataset.club = "";
+                document.getElementById("mixed-partner").dataset.profileUrl = "";
+            }
 
             if (!loggedInPlayer || !loggedInPlayer.ranking) return;
             const ranking = loggedInPlayer.ranking;
@@ -761,6 +774,19 @@
                     const mixedSelected = document.querySelector(".admin-mixed-level") && document.querySelector(".admin-mixed-level").value;
                     document.getElementById("admin-doubles-partner-container").style.display = doublesSelected ? "block" : "none";
                     document.getElementById("admin-mixed-partner-container").style.display = mixedSelected ? "block" : "none";
+                    // Clear partner values when level is set to NONE
+                    if (!doublesSelected) {
+                        document.getElementById("admin-doubles-partner").value = "";
+                        document.getElementById("admin-doubles-partner").dataset.licenseId = "";
+                        document.getElementById("admin-doubles-partner").dataset.club = "";
+                        document.getElementById("admin-doubles-partner").dataset.profileUrl = "";
+                    }
+                    if (!mixedSelected) {
+                        document.getElementById("admin-mixed-partner").value = "";
+                        document.getElementById("admin-mixed-partner").dataset.licenseId = "";
+                        document.getElementById("admin-mixed-partner").dataset.club = "";
+                        document.getElementById("admin-mixed-partner").dataset.profileUrl = "";
+                    }
                 });
             }
         }

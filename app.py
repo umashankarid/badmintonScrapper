@@ -2640,12 +2640,16 @@ def add_player():
             logger.info(f"✅ Updated registration for {player.get('player_name')} in tournament {tournament_name}")
             
             # Clean up removed partners
-            # If doubles partner was removed or changed
-            if old_doubles_partner and old_doubles_partner != new_doubles_partner:
+            # If doubles partner was removed, changed, or doubles level was cleared
+            doubles_partner_removed = (old_doubles_partner and old_doubles_partner != new_doubles_partner)
+            doubles_level_cleared = (old_doubles_levels and not new_doubles_levels and old_doubles_partner)
+            if doubles_partner_removed or doubles_level_cleared:
                 _cleanup_removed_partner(cur_main, tournament_name, old_doubles_partner, "doubles", player_name_for_cleanup)
             
-            # If mixed partner was removed or changed
-            if old_mixed_partner and old_mixed_partner != new_mixed_partner:
+            # If mixed partner was removed, changed, or mixed level was cleared
+            mixed_partner_removed = (old_mixed_partner and old_mixed_partner != new_mixed_partner)
+            mixed_level_cleared = (old_mixed_levels and not new_mixed_levels and old_mixed_partner)
+            if mixed_partner_removed or mixed_level_cleared:
                 _cleanup_removed_partner(cur_main, tournament_name, old_mixed_partner, "mixed", player_name_for_cleanup)
         else:
             # Insert new registration
