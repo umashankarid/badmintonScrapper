@@ -331,6 +331,126 @@ def get_tournament_db(db_file):
     return None  # Return None to indicate this path is not supported
 
 
+# ==================== TOURNAMENTS.DB HELPER FUNCTIONS ====================
+
+def get_tournament_by_url(tournament_url):
+    """Get tournament metadata by URL"""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT id, tournament_name, location, date_start, date_end,
+                   registration_opens, registration_closes, cancellation_deadline,
+                   competition_start, competition_end, selected_for_view
+            FROM tournaments WHERE tournament_url=?
+        """, (tournament_url,))
+        
+        row = cur.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "id": row[0],
+                "tournament_name": row[1],
+                "location": row[2],
+                "date_start": row[3],
+                "date_end": row[4],
+                "registration_opens": row[5],
+                "registration_closes": row[6],
+                "cancellation_deadline": row[7],
+                "competition_start": row[8],
+                "competition_end": row[9],
+                "selected_for_view": row[10]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"❌ Error getting tournament by URL: {e}")
+        return None
+
+
+def get_player_registrations_for_tournament(tournament_id):
+    """Get all player registrations for a tournament with player data"""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT player_name, license_id, club, gender, email, phone,
+                   singles_levels, doubles_levels, mixed_levels,
+                   doubles_partner, mixed_partner, registration_date
+            FROM tournament_registrations
+            WHERE tournament_id=?
+            ORDER BY registration_date DESC
+        """, (tournament_id,))
+        
+        rows = cur.fetchall()
+        conn.close()
+        
+        registrations = []
+        for row in rows:
+            registrations.append({
+                "player_name": row[0],
+                "license_id": row[1],
+                "club": row[2],
+                "gender": row[3],
+                "email": row[4],
+                "phone": row[5],
+                "singles_levels": row[6],
+                "doubles_levels": row[7],
+                "mixed_levels": row[8],
+                "doubles_partner": row[9],
+                "mixed_partner": row[10],
+                "registration_date": row[11]
+            })
+        
+        return registrations
+    except Exception as e:
+        logger.debug(f"No registrations found or table error: {e}")
+        return []
+
+
+def register_player_in_tournament(tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking, singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner):
+    """Register a player for a tournament"""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        
+        conn.execute("""
+            INSERT INTO tournament_registrations
+            (tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking,
+             singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (tournament_id, player_name, license_id, club, gender, email, phone, dob, age, ranking,
+              singles_levels, doubles_levels, mixed_levels, doubles_partner, mixed_partner))
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Registered {player_name} for tournament {tournament_id}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error registering player: {e}")
+        return False
+
+
+def delete_player_from_tournament(tournament_id, license_id):
+    """Delete a player registration from a tournament"""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        
+        conn.execute("""
+            DELETE FROM tournament_registrations
+            WHERE tournament_id=? AND license_id=?
+        """, (tournament_id, license_id))
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Removed player {license_id} from tournament {tournament_id}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error deleting player: {e}")
+        return False
+
+
 def get_player_club(player_name):
     """Look up a player's club from the scraped players DB."""
     conn = sqlite3.connect(PLAYERS_DB)

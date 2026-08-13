@@ -17,16 +17,13 @@ import hashlib
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Database files to sync (root level)
+# Database files to sync (root level only)
 DB_FILES = [
     "players.db",
     "admin.db", 
     "point_rules.db",
     "tournaments.db"  # Single unified tournaments database
 ]
-
-# Tournament databases directory
-TOURNAMENTS_DIR = "tournaments"
 
 # Dropbox OAuth info
 DROPBOX_APP_KEY = "2e0bvquyns4t5sb"
@@ -183,25 +180,17 @@ class DropboxSync:
                 logger.error(f"❌ Error checking folder: {str(e)}")
     
     def download_databases(self):
-        """Download all .db files from Dropbox (root level + tournaments/)"""
+        """Download all .db files from Dropbox (root level only, no per-tournament DBs)"""
         if not self.authenticated:
             logger.warning("⚠️  Dropbox not authenticated - skipping download")
             return False
         
         success_count = 0
         
-        # Download root level databases
+        # Download root level databases ONLY
         for db_file in DB_FILES:
             if self._download_file(db_file):
                 success_count += 1
-        
-        # Download tournament-specific databases from tournaments/ folder
-        if os.path.exists(TOURNAMENTS_DIR):
-            for filename in os.listdir(TOURNAMENTS_DIR):
-                if filename.endswith('.db'):
-                    filepath = os.path.join(TOURNAMENTS_DIR, filename)
-                    if self._download_file(filepath):
-                        success_count += 1
         
         logger.info(f"✅ Downloaded {success_count} database files from Dropbox")
         return True
@@ -251,7 +240,7 @@ class DropboxSync:
             return False
     
     def upload_databases(self):
-        """Upload only missing .db files to Dropbox (don't overwrite existing)"""
+        """Upload only missing .db files to Dropbox (root level only, no per-tournament DBs)"""
         if not self.authenticated:
             logger.warning("⚠️  Dropbox not authenticated - skipping upload")
             return False
@@ -259,7 +248,7 @@ class DropboxSync:
         success_count = 0
         skipped_count = 0
         
-        # Upload root level databases
+        # Upload root level databases ONLY
         for db_file in DB_FILES:
             if os.path.exists(db_file):
                 # Check if file already exists in Dropbox
@@ -272,21 +261,6 @@ class DropboxSync:
                         success_count += 1
             else:
                 logger.debug(f"ℹ️  File not found locally (will download from Dropbox if available): {db_file}")
-        
-        # Upload tournament-specific databases from tournaments/ folder
-        if os.path.exists(TOURNAMENTS_DIR):
-            for filename in os.listdir(TOURNAMENTS_DIR):
-                if filename.endswith('.db'):
-                    filepath = os.path.join(TOURNAMENTS_DIR, filename)
-                    if os.path.exists(filepath):
-                        # Check if file already exists in Dropbox
-                        if self._file_exists_in_dropbox(filepath):
-                            logger.debug(f"⏭️  Skipping upload (already in Dropbox): {filepath}")
-                            skipped_count += 1
-                        else:
-                            # File missing in Dropbox, upload it
-                            if self._upload_file(filepath):
-                                success_count += 1
         
         logger.info(f"✅ Uploaded {success_count} missing files | ⏭️  Skipped {skipped_count} existing files")
         return True
