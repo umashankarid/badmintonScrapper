@@ -1,17 +1,14 @@
 """
 Dropbox sync module for SQLite databases
 Syncs .db files to/from Dropbox for persistent storage
-Includes auto-refresh of access tokens using refresh tokens
+Uses refresh token for reliable auto-renewal of access tokens
 """
 
 import os
 import logging
 import dropbox
 import requests
-from dropbox.exceptions import ApiError
-from cryptography.fernet import Fernet
-import base64
-import hashlib
+from dropbox.exceptions import ApiError, AuthError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,19 +19,17 @@ DB_FILES = [
     "players.db",
     "admin.db", 
     "point_rules.db",
-    "tournaments.db"  # Single unified tournaments database
+    "tournaments.db"
 ]
 
 # Dropbox OAuth info
-DROPBOX_APP_KEY = "2e0bvquyns4t5sb"
+DROPBOX_APP_KEY = os.getenv('DROPBOX_APP_KEY', '2e0bvquyns4t5sb')
 DROPBOX_APP_SECRET = os.getenv('DROPBOX_APP_SECRET', '9hljwc9w0c790w7')
+DROPBOX_REFRESH_TOKEN = os.getenv('DROPBOX_REFRESH_TOKEN', '')
 
-# Dropbox app-specific password (stored securely in Render)
-DROPBOX_APP_PASSWORD = os.getenv('DROPBOX_APP_PASSWORD')
-DROPBOX_EMAIL = os.getenv('DROPBOX_EMAIL')
 
 class DropboxSync:
-    """Handle Dropbox sync for SQLite databases"""
+    """Handle Dropbox sync for SQLite databases using refresh token"""
     
     def __init__(self):
         """Initialize Dropbox client"""
@@ -43,119 +38,105 @@ class DropboxSync:
         self.authenticated = False
         self._init_dropbox_client()
     
-    @staticmethod
-    def _decrypt_credentials(encrypted_creds):
-        """Decrypt hashed credentials using a derived key"""
+    def _refresh_access_token(self):
+        """
+        Generate a new access token using the refresh token.
+        Refresh tokens are long-lived and never expire unless revoked.
+        """
+        if not DROPBOX_REFRESH_TOKEN:
+            logger.error("❌ DROPBOX_REFRESH_TOKEN not set - cannot refresh access token")
+            return None
+        
         try:
-            # Get encryption key from app secret (deterministic)
-            key = base64.urlsafe_b64encode(
-                hashlib.sha256(DROPBOX_APP_SECRET.encode()).digest()
-            )
-            cipher = Fernet(key)
-            decrypted = cipher.decrypt(encrypted_creds.encode()).decode()
-            parts = decrypted.split('|')
-            if len(parts) == 2:
-                return parts[0], parts[1]  # email, password
-            return None, None
-        except Exception as e:
-            logger.error(f"❌ Failed to decrypt credentials: {str(e)}")
-            return None, None
-    
-    def _generate_access_token(self):
-        """Generate new access token using Dropbox credentials"""
-        try:
-            # Get encrypted credentials from environment
-            encrypted_creds = os.getenv('DROPBOX_ENCRYPTED_CREDS')
-            if not encrypted_creds:
-                logger.warning("⚠️  DROPBOX_ENCRYPTED_CREDS not set - cannot auto-generate token")
-                return None
-            
-            # Decrypt credentials
-            email, password = self._decrypt_credentials(encrypted_creds)
-            if not email or not password:
-                logger.error("❌ Failed to decrypt Dropbox credentials")
-                return None
-            
-            logger.info("🔄 Generating new Dropbox access token...")
-            
-            # Use OAuth 2 password flow with Dropbox credentials
-            response = requests.post('https://api.dropboxapi.com/oauth2/token', 
-                data={
-                    'grant_type': 'password',
-                    'username': email,
-                    'password': password,
-                    'client_id': DROPBOX_APP_KEY,
-                    'client_secret': DROPBOX_APP_SECRET,
-                    'scope': 'files.content.read files.content.write'
-                }, 
-                timeout=10
-            )
+            logger.info("🔄 Refreshing Dropbox access token...")
+            response = requests.post('https://api.dropboxapi.com/oauth2/token', data={
+                'grant_type': 'refresh_token',
+                'refresh_token': DROPBOX_REFRESH_TOKEN,
+                'client_id': DROPBOX_APP_KEY,
+                'client_secret': DROPBOX_APP_SECRET
+            }, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
                 new_token = data.get('access_token')
                 if new_token:
-                    logger.info("✅ Successfully generated new access token")
-                    # Update environment variable for this session
+                    logger.info("✅ Successfully refreshed access token")
                     os.environ['DROPBOX_ACCESS_TOKEN'] = new_token
                     return new_token
                 else:
-                    logger.error(f"❌ No token in response: {data}")
+                    logger.error(f"❌ No access_token in response: {data}")
                     return None
             else:
-                logger.error(f"❌ Failed to generate token: {response.status_code} - {response.text}")
+                logger.error(f"❌ Token refresh failed: {response.status_code} - {response.text}")
                 return None
                 
         except Exception as e:
-            logger.error(f"❌ Error generating access token: {str(e)}")
+            logger.error(f"❌ Error refreshing access token: {str(e)}")
             return None
     
     def _init_dropbox_client(self):
-        """Initialize Dropbox client using access token, with auto-generation on expiry"""
+        """Initialize Dropbox client. Uses refresh token to get/renew access token."""
         try:
-            # Get access token from environment
+            # Method 1: Use refresh token directly with Dropbox SDK (preferred)
+            if DROPBOX_REFRESH_TOKEN:
+                try:
+                    self.dbx = dropbox.Dropbox(
+                        oauth2_refresh_token=DROPBOX_REFRESH_TOKEN,
+                        app_key=DROPBOX_APP_KEY,
+                        app_secret=DROPBOX_APP_SECRET
+                    )
+                    # Test connection (this will auto-refresh if needed)
+                    self.dbx.users_get_current_account()
+                    logger.info("✅ Dropbox client initialized with refresh token")
+                    
+                    self.folder_path = os.getenv('DROPBOX_SYNC_FOLDER', '/BadmintonScrapPython-Databases')
+                    logger.info(f"✅ Using Dropbox folder: {self.folder_path}")
+                    self._ensure_folder_exists()
+                    self.authenticated = True
+                    return True
+                except AuthError as e:
+                    logger.error(f"❌ Refresh token auth failed: {str(e)}")
+                    logger.error("❌ The refresh token may be revoked. Generate a new one.")
+                    return False
+                except Exception as e:
+                    logger.warning(f"⚠️  Refresh token SDK init failed: {str(e)}, trying access token...")
+            
+            # Method 2: Fall back to direct access token
             access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
             if not access_token:
-                logger.error("❌ DROPBOX_ACCESS_TOKEN environment variable not set - sync DISABLED")
-                logger.error("❌ To enable auto-token generation, set DROPBOX_ENCRYPTED_CREDS in Render")
-                return False
+                # Try to get one from refresh token
+                if DROPBOX_REFRESH_TOKEN:
+                    access_token = self._refresh_access_token()
+                
+                if not access_token:
+                    logger.error("❌ No DROPBOX_REFRESH_TOKEN or DROPBOX_ACCESS_TOKEN set - sync DISABLED")
+                    logger.error("❌ See DROPBOX_TOKEN_STEPS.md for setup instructions")
+                    return False
             
-            # Initialize Dropbox client
+            # Initialize with access token
             self.dbx = dropbox.Dropbox(access_token)
             
             # Test connection
             try:
                 self.dbx.users_get_current_account()
-                logger.info("✅ Dropbox client initialized with valid token")
-            except ApiError as e:
-                if 'expired_access_token' in str(e):
-                    logger.warning("⚠️  Access token expired - attempting to generate new one...")
-                    
-                    # Try to auto-generate new token
-                    new_token = self._generate_access_token()
+                logger.info("✅ Dropbox client initialized with access token")
+            except AuthError as e:
+                if 'expired_access_token' in str(e) or 'invalid_access_token' in str(e):
+                    logger.warning("⚠️  Access token expired - attempting refresh...")
+                    new_token = self._refresh_access_token()
                     if new_token:
-                        # Reinitialize with new token
                         self.dbx = dropbox.Dropbox(new_token)
-                        try:
-                            self.dbx.users_get_current_account()
-                            logger.info("✅ Successfully regenerated token and reconnected")
-                        except ApiError as retry_error:
-                            logger.error(f"❌ Failed to connect with regenerated token: {str(retry_error)}")
-                            return False
+                        self.dbx.users_get_current_account()
+                        logger.info("✅ Reconnected with refreshed token")
                     else:
-                        logger.error("❌ Auto-token generation failed")
-                        logger.error("❌ Set DROPBOX_CREDENTIALS in Render or manually update DROPBOX_ACCESS_TOKEN")
+                        logger.error("❌ Token refresh failed - sync DISABLED")
                         return False
                 else:
                     raise
             
-            # Get folder path from environment
             self.folder_path = os.getenv('DROPBOX_SYNC_FOLDER', '/BadmintonScrapPython-Databases')
             logger.info(f"✅ Using Dropbox folder: {self.folder_path}")
-            
-            # Ensure folder exists
             self._ensure_folder_exists()
-            
             self.authenticated = True
             return True
             
@@ -180,14 +161,13 @@ class DropboxSync:
                 logger.error(f"❌ Error checking folder: {str(e)}")
     
     def download_databases(self):
-        """Download all .db files from Dropbox (root level only, no per-tournament DBs)"""
+        """Download all .db files from Dropbox"""
         if not self.authenticated:
             logger.warning("⚠️  Dropbox not authenticated - skipping download")
             return False
         
         success_count = 0
         
-        # Download root level databases ONLY
         for db_file in DB_FILES:
             if self._download_file(db_file):
                 success_count += 1
@@ -199,11 +179,8 @@ class DropboxSync:
         """Download a single file from Dropbox"""
         try:
             dropbox_path = f"{self.folder_path}/{os.path.basename(filepath)}"
-            
-            # Ensure parent directory exists
             os.makedirs(os.path.dirname(filepath) or '.', exist_ok=True)
             
-            # Download file
             metadata, response = self.dbx.files_download(dropbox_path)
             with open(filepath, 'wb') as f:
                 f.write(response.content)
@@ -222,47 +199,22 @@ class DropboxSync:
             logger.error(f"❌ Failed to download {filepath}: {str(e)}")
             return False
     
-    def _file_exists_in_dropbox(self, filepath):
-        """Check if file exists in Dropbox"""
-        try:
-            filename = os.path.basename(filepath)
-            dropbox_path = f"{self.folder_path}/{filename}"
-            self.dbx.files_get_metadata(dropbox_path)
-            return True
-        except ApiError as e:
-            if e.error.is_path() and e.error.get_path().is_not_found():
-                return False
-            else:
-                logger.error(f"❌ Error checking if file exists in Dropbox: {str(e)}")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Error checking if file exists in Dropbox: {str(e)}")
-            return False
-    
     def upload_databases(self):
-        """Upload only missing .db files to Dropbox (root level only, no per-tournament DBs)"""
+        """Upload all .db files to Dropbox (overwrite)"""
         if not self.authenticated:
             logger.warning("⚠️  Dropbox not authenticated - skipping upload")
             return False
         
         success_count = 0
-        skipped_count = 0
         
-        # Upload root level databases ONLY
         for db_file in DB_FILES:
             if os.path.exists(db_file):
-                # Check if file already exists in Dropbox
-                if self._file_exists_in_dropbox(db_file):
-                    logger.debug(f"⏭️  Skipping upload (already in Dropbox): {db_file}")
-                    skipped_count += 1
-                else:
-                    # File missing in Dropbox, upload it
-                    if self._upload_file(db_file):
-                        success_count += 1
+                if self._upload_file(db_file):
+                    success_count += 1
             else:
-                logger.debug(f"ℹ️  File not found locally (will download from Dropbox if available): {db_file}")
+                logger.debug(f"ℹ️  File not found locally: {db_file}")
         
-        logger.info(f"✅ Uploaded {success_count} missing files | ⏭️  Skipped {skipped_count} existing files")
+        logger.info(f"✅ Uploaded {success_count} database files to Dropbox")
         return True
     
     def _upload_file(self, filepath):
@@ -274,7 +226,6 @@ class DropboxSync:
             with open(filepath, 'rb') as f:
                 file_content = f.read()
             
-            # Upload with overwrite
             self.dbx.files_upload(
                 file_content,
                 dropbox_path,
@@ -292,12 +243,6 @@ class DropboxSync:
 
 # Global sync instance
 _sync = None
-
-def init_sync():
-    """Initialize Dropbox sync"""
-    global _sync
-    _sync = DropboxSync()
-    return _sync
 
 def get_sync():
     """Get the global sync instance"""
