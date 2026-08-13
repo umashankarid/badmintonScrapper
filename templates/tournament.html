@@ -458,6 +458,56 @@
         });
 
         /**
+         * Validate a player's age against adult class restrictions.
+         * Fetches DOB from players.db, then calls /api/validate-registration for each level.
+         * Returns true if all allowed (or user grants special permission), false if blocked.
+         */
+        async function validatePlayerAgeForLevels(licenseId, playerName, levels) {
+            if (!licenseId || !levels.length) return true;
+
+            // Fetch player's DOB from players.db
+            const dobRes = await fetch(`/api/player-dob?license_id=${encodeURIComponent(licenseId)}`);
+            const dobData = await dobRes.json();
+            if (!dobData.dob) return true; // Can't validate without DOB - allow
+
+            for (const eventClass of levels) {
+                if (!eventClass) continue;
+                const parts = eventClass.split(" ");
+                const category = parts[0]; // HS, DS, HD, DD, MD
+                const level = parts.slice(1).join(" "); // A, B, C, Elit, U13, etc.
+
+                const valRes = await fetch("/api/validate-registration", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        level: level,
+                        category: category,
+                        points: null,
+                        age: dobData.age || null,
+                        dob: dobData.dob,
+                        competition_date: window.tournamentCompDate || ""
+                    })
+                });
+                const valData = await valRes.json();
+
+                if (!valData.allowed) {
+                    if (valData.age_restriction) {
+                        // Age restriction - ask for special permission
+                        if (!confirm(`${playerName}: ${valData.message}\n\nDoes this player have special permission (dispens) to play in this category?`)) {
+                            return false;
+                        }
+                    } else {
+                        // Point restriction - ask for exception
+                        if (!confirm(`${playerName}: ${valData.message}\n\nDoes this player have exception permission?`)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        /**
          * Validate partner's points/age against the selected category level.
          * Fetches partner ranking from /api/player-details, then calls /api/validate-registration.
          * Returns true if allowed (or user grants dispense), false if blocked.
@@ -480,6 +530,18 @@
             const catRanking = ranking[category];
             const points = catRanking ? parseInt(catRanking.points) : null;
 
+            // Fetch partner's DOB from players.db (if they've logged in before)
+            let partnerDob = null;
+            let partnerAge = null;
+            if (player.license_id) {
+                const dobRes = await fetch(`/api/player-dob?license_id=${encodeURIComponent(player.license_id)}`);
+                const dobData = await dobRes.json();
+                if (dobData.dob) {
+                    partnerDob = dobData.dob;
+                    partnerAge = dobData.age;
+                }
+            }
+
             // Call the same validate-registration endpoint used for main player
             const valRes = await fetch("/api/validate-registration", {
                 method: "POST",
@@ -488,8 +550,8 @@
                     level: level,
                     category: category,
                     points: points,
-                    age: null, // We don't have partner's age from public profile
-                    dob: null,
+                    age: partnerAge,
+                    dob: partnerDob,
                     competition_date: window.tournamentCompDate || ""
                 })
             });
@@ -781,6 +843,32 @@
 
             const doublesPartnerEl = document.getElementById("admin-doubles-partner");
             const mixedPartnerEl = document.getElementById("admin-mixed-partner");
+
+            // Validate main player's age for adult classes
+            const mainLicenseId = document.getElementById("admin-edit-license").value;
+            const mainPlayerName = document.getElementById("admin-edit-name").value;
+            const levelsToCheck = [singlesLevels, doublesLevels, mixedLevels].filter(Boolean);
+            
+            if (mainLicenseId && levelsToCheck.length) {
+                const ageOk = await validatePlayerAgeForLevels(mainLicenseId, mainPlayerName, levelsToCheck);
+                if (!ageOk) return;
+            }
+
+            // Validate doubles partner's age for their category
+            if (doublesLevels && doublesPartnerEl.dataset.licenseId) {
+                const partnerAgeOk = await validatePlayerAgeForLevels(
+                    doublesPartnerEl.dataset.licenseId, doublesPartnerEl.value, [doublesLevels]
+                );
+                if (!partnerAgeOk) return;
+            }
+
+            // Validate mixed partner's age for their category
+            if (mixedLevels && mixedPartnerEl.dataset.licenseId) {
+                const partnerAgeOk = await validatePlayerAgeForLevels(
+                    mixedPartnerEl.dataset.licenseId, mixedPartnerEl.value, [mixedLevels]
+                );
+                if (!partnerAgeOk) return;
+            }
 
             const editId = document.getElementById("admin-edit-id").value;
             const player = {

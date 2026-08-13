@@ -2874,6 +2874,27 @@ def player_details():
         return jsonify(success=False, error=str(e)), 500
 
 
+@app.route("/api/player-dob", methods=["GET"])
+def get_player_dob():
+    """Get player's date of birth from players.db (only available if they've logged in before)"""
+    license_id = request.args.get("license_id", "").strip()
+    if not license_id:
+        return jsonify(success=True, dob="", age="")
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT dob, age FROM players WHERE license_id = ?", (license_id,))
+        row = cur.fetchone()
+        conn.close()
+        
+        if row and row[0]:
+            return jsonify(success=True, dob=row[0], age=row[1] or "")
+        return jsonify(success=True, dob="", age="")
+    except Exception as e:
+        return jsonify(success=True, dob="", age="")
+
+
 def send_email(to_email, subject, body):
     """Send an email using configured SMTP settings."""
     import smtplib
