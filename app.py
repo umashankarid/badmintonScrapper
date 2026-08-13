@@ -2373,6 +2373,56 @@ def validate_partner():
     return jsonify(success=True, available=available, message=message)
 
 
+def _cleanup_removed_partner(cur, tournament_name, partner_name, category_type, player_name):
+    """
+    Clean up a partner's registration when they are removed from a player's category.
+    
+    When Player A removes Player B as partner in doubles/mixed:
+    - Clear Player B's corresponding category and partner reference
+    - If Player B has no remaining categories, delete their registration entirely
+    
+    Works for all partner categories: HD, DD, MD (doubles and mixed).
+    
+    Args:
+        cur: database cursor (already connected to TOURNAMENTS_DB)
+        tournament_name: tournament name
+        partner_name: name of the partner being removed
+        category_type: 'doubles' or 'mixed'
+        player_name: name of the player who removed the partner
+    """
+    try:
+        # Find partner's registration by their name as a partner reference
+        # The partner's registration has player_name listed as their partner
+        if category_type == "doubles":
+            cur.execute("""
+                UPDATE tournament_registrations
+                SET doubles_levels = '', doubles_partner = ''
+                WHERE tournament_name = ? AND doubles_partner = ?
+            """, (tournament_name, player_name))
+            logger.info(f"🔄 Cleared doubles from partner {partner_name} (was paired with {player_name})")
+        elif category_type == "mixed":
+            cur.execute("""
+                UPDATE tournament_registrations
+                SET mixed_levels = '', mixed_partner = ''
+                WHERE tournament_name = ? AND mixed_partner = ?
+            """, (tournament_name, player_name))
+            logger.info(f"🔄 Cleared mixed from partner {partner_name} (was paired with {player_name})")
+        
+        # Remove registrations that now have no remaining categories
+        cur.execute("""
+            DELETE FROM tournament_registrations
+            WHERE tournament_name = ? AND
+                (singles_levels IS NULL OR singles_levels = '') AND
+                (doubles_levels IS NULL OR doubles_levels = '') AND
+                (mixed_levels IS NULL OR mixed_levels = '')
+        """, (tournament_name,))
+        removed = cur.rowcount
+        if removed > 0:
+            logger.info(f"🗑️  Removed {removed} registration(s) with no remaining categories")
+    except Exception as e:
+        logger.error(f"⚠️  Error cleaning up removed partner: {e}")
+
+
 def _register_partner(tournament_name, partner_license_id, partner_name, partner_club="", partner_profile_url="", doubles_levels="", mixed_levels="", doubles_partner="", mixed_partner=""):
     """
     Register a partner player in both players.db and tournament_registrations.
@@ -2555,6 +2605,23 @@ def add_player():
         existing_registration = cur_main.fetchone()
         
         if existing_registration:
+            # Get current registration to detect removed partners
+            cur_main.execute("""
+                SELECT doubles_partner, mixed_partner, doubles_levels, mixed_levels
+                FROM tournament_registrations WHERE tournament_name = ? AND license_id = ?
+            """, (tournament_name, license_id))
+            old_reg = cur_main.fetchone()
+            old_doubles_partner = old_reg[0] if old_reg else ""
+            old_mixed_partner = old_reg[1] if old_reg else ""
+            old_doubles_levels = old_reg[2] if old_reg else ""
+            old_mixed_levels = old_reg[3] if old_reg else ""
+            
+            new_doubles_partner = player.get("doubles_partner", "")
+            new_mixed_partner = player.get("mixed_partner", "")
+            new_doubles_levels = player.get("doubles_levels", "")
+            new_mixed_levels = player.get("mixed_levels", "")
+            player_name_for_cleanup = player.get("player_name", "")
+
             # Update existing registration
             cur_main.execute("""
                 UPDATE tournament_registrations
@@ -2563,14 +2630,23 @@ def add_player():
                 WHERE tournament_name = ? AND license_id = ?
             """, (
                 player.get("singles_levels", ""),
-                player.get("doubles_levels", ""),
-                player.get("mixed_levels", ""),
-                player.get("doubles_partner", ""),
-                player.get("mixed_partner", ""),
+                new_doubles_levels,
+                new_mixed_levels,
+                new_doubles_partner,
+                new_mixed_partner,
                 tournament_name,
                 license_id
             ))
             logger.info(f"✅ Updated registration for {player.get('player_name')} in tournament {tournament_name}")
+            
+            # Clean up removed partners
+            # If doubles partner was removed or changed
+            if old_doubles_partner and old_doubles_partner != new_doubles_partner:
+                _cleanup_removed_partner(cur_main, tournament_name, old_doubles_partner, "doubles", player_name_for_cleanup)
+            
+            # If mixed partner was removed or changed
+            if old_mixed_partner and old_mixed_partner != new_mixed_partner:
+                _cleanup_removed_partner(cur_main, tournament_name, old_mixed_partner, "mixed", player_name_for_cleanup)
         else:
             # Insert new registration
             cur_main.execute("""
