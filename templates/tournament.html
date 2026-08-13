@@ -457,6 +457,56 @@
             }
         });
 
+        /**
+         * Validate partner's points/age against the selected category level.
+         * Fetches partner ranking from /api/player-details, then calls /api/validate-registration.
+         * Returns true if allowed (or user grants dispense), false if blocked.
+         */
+        async function validatePartnerPoints(player, eventClass) {
+            if (!eventClass) return true;
+
+            // Fetch partner's ranking from their profile
+            const params = player.profile_url ?
+                `profile_url=${encodeURIComponent(player.profile_url)}` :
+                `name=${encodeURIComponent(player.name)}`;
+            const detailRes = await fetch(`/api/player-details?${params}`);
+            const detail = await detailRes.json();
+            if (!detail.success) return true; // Allow if we can't fetch details
+
+            const ranking = detail.ranking || {};
+            const parts = eventClass.split(" ");
+            const category = parts[0]; // HD, DD, MD
+            const level = parts.slice(1).join(" "); // A, B, C, Elit, U13, etc.
+            const catRanking = ranking[category];
+            const points = catRanking ? parseInt(catRanking.points) : null;
+
+            // Call the same validate-registration endpoint used for main player
+            const valRes = await fetch("/api/validate-registration", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    level: level,
+                    category: category,
+                    points: points,
+                    age: null, // We don't have partner's age from public profile
+                    dob: null,
+                    competition_date: window.tournamentCompDate || ""
+                })
+            });
+            const valData = await valRes.json();
+
+            if (!valData.allowed) {
+                if (valData.age_restriction) {
+                    // Age restriction - allow with dispense
+                    return confirm(`Partner ${player.name}: ${valData.message}\n\nDoes the partner have dispense (special permission) to play in this category?`);
+                } else {
+                    // Point restriction - ask for exception permission
+                    return confirm(`Partner ${player.name}: ${valData.message}\n\nDoes the partner have exception permission to play in this category?`);
+                }
+            }
+            return true;
+        }
+
         setupLiveSearch("doubles-partner", "doubles-partner-results", async (player) => {
             // Validate partner is not already playing doubles with someone else
             const playerName = loggedInPlayer ? loggedInPlayer.player_name : "";
@@ -477,6 +527,17 @@
                 document.getElementById("doubles-partner").value = "";
                 return;
             }
+
+            // Validate partner's points for the selected doubles level
+            const doublesLevel = document.querySelector(".doubles-level") ? document.querySelector(".doubles-level").value : "";
+            if (doublesLevel && player.profile_url) {
+                const allowed = await validatePartnerPoints(player, doublesLevel);
+                if (!allowed) {
+                    document.getElementById("doubles-partner").value = "";
+                    return;
+                }
+            }
+
             document.getElementById("doubles-partner").value = player.name || "";
             document.getElementById("doubles-partner").dataset.licenseId = player.license_id || "";
             document.getElementById("doubles-partner").dataset.club = player.club || "";
@@ -503,6 +564,17 @@
                 document.getElementById("mixed-partner").value = "";
                 return;
             }
+
+            // Validate partner's points for the selected mixed level
+            const mixedLevel = document.querySelector(".mixed-level") ? document.querySelector(".mixed-level").value : "";
+            if (mixedLevel && player.profile_url) {
+                const allowed = await validatePartnerPoints(player, mixedLevel);
+                if (!allowed) {
+                    document.getElementById("mixed-partner").value = "";
+                    return;
+                }
+            }
+
             document.getElementById("mixed-partner").value = player.name || "";
             document.getElementById("mixed-partner").dataset.licenseId = player.license_id || "";
             document.getElementById("mixed-partner").dataset.club = player.club || "";
@@ -529,6 +601,17 @@
                 document.getElementById("admin-doubles-partner").value = "";
                 return;
             }
+
+            // Validate partner's points for the selected doubles level
+            const doublesLevel = document.querySelector(".admin-doubles-level") ? document.querySelector(".admin-doubles-level").value : "";
+            if (doublesLevel && player.profile_url) {
+                const allowed = await validatePartnerPoints(player, doublesLevel);
+                if (!allowed) {
+                    document.getElementById("admin-doubles-partner").value = "";
+                    return;
+                }
+            }
+
             document.getElementById("admin-doubles-partner").value = player.name || "";
             document.getElementById("admin-doubles-partner").dataset.licenseId = player.license_id || "";
             document.getElementById("admin-doubles-partner").dataset.club = player.club || "";
@@ -555,6 +638,17 @@
                 document.getElementById("admin-mixed-partner").value = "";
                 return;
             }
+
+            // Validate partner's points for the selected mixed level
+            const mixedLevel = document.querySelector(".admin-mixed-level") ? document.querySelector(".admin-mixed-level").value : "";
+            if (mixedLevel && player.profile_url) {
+                const allowed = await validatePartnerPoints(player, mixedLevel);
+                if (!allowed) {
+                    document.getElementById("admin-mixed-partner").value = "";
+                    return;
+                }
+            }
+
             document.getElementById("admin-mixed-partner").value = player.name || "";
             document.getElementById("admin-mixed-partner").dataset.licenseId = player.license_id || "";
             document.getElementById("admin-mixed-partner").dataset.club = player.club || "";
