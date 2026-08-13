@@ -1913,7 +1913,7 @@ def ensure_tournament():
             tournament_id = result[0]
             conn.close()
             logger.info(f"✅ Tournament already exists with ID: {tournament_id}")
-            return jsonify(success=True, tournament_id=tournament_id, created=False)
+            return jsonify(success=True, tournament_id=tournament_id, db=tournament_id, created=False)
         
         conn.close()
         
@@ -1966,22 +1966,51 @@ def ensure_tournament():
                     elif "slut" in label.lower():
                         dates["competition_end"] = datetime_val
 
-        # Get levels
+        # Extract event categories/levels mapped to registration fields
+        categories = {
+            "singles_levels": [],
+            "doubles_levels": [],
+            "mixed_levels": [],
+            "doubles_partner": [],
+            "mixed_partner": []
+        }
         import re
-        levels = []
         tid_match = re.search(r'/tournament/([^/]+)', url)
         if tid_match:
             tid = tid_match.group(1)
-            events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-            events_soup = BeautifulSoup(events_resp.text, "html.parser")
-            level_set = set()
-            for a in events_soup.select("a"):
-                text = a.get_text(strip=True)
-                if text and len(text) < 50 and any(cat in text for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]):
-                    parts = text.split()
-                    if len(parts) >= 2:
-                        level_set.add(parts[1])
-            levels = sorted(level_set)
+            try:
+                events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
+                events_soup = BeautifulSoup(events_resp.text, "html.parser")
+                
+                # Extract event categories and map to registration fields
+                all_events = set()
+                for a in events_soup.select("a"):
+                    text = a.get_text(strip=True)
+                    if text and len(text) < 50:
+                        # Check for category codes
+                        for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
+                            if cat in text:
+                                all_events.add(text.strip())
+                                break
+                
+                # Map events to registration fields
+                for event in sorted(all_events):
+                    if event.startswith(("HS", "DS")):
+                        categories["singles_levels"].append(event)
+                    elif event.startswith(("HD", "DD")):
+                        categories["doubles_levels"].append(event)
+                    elif event.startswith("MD"):
+                        categories["mixed_levels"].append(event)
+                
+                # Set partner options (typical pattern)
+                if categories["doubles_levels"]:
+                    categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+                if categories["mixed_levels"]:
+                    categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+                
+                logger.debug(f"✅ Extracted categories: {categories}")
+            except Exception as e:
+                logger.debug(f"⚠️  Could not extract categories: {e}")
 
         if not name:
             return jsonify(success=False, error="Could not fetch tournament info"), 500
@@ -2000,8 +2029,8 @@ def ensure_tournament():
                 INSERT INTO tournaments
                 (tournament_url, tournament_name, location, date_start, date_end,
                  registration_opens, registration_closes, cancellation_deadline,
-                 competition_start, competition_end, selected_for_view, created_at, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                 competition_start, competition_end, categories, selected_for_view, created_at, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """, (
                 url,
                 name,
@@ -2013,6 +2042,7 @@ def ensure_tournament():
                 dates.get("cancellation_deadline", ""),
                 dates.get("competition_start", ""),
                 dates.get("competition_end", ""),
+                json.dumps(categories),
                 1  # selected_for_view = true
             ))
             conn.commit()
@@ -2037,7 +2067,7 @@ def ensure_tournament():
         logger.info(f"✅ Tournament successfully added to unified tournaments.db")
         trigger_sync()  # Trigger debounced sync after tournament creation
         
-        return jsonify(success=True, tournament_id=tournament_id, created=True)
+        return jsonify(success=True, tournament_id=tournament_id, db=tournament_id, created=True)
     except Exception as e:
         logger.error(f"❌ Error in ensure_tournament: {e}")
         return jsonify(success=False, error=str(e)), 500
