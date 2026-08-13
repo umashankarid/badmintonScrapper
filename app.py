@@ -439,14 +439,22 @@ def get_player_ranking(player_name):
 
 
 def init_players_db():
+    """Initialize players.db with new schema"""
     conn = sqlite3.connect(PLAYERS_DB)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            profile_url TEXT UNIQUE,
+            license_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            profile_url TEXT,
             club TEXT,
-            gender TEXT
+            gender TEXT,
+            email TEXT,
+            phone TEXT,
+            dob TEXT,
+            age TEXT,
+            ranking TEXT,
+            last_updated TIMESTAMP,
+            last_scraped TIMESTAMP
         )
     """)
     conn.commit()
