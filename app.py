@@ -375,7 +375,7 @@ init_players_db()
 # ==================== DROPBOX OAUTH ====================
 DROPBOX_APP_KEY = "2e0bvquyns4t5sb"
 DROPBOX_APP_SECRET = os.getenv('DROPBOX_APP_SECRET', '9hljwc9w0c790w7')
-DROPBOX_REDIRECT_URI = os.getenv('DROPBOX_REDIRECT_URI', 'http://localhost:3000/auth/dropbox/callback')
+DROPBOX_REDIRECT_URI = os.getenv('DROPBOX_REDIRECT_URI', 'https://badmintonscrapper.onrender.com/auth/dropbox/callback')
 
 @app.route("/auth/dropbox", methods=["GET"])
 def dropbox_oauth_login():
