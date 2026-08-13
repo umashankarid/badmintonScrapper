@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add/Remove Tournaments</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>Add/Remove Tournaments</h1>
+    <a href="/">← Back to home</a>
+
+    <div style="margin-top:20px;">
+        <h2>Available Tournaments from Badminton Sweden</h2>
+        <p style="color:#666;font-size:0.9em;">Check the tournaments you want to appear in the available tournaments list on the homepage.</p>
+        <div id="bwf-tournaments-list"></div>
+        <button id="save-btn" onclick="saveSelection()" style="margin-top:20px;background:#28a745;padding:12px 24px;font-size:1em;">Save Selected Tournaments</button>
+    </div>
+
+    <script>
+        async function loadTournaments() {
+            const container = document.getElementById("bwf-tournaments-list");
+            container.innerHTML = "<p style='color: #999;'>Loading tournaments from Badminton Sweden...</p>";
+            
+            try {
+                const res = await fetch("/api/bwf-tournaments-all");
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    container.innerHTML = `<p style="color: red;">HTTP Error ${res.status}: ${data.error || 'Failed to load tournaments'}</p>`;
+                    return;
+                }
+                
+                if (!data.success) {
+                    container.innerHTML = `<p style="color: red;">Error: ${data.error || 'Failed to load tournaments'}</p>`;
+                    return;
+                }
+                
+                if (!data.tournaments || !data.tournaments.length) {
+                    container.innerHTML = "<p>No tournaments currently available on Badminton Sweden.<br><small style='color: #999;'>This might mean there are no tournaments scheduled in the near future, or the website is temporarily unavailable.</small></p>";
+                    return;
+                }
+
+                container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
+                    data.tournaments.map(t => `
+                        <label style="display: flex; align-items: center; gap: 12px; padding: 12px 15px; background: white; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                            <input type="checkbox" class="bwf-tournament-checkbox" 
+                                data-url="${t.url}" 
+                                data-name="${t.name.replace(/"/g, '&quot;')}"
+                                data-location="${(t.location || '').replace(/"/g, '&quot;')}"
+                                data-date-start="${t.date_start || ''}"
+                                data-date-end="${t.date_end || ''}"
+                                data-registration-opens="${t.registration_opens || ''}"
+                                data-registration-closes="${t.registration_closes || ''}"
+                                data-cancellation-deadline="${t.cancellation_deadline || ''}"
+                                data-competition-start="${t.competition_start || ''}"
+                                data-competition-end="${t.competition_end || ''}"
+                                ${t.selected_for_view ? 'checked' : ''} 
+                                style="cursor: pointer; width: 20px; height: 20px;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: bold; color: #1a237e;">${t.name}</div>
+                                <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
+                            </div>
+                        </label>
+                    `).join("") +
+                    `</div>`;
+            } catch (err) {
+                container.innerHTML = `<p style="color: red;">Error loading tournaments: ${err.message}</p>`;
+            }
+        }
+
+        async function saveSelection() {
+            const selected = [];
+            document.querySelectorAll(".bwf-tournament-checkbox:checked").forEach(checkbox => {
+                selected.push({
+                    url: checkbox.dataset.url,
+                    name: checkbox.dataset.name,
+                    location: checkbox.dataset.location,
+                    date_start: checkbox.dataset.dateStart,
+                    date_end: checkbox.dataset.dateEnd,
+                    registration_opens: checkbox.dataset.registrationOpens,
+                    registration_closes: checkbox.dataset.registrationCloses,
+                    cancellation_deadline: checkbox.dataset.cancellationDeadline,
+                    competition_start: checkbox.dataset.competitionStart,
+                    competition_end: checkbox.dataset.competitionEnd
+                });
+            });
+            
+            const res = await fetch("/api/bwf-tournament-visibility/save", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({tournaments: selected})
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert("Tournaments saved! Selected tournaments will now appear on the homepage.");
+            } else {
+                alert(data.error || "Failed to save");
+            }
+        }
+
+        loadTournaments();
+    </script>
+</body>
+</html>

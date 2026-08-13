@@ -577,6 +577,11 @@ def manage_tournaments_page():
     return send_from_directory("templates", "manage-tournaments.html")
 
 
+@app.route("/add-remove-tournaments.html")
+def add_remove_tournaments_page():
+    return send_from_directory("templates", "add-remove-tournaments.html")
+
+
 @app.route("/login.html")
 def login_page():
     return send_from_directory("templates", "login.html")
