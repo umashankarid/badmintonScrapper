@@ -219,9 +219,10 @@ def init_tournaments_db():
 def init_admin_db():
     conn = sqlite3.connect(ADMIN_DB)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
+        CREATE TABLE IF NOT EXISTS admin_users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL
+            username TEXT UNIQUE NOT NULL,
+            password TEXT
         )
     """)
     conn.execute("""
@@ -256,7 +257,7 @@ def init_admin_db():
     
     # Insert default admin if it doesn't exist
     try:
-        conn.execute("INSERT INTO admins (username) VALUES (?)", ("umashankar1985@gmail.com",))
+        conn.execute("INSERT INTO admin_users (username) VALUES (?)", ("umashankar1985@gmail.com",))
         conn.commit()
         logger.info("Created default admin: umashankar1985@gmail.com")
     except sqlite3.IntegrityError:
@@ -273,7 +274,7 @@ init_tournaments_db()
 def is_admin_user(username):
     conn = sqlite3.connect(ADMIN_DB)
     cur = conn.cursor()
-    cur.execute("SELECT id FROM admins WHERE username=?", (username,))
+    cur.execute("SELECT id FROM admin_users WHERE username=?", (username,))
     result = cur.fetchone()
     conn.close()
     return result is not None
@@ -834,7 +835,7 @@ def add_admin_by_id():
     # Add as admin
     conn = sqlite3.connect(ADMIN_DB)
     try:
-        conn.execute("INSERT INTO admins (username) VALUES (?)", (username,))
+        conn.execute("INSERT INTO admin_users (username) VALUES (?)", (username,))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -885,7 +886,7 @@ def add_admin():
     # Verified - add as admin
     conn = sqlite3.connect(ADMIN_DB)
     try:
-        conn.execute("INSERT INTO admins (username) VALUES (?)", (username,))
+        conn.execute("INSERT INTO admin_users (username) VALUES (?)", (username,))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
