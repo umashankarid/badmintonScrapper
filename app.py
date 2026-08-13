@@ -2485,6 +2485,70 @@ def get_tournament_registration():
         return jsonify(success=False, error=str(e)), 500
 
 
+def _check_points_too_high(license_id, event_class):
+    """
+    Check if a player's points exceed the maximum for a given event class.
+    This is a hard block — registration must be rejected.
+    
+    Args:
+        license_id: Player's license ID
+        event_class: e.g. "DD A", "HD B", "MD Elit"
+    
+    Returns:
+        (blocked: bool, message: str)
+    """
+    try:
+        parts = event_class.strip().split(" ", 1)
+        if len(parts) != 2:
+            return False, ""
+        category = parts[0]  # HD, DD, MD, HS, DS
+        level = parts[1]     # A, B, C, D, Elit
+        
+        adult_classes = {"Elit", "A", "B", "C", "D"}
+        if level not in adult_classes:
+            return False, ""
+        
+        # Get player ranking
+        conn_p = sqlite3.connect(PLAYERS_DB)
+        cur_p = conn_p.cursor()
+        cur_p.execute("SELECT ranking FROM players WHERE license_id = ?", (license_id,))
+        row = cur_p.fetchone()
+        conn_p.close()
+        
+        if not row or not row[0]:
+            return False, ""
+        
+        player_ranking = json.loads(row[0])
+        cat_ranking = player_ranking.get(category, {})
+        points_str = cat_ranking.get("points", "")
+        if not points_str:
+            return False, ""
+        
+        points = int(points_str)
+        
+        # Get max points rule
+        conn_r = sqlite3.connect(POINTS_DB)
+        conn_r.row_factory = sqlite3.Row
+        cur_r = conn_r.cursor()
+        cur_r.execute("SELECT * FROM point_rules WHERE klass=?", (level,))
+        rule = cur_r.fetchone()
+        conn_r.close()
+        
+        if not rule:
+            return False, ""
+        
+        col_max = f"{category.lower()}_max"
+        max_pts = rule[col_max]
+        
+        if max_pts is not None and points > max_pts:
+            return True, f"{category} points ({points}) exceed maximum ({max_pts}) for {level} class. Not allowed to play {event_class}."
+        
+        return False, ""
+    except Exception as e:
+        logger.debug(f"Error in _check_points_too_high: {e}")
+        return False, ""
+
+
 def _check_partner_availability(tournament_name, partner_license_id, partner_name, category_type, requesting_player_name):
     """
     Check if a partner is already registered for the same category with another player.
@@ -2738,6 +2802,62 @@ def add_player():
     if not license_id:
         return jsonify(success=False, error="license_id required"), 400
     
+    # SERVER-SIDE VALIDATION: Reject if player's points exceed max for any selected category
+    # This is a hard block — cannot be overridden
+    try:
+        conn_players_check = sqlite3.connect(PLAYERS_DB)
+        cur_check = conn_players_check.cursor()
+        cur_check.execute("SELECT ranking FROM players WHERE license_id = ?", (license_id,))
+        row = cur_check.fetchone()
+        player_ranking = json.loads(row[0]) if row and row[0] else {}
+        conn_players_check.close()
+        
+        if player_ranking:
+            conn_rules = sqlite3.connect(POINTS_DB)
+            conn_rules.row_factory = sqlite3.Row
+            cur_rules = conn_rules.cursor()
+            
+            all_levels = []
+            for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
+                if lvl_str:
+                    for lvl in lvl_str.split(","):
+                        lvl = lvl.strip()
+                        if lvl:
+                            parts = lvl.split(" ", 1)
+                            if len(parts) == 2:
+                                all_levels.append({"event": lvl, "category": parts[0], "level": parts[1]})
+            
+            for entry in all_levels:
+                category = entry["category"]
+                level = entry["level"]
+                adult_classes = {"Elit", "A", "B", "C", "D"}
+                if level not in adult_classes:
+                    continue
+                
+                cur_rules.execute("SELECT * FROM point_rules WHERE klass=?", (level,))
+                rule = cur_rules.fetchone()
+                if not rule:
+                    continue
+                
+                col_max = f"{category.lower()}_max"
+                max_pts = rule[col_max]
+                
+                cat_ranking = player_ranking.get(category, {})
+                points_str = cat_ranking.get("points", "")
+                if points_str and max_pts is not None:
+                    try:
+                        points = int(points_str)
+                        if points > max_pts:
+                            conn_rules.close()
+                            return jsonify(success=False, 
+                                error=f"Registration rejected: {category} points ({points}) exceed maximum ({max_pts}) for {level} class. Not allowed to play {entry['event']}.")
+                    except ValueError:
+                        pass
+            
+            conn_rules.close()
+    except Exception as e:
+        logger.debug(f"Could not validate points on server: {e}")
+    
     # STEP 1: Ensure player exists in players.db
     # From live search we have: name, license_id, club, profile_url
     # From player profile we have: gender, ranking
@@ -2888,6 +3008,11 @@ def add_player():
         doubles_partner_license = player.get("doubles_partner_license_id", "").strip()
         doubles_level = player.get("doubles_levels", "")
         if doubles_partner_name and doubles_partner_license and doubles_level:
+            # Check partner points too high (hard block)
+            blocked, block_msg = _check_points_too_high(doubles_partner_license, doubles_level)
+            if blocked:
+                return jsonify(success=False, error=f"Partner {doubles_partner_name}: {block_msg}")
+            
             # Check if partner is available for doubles
             available, message = _check_partner_availability(
                 tournament_name, doubles_partner_license, doubles_partner_name, "doubles", player_name
@@ -2910,6 +3035,11 @@ def add_player():
         mixed_partner_license = player.get("mixed_partner_license_id", "").strip()
         mixed_level = player.get("mixed_levels", "")
         if mixed_partner_name and mixed_partner_license and mixed_level:
+            # Check partner points too high (hard block)
+            blocked, block_msg = _check_points_too_high(mixed_partner_license, mixed_level)
+            if blocked:
+                return jsonify(success=False, error=f"Partner {mixed_partner_name}: {block_msg}")
+            
             # Check if partner is available for mixed
             available, message = _check_partner_availability(
                 tournament_name, mixed_partner_license, mixed_partner_name, "mixed", player_name
