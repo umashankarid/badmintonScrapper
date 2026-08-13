@@ -1612,24 +1612,24 @@ def get_all_bwf_tournaments():
 
         logger.info(f"Found {len(tournaments)} tournaments from Badminton Sweden")
         
-        # STEP 1: Get current selection status before processing
+        # STEP 1: Get current tournaments to preserve selected_for_view
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
-        cur.execute("SELECT tournament_url, selected_for_view FROM tournaments")
+        cur.execute("SELECT tournament_name, selected_for_view FROM tournaments")
         selection_map = {row[0]: row[1] for row in cur.fetchall()}
         conn.close()
         
-        # STEP 2: For each tournament, extract complete date details
-        logger.info(f"📝 Processing {len(tournaments)} tournaments to extract complete date details...")
+        # STEP 2: For each tournament, extract complete date details and categories
+        logger.info(f"📝 Processing {len(tournaments)} tournaments to extract complete date details and categories...")
         added_count = 0
         updated_count = 0
         
         for t in tournaments:
             try:
-                # Check if tournament already exists
+                # Check if tournament already exists by tournament_name
                 conn = sqlite3.connect(TOURNAMENTS_DB)
                 cur = conn.cursor()
-                cur.execute("SELECT id FROM tournaments WHERE tournament_url = ?", (t["url"],))
+                cur.execute("SELECT id FROM tournaments WHERE tournament_name = ?", (t["name"],))
                 existing = cur.fetchone()
                 conn.close()
                 
@@ -1720,24 +1720,24 @@ def get_all_bwf_tournaments():
                 cur = conn.cursor()
                 
                 if existing:
-                    # Tournament exists - preserve selected_for_view, update all dates and categories
-                    preserved_selected = selection_map.get(t["url"], 0)
+                    # Tournament exists - preserve selected_for_view, update ALL fields
+                    preserved_selected = selection_map.get(t["name"], 0)
                     cur.execute("""
                         UPDATE tournaments 
-                        SET tournament_name = ?, location = ?, date_start = ?, date_end = ?,
+                        SET tournament_url = ?, location = ?, date_start = ?, date_end = ?,
                             registration_opens = ?, registration_closes = ?, cancellation_deadline = ?,
                             competition_start = ?, competition_end = ?, categories = ?, last_updated = CURRENT_TIMESTAMP
-                        WHERE tournament_url = ?
+                        WHERE tournament_name = ?
                     """, (
-                        t["name"], t["location"], t["date_start"], t["date_end"],
+                        t["url"], t["location"], t["date_start"], t["date_end"],
                         dates.get("registration_opens", ""), dates.get("registration_closes", ""),
                         dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
-                        dates.get("competition_end", ""), json.dumps(categories), t["url"]
+                        dates.get("competition_end", ""), json.dumps(categories), t["name"]
                     ))
                     logger.info(f"✅ Updated tournament: {t['name']} (preserved selection={preserved_selected})")
                     updated_count += 1
                 else:
-                    # New tournament - insert with selected_for_view = 0 and complete dates + categories
+                    # New tournament - insert with selected_for_view = 0
                     cur.execute("""
                         INSERT INTO tournaments 
                         (tournament_url, tournament_name, location, date_start, date_end,
