@@ -3,8 +3,9 @@ Players Scraper Module
 Scrapes player data from Badminton Sweden and updates players.db
 
 Functions:
-- scrape_all_players() - Bulk scrape all players (run on startup)
 - scrape_player_by_license_id(license_id) - Scrape single player (run on login)
+- check_player_data_stale(license_id) - Check if player data needs refresh
+- get_player_by_license_id(license_id) - Get player data from local DB
 """
 
 import sqlite3
@@ -150,103 +151,7 @@ def scrape_ranking_from_page(soup):
     return ranking
 
 
-def scrape_all_players():
-    """
-    Bulk scrape all players from Badminton Sweden on startup.
-    
-    This completely replaces the players table with fresh data.
-    - Deletes all existing players
-    - Fetches all players from Badminton Sweden (A-Z search)
-    - Populates players table with complete data
-    """
-    logger.info("🔄 Starting fresh bulk scrape of ALL players from Badminton Sweden")
-    
-    try:
-        # STEP 1: Clear existing players table to start fresh
-        conn = sqlite3.connect(PLAYERS_DB)
-        cur = conn.cursor()
-        cur.execute("DELETE FROM players")
-        conn.commit()
-        logger.info("🧹 Cleared players table for fresh data")
-        conn.close()
-    except Exception as e:
-        logger.warning(f"⚠️  Could not clear players table: {e}")
-    
-    try:
-        players_found = 0
-        players_failed = 0
-        
-        # Try searching common letters and combinations
-        search_terms = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-        
-        for letter in search_terms:
-            try:
-                logger.debug(f"Searching for players starting with: {letter}")
-                
-                # Iterate through all pages for this letter
-                page = 1
-                while True:
-                    # Use GET request with params (not POST)
-                    resp = requests.get(
-                        SEARCH_URL,
-                        params={"Page": page, "SportID": 2, "Query": letter},
-                        headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
-                        timeout=10
-                    )
-                    
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    items = soup.select("li.list__item")
-                    
-                    if not items:
-                        # No more pages for this letter
-                        logger.debug(f"  Letter '{letter}': Complete (pages 1-{page-1})")
-                        break
-                    
-                    logger.debug(f"  Letter '{letter}', Page {page}: {len(items)} items")
-                    
-                    for item in items:
-                        try:
-                            name_el = item.select_one("a.media__link span.nav-link__value")
-                            license_el = item.select_one(".media__title-aside")
-                            
-                            if name_el and license_el:
-                                name = name_el.get_text(strip=True)
-                                license_id = license_el.get_text(strip=True).strip("()")
-                                
-                                profile_url = item.select_one("a.media__link")
-                                profile_path = profile_url.get("href") if profile_url else ""
-                                
-                                # Only add valid entries (not temp_*, has name and license)
-                                if name and not name.startswith("temp_") and license_id and not license_id.startswith("temp_"):
-                                    if update_player_in_db(
-                                        license_id=license_id,
-                                        name=name,
-                                        profile_url=profile_path
-                                    ):
-                                        players_found += 1
-                                    else:
-                                        players_failed += 1
-                                    
-                                    if players_found % 50 == 0:
-                                        logger.info(f"🔍 Scraped {players_found} players so far...")
-                        
-                        except Exception as e:
-                            logger.debug(f"Error processing item: {e}")
-                            players_failed += 1
-                            continue
-                    
-                    page += 1
-            
-            except Exception as e:
-                logger.warning(f"⚠️  Error searching for '{letter}': {e}")
-                continue
-        
-        logger.info(f"✅ Bulk scrape complete: {players_found} players added, {players_failed} failed")
-        return players_found
-    
-    except Exception as e:
-        logger.error(f"❌ Error in bulk scrape: {e}")
-        return 0
+
 
 
 def check_player_data_stale(license_id, max_age_hours=24):
@@ -285,9 +190,10 @@ def check_player_data_stale(license_id, max_age_hours=24):
         return True  # Assume stale if we can't check
 
 
-def update_player_in_db(license_id, name, profile_url, ranking=None, email=None, phone=None):
+def update_player_in_db(license_id, name, profile_url, club=None, gender=None, email=None, phone=None, dob=None, age=None, ranking=None):
     """
-    Insert player in players.db (insert all entries, no deduplication)
+    Insert or update player in players.db with all available fields.
+    Uses license_id to detect existing player and update instead of duplicating.
     """
     try:
         conn = sqlite3.connect(PLAYERS_DB)
@@ -295,19 +201,41 @@ def update_player_in_db(license_id, name, profile_url, ranking=None, email=None,
         
         now = datetime.now().isoformat()
         
-        # Simple INSERT - store all 5,200 entries without deduplication
-        cur.execute("""
-            INSERT INTO players
-            (license_id, name, profile_url, ranking, email, phone, last_updated, last_scraped)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (license_id, name, profile_url, ranking, email, phone, now, now))
+        # Check if player already exists by license_id
+        cur.execute("SELECT id FROM players WHERE license_id = ?", (license_id,))
+        existing = cur.fetchone()
+        
+        if existing:
+            # Update existing player - only update non-None fields
+            cur.execute("""
+                UPDATE players SET
+                    name = COALESCE(?, name),
+                    profile_url = COALESCE(?, profile_url),
+                    club = COALESCE(?, club),
+                    gender = COALESCE(?, gender),
+                    email = COALESCE(?, email),
+                    phone = COALESCE(?, phone),
+                    dob = COALESCE(?, dob),
+                    age = COALESCE(?, age),
+                    ranking = COALESCE(?, ranking),
+                    last_updated = ?,
+                    last_scraped = ?
+                WHERE license_id = ?
+            """, (name, profile_url, club, gender, email, phone, dob, age, ranking, now, now, license_id))
+        else:
+            # Insert new player with all fields
+            cur.execute("""
+                INSERT INTO players
+                (license_id, name, profile_url, club, gender, email, phone, dob, age, ranking, last_updated, last_scraped)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (license_id, name, profile_url, club, gender, email, phone, dob, age, ranking, now, now))
         
         conn.commit()
         conn.close()
         return True
     
     except Exception as e:
-        logger.error(f"❌ Error inserting player in DB: {e}")
+        logger.error(f"❌ Error inserting/updating player in DB: {e}")
         return False
 
 
@@ -354,5 +282,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     print("Testing players_scraper module...")
-    print("\nNote: Bulk scrape takes a long time. Use sparingly!")
-    # scrape_all_players()
+    print("\nUse scrape_player_by_license_id(license_id) to scrape individual players.")

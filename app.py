@@ -82,23 +82,7 @@ except Exception as e:
     logger.error(f"⚠️  Failed to download from Dropbox on startup: {str(e)}")
     logger.error("⚠️  Continuing with local databases (new data will NOT persist)")
 
-# Sync player data from Badminton Sweden on startup
-logger.info("=" * 80)
-logger.info("🔄 STARTUP: Syncing player data from Badminton Sweden...")
-logger.info("=" * 80)
-try:
-    from players_scraper import scrape_all_players
-    logger.info("📋 Starting bulk scrape of ALL players...")
-    players_scraped = scrape_all_players()
-    logger.info(f"✅ STARTUP COMPLETE: Scraped {players_scraped} players from Badminton Sweden")
-    if players_scraped == 0:
-        logger.warning("⚠️  WARNING: No players found in scrape.")
-except Exception as e:
-    logger.error(f"❌ STARTUP FAILED: Failed to scrape players: {str(e)}")
-    import traceback
-    logger.error(traceback.format_exc())
-    logger.error("⚠️  Continuing with existing player data")
-logger.info("=" * 80)
+
 
 
 # ==================== DEBOUNCE SYNC SYSTEM ====================
@@ -531,13 +515,12 @@ def get_player_ranking(player_name):
             return ""
 
         ranking = {}
-        valid_categories = {"DS", "HS", "DD", "HD", "MD"}
         for row in table.find_all("tr")[1:]:
             th = row.find("th", scope="row")
             tds = row.find_all("td")
             if th and len(tds) >= 2:
                 category = th.get_text(strip=True)
-                if category in valid_categories:
+                if category:
                     rank = tds[0].get_text(strip=True)
                     points = tds[1].get_text(strip=True)
                     ranking[category] = {"rank": rank, "points": points}
@@ -554,7 +537,7 @@ def init_players_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             license_id TEXT,
             name TEXT NOT NULL,
-            profile_url TEXT,
+            profile_url TEXT UNIQUE,
             club TEXT,
             gender TEXT,
             email TEXT,
@@ -746,13 +729,12 @@ def bwf_login():
             ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
             table = ranking_soup.find("table")
             if table:
-                valid_categories = {"DS", "HS", "DD", "HD", "MD"}
                 for row in table.find_all("tr")[1:]:
                     th = row.find("th", scope="row")
                     tds = row.find_all("td")
                     if th and len(tds) >= 2:
                         category = th.get_text(strip=True)
-                        if category in valid_categories:
+                        if category:
                             ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
         except Exception:
             pass
@@ -775,23 +757,27 @@ def bwf_login():
         session["bwf_ranking"] = ranking
         session["admin"] = is_admin_user(login)
         
-        # Scrape fresh player data from Badminton Sweden
+        # Save player data to players.db (we have ALL fields from login)
         try:
             if license_id:
-                from players_scraper import scrape_player_by_license_id, check_player_data_stale
+                from players_scraper import update_player_in_db
                 
-                # Check if player data is stale (older than 24 hours)
-                is_stale = check_player_data_stale(license_id)
-                
-                if is_stale:
-                    logger.info(f"🔄 Player data is stale, refreshing for {license_id}...")
-                    player_data = scrape_player_by_license_id(license_id)
-                    if player_data:
-                        logger.info(f"✅ Refreshed player data for {player_name}")
-                else:
-                    logger.info(f"✅ Player data is current for {license_id}")
+                ranking_json = json.dumps(ranking) if ranking else None
+                update_player_in_db(
+                    license_id=license_id,
+                    name=player_name,
+                    profile_url=profile_url,
+                    club=club,
+                    gender=gender,
+                    email=email,
+                    phone=phone,
+                    dob=dob,
+                    age=age,
+                    ranking=ranking_json
+                )
+                logger.info(f"✅ Saved full player data for {player_name} ({license_id}) to players.db")
         except Exception as e:
-            logger.debug(f"Could not refresh player data: {e}")
+            logger.warning(f"⚠️  Could not save player data to DB: {e}")
         
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
@@ -2296,7 +2282,68 @@ def add_player():
     
     license_id = player.get("license_id", "").strip()
     
-    # Validate tournament exists
+    if not license_id:
+        return jsonify(success=False, error="license_id required"), 400
+    
+    # STEP 1: Ensure player exists in players.db
+    # From live search we have: name, license_id, club, profile_url
+    # From player profile we have: gender, ranking
+    # We do NOT have: email, phone, dob, age (only available on login)
+    try:
+        conn_players = sqlite3.connect(PLAYERS_DB)
+        cur_players = conn_players.cursor()
+        
+        # Check if player already exists
+        cur_players.execute("SELECT id FROM players WHERE license_id = ?", (license_id,))
+        existing_player = cur_players.fetchone()
+        
+        now = __import__('datetime').datetime.now().isoformat()
+        ranking_json = json.dumps(player.get("ranking")) if player.get("ranking") else None
+        
+        if existing_player:
+            # Update existing player - only overwrite fields we have reliable data for
+            # Preserve email, phone, dob, age (only comes from login)
+            cur_players.execute("""
+                UPDATE players SET
+                    name = ?,
+                    profile_url = COALESCE(?, profile_url),
+                    club = ?,
+                    gender = COALESCE(?, gender),
+                    ranking = COALESCE(?, ranking),
+                    last_updated = ?
+                WHERE license_id = ?
+            """, (
+                player.get("player_name", ""),
+                player.get("profile_url") or None,
+                player.get("club", ""),
+                player.get("gender") or None,
+                ranking_json,
+                now,
+                license_id
+            ))
+            logger.info(f"✅ Updated player {player.get('player_name')} in players.db")
+        else:
+            # Insert new player with fields available from live search + profile
+            cur_players.execute("""
+                INSERT INTO players (license_id, name, profile_url, club, gender, ranking, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                license_id,
+                player.get("player_name", ""),
+                player.get("profile_url", ""),
+                player.get("club", ""),
+                player.get("gender", ""),
+                ranking_json,
+                now
+            ))
+            logger.info(f"✅ Inserted player {player.get('player_name')} into players.db")
+        
+        conn_players.commit()
+        conn_players.close()
+    except Exception as e:
+        logger.error(f"⚠️  Error saving player to players.db: {e}")
+    
+    # STEP 2: Register player in tournament_registrations
     try:
         conn_main = sqlite3.connect(TOURNAMENTS_DB)
         cur_main = conn_main.cursor()
@@ -2350,6 +2397,7 @@ def add_player():
         conn_main.commit()
         conn_main.close()
         
+        trigger_sync()  # Sync after registration
         return jsonify(success=True, message="Registration saved successfully")
     
     except Exception as e:
@@ -2469,17 +2517,6 @@ def search_players():
             profile_link = item.select_one("a.media__link")
             profile_url = profile_link.get("href", "") if profile_link else ""
             live_results.append({"name": name, "club": club, "license_id": license_id, "profile_url": profile_url, "source": "live"})
-
-            # Cache to local DB
-            try:
-                conn.execute(
-                    "INSERT OR IGNORE INTO players (name, profile_url, club, gender) VALUES (?, ?, ?, ?)",
-                    (name, profile_url, club, None)
-                )
-            except sqlite3.Error:
-                pass
-        conn.commit()
-
         # Merge: live results first, then local (deduplicated)
         seen = {r["name"] for r in live_results}
         combined = live_results + [r for r in local_results if r["name"] not in seen]
@@ -2574,13 +2611,12 @@ def player_details():
             ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
             table = ranking_soup.find("table")
             if table:
-                valid_categories = {"DS", "HS", "DD", "HD", "MD"}
                 for row in table.find_all("tr")[1:]:
                     th = row.find("th", scope="row")
                     tds = row.find_all("td")
                     if th and len(tds) >= 2:
                         category = th.get_text(strip=True)
-                        if category in valid_categories:
+                        if category:
                             ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
         except Exception:
             pass
