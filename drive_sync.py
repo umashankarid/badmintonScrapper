@@ -36,7 +36,8 @@ class DropboxSync:
             # Get access token from environment
             access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
             if not access_token:
-                logger.warning("⚠️  DROPBOX_ACCESS_TOKEN not set - sync disabled")
+                logger.error("❌ DROPBOX_ACCESS_TOKEN environment variable not set - sync DISABLED")
+                logger.error("❌ Please set DROPBOX_ACCESS_TOKEN in Render environment variables")
                 return False
             
             # Initialize Dropbox client
@@ -182,10 +183,12 @@ def get_sync():
 
 def download_all():
     """Download all databases from Dropbox"""
+    logger.info("📥 Attempting to download databases from Dropbox...")
     sync = get_sync()
     return sync.download_databases()
 
 def upload_all():
     """Upload all databases to Dropbox"""
+    logger.info("📤 Attempting to upload databases to Dropbox...")
     sync = get_sync()
     return sync.upload_databases()
