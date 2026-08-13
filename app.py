@@ -22,7 +22,12 @@ os.makedirs(TOURNAMENTS_DIR, exist_ok=True)
 
 # Sync databases on startup
 logger.info("🔄 Starting Google Drive database sync...")
-download_all()
+try:
+    download_all()
+except Exception as e:
+    logger.error(f"⚠️  Failed to download from Dropbox on startup: {str(e)}")
+    logger.error("⚠️  Continuing with local databases (new data will NOT persist)")
+
 
 # ==================== DEBOUNCE SYNC SYSTEM ====================
 # Debounce settings
