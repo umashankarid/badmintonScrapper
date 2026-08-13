@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Admins</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>Manage Admins</h1>
+    <a href="/">← Back to home</a>
+
+    <div style="margin-top:20px;">
+        <!-- Add Admin -->
+        <h2>Add Admin</h2>
+        <form id="add-admin-form" style="display:flex;gap:10px;align-items:flex-end;max-width:500px;">
+            <div style="flex:1;">
+                <label for="new-admin-username">Username (Badminton Sweden login)</label>
+                <input type="text" id="new-admin-username" placeholder="e.g. user@email.com" required style="margin-bottom:0;">
+            </div>
+            <button type="submit" style="padding:10px 20px;background:#0d47a1;white-space:nowrap;">Add Admin</button>
+        </form>
+        <p id="add-result" style="display:none;margin-top:10px;padding:10px;border-radius:6px;"></p>
+
+        <!-- Admin List -->
+        <h2 style="margin-top:30px;">Current Admins</h2>
+        <div id="admin-list"></div>
+    </div>
+
+    <script>
+        async function loadAdmins() {
+            const container = document.getElementById("admin-list");
+            container.innerHTML = "<p style='color:#999;'>Loading...</p>";
+            
+            try {
+                const res = await fetch("/api/list-admins");
+                const data = await res.json();
+                
+                if (!data.success) {
+                    container.innerHTML = `<p style="color:red;">${data.error || 'Failed to load admins'}</p>`;
+                    return;
+                }
+                
+                if (!data.admins || !data.admins.length) {
+                    container.innerHTML = "<p>No admins found.</p>";
+                    return;
+                }
+                
+                container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
+                    data.admins.map(admin => `
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 15px;background:white;border:1px solid #e0e0e0;border-radius:8px;">
+                            <span style="font-weight:500;">${admin}</span>
+                            <button onclick="removeAdmin('${admin.replace(/'/g, "\\'")}')" style="padding:6px 14px;background:#cc3333;font-size:0.85em;width:auto;">Remove</button>
+                        </div>
+                    `).join("") +
+                    `</div>`;
+            } catch (err) {
+                container.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+            }
+        }
+
+        document.getElementById("add-admin-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const username = document.getElementById("new-admin-username").value.trim();
+            if (!username) return;
+            
+            const resultEl = document.getElementById("add-result");
+            resultEl.style.display = "none";
+            
+            const res = await fetch("/admin/add-admin-by-id", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username})
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                resultEl.textContent = `✅ ${username} added as admin`;
+                resultEl.style.background = "#e8f5e9";
+                resultEl.style.color = "#2e7d32";
+                document.getElementById("new-admin-username").value = "";
+                loadAdmins();
+            } else {
+                resultEl.textContent = `❌ ${data.error || 'Failed to add admin'}`;
+                resultEl.style.background = "#ffebee";
+                resultEl.style.color = "#c62828";
+            }
+            resultEl.style.display = "block";
+        });
+
+        async function removeAdmin(username) {
+            if (!confirm(`Remove ${username} as admin?`)) return;
+            
+            const res = await fetch("/api/remove-admin", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username})
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                loadAdmins();
+            } else {
+                alert(data.error || "Failed to remove admin");
+            }
+        }
+
+        loadAdmins();
+    </script>
+</body>
+</html>

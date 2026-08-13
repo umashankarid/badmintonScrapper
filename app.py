@@ -582,6 +582,11 @@ def add_remove_tournaments_page():
     return send_from_directory("templates", "add-remove-tournaments.html")
 
 
+@app.route("/manage-admins.html")
+def manage_admins_page():
+    return send_from_directory("templates", "manage-admins.html")
+
+
 @app.route("/login.html")
 def login_page():
     return send_from_directory("templates", "login.html")
@@ -1239,15 +1244,14 @@ def add_admin():
 
 @app.route("/admin/remove-admin", methods=["POST"])
 def remove_admin():
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
     data = request.json
     username = data.get("username", "").strip()
-    password = data.get("password", "")
     if not username:
         return jsonify(success=False, error="Username required"), 400
-    if password != "admin@2026":
-        return jsonify(success=False, error="Incorrect confirmation password"), 403
     conn = sqlite3.connect(ADMIN_DB)
-    conn.execute("DELETE FROM admins WHERE username=?", (username,))
+    conn.execute("DELETE FROM admin_users WHERE username=?", (username,))
     conn.commit()
     conn.close()
     # If removed self, update session
@@ -1258,12 +1262,45 @@ def remove_admin():
 
 @app.route("/admin/list-admins", methods=["GET"])
 def list_admins():
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
     conn = sqlite3.connect(ADMIN_DB)
     cur = conn.cursor()
-    cur.execute("SELECT username FROM admins ORDER BY username")
+    cur.execute("SELECT username FROM admin_users ORDER BY username")
     admins = [row[0] for row in cur.fetchall()]
     conn.close()
     return jsonify(success=True, admins=admins)
+
+
+@app.route("/api/list-admins", methods=["GET"])
+def api_list_admins():
+    """API endpoint for listing admins (used by manage-admins page)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    conn = sqlite3.connect(ADMIN_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM admin_users ORDER BY username")
+    admins = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return jsonify(success=True, admins=admins)
+
+
+@app.route("/api/remove-admin", methods=["POST"])
+def api_remove_admin():
+    """API endpoint for removing an admin (used by manage-admins page)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    data = request.json
+    username = data.get("username", "").strip()
+    if not username:
+        return jsonify(success=False, error="Username required"), 400
+    conn = sqlite3.connect(ADMIN_DB)
+    conn.execute("DELETE FROM admin_users WHERE username=?", (username,))
+    conn.commit()
+    conn.close()
+    if username == session.get("bwf_login"):
+        session["admin"] = False
+    return jsonify(success=True)
 
 
 @app.route("/api/point-rules", methods=["GET"])
