@@ -995,26 +995,42 @@
                 const list = document.getElementById("warnings-list");
                 
                 if (isAdmin) {
-                    // Admin sees all warnings grouped by player
+                    // Admin sees all warnings grouped by player, then by type with categories combined
                     const grouped = {};
                     data.warnings.forEach(w => {
-                        if (!grouped[w.player_name]) grouped[w.player_name] = [];
-                        grouped[w.player_name].push(w);
+                        if (!grouped[w.player_name]) grouped[w.player_name] = {age: [], points: []};
+                        grouped[w.player_name][w.type].push(w);
                     });
                     
-                    list.innerHTML = Object.entries(grouped).map(([name, warns]) => {
-                        const items = warns.map(w => {
-                            const icon = w.type === "age" ? "🔴" : "🟡";
-                            return `<div style="margin:3px 0;padding:4px 8px;background:${w.type === 'age' ? '#ffebee' : '#fff8e1'};border-radius:4px;font-size:0.9em;">${icon} ${w.message}</div>`;
-                        }).join("");
-                        return `<div style="margin-bottom:10px;"><strong>${name}</strong>${items}</div>`;
+                    list.innerHTML = Object.entries(grouped).map(([name, types]) => {
+                        let lines = [];
+                        if (types.age.length) {
+                            const categories = types.age.map(w => w.event).join(", ");
+                            const ageMsg = types.age[0].message.split(".")[0]; // Get the age part
+                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;font-size:0.9em;">🟠 Must be at least 13 to play ${categories}</div>`);
+                        }
+                        if (types.points.length) {
+                            const pointLines = types.points.map(w => w.event + ": " + w.message.split(": ").slice(1).join(": ")).join(", ");
+                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;font-size:0.9em;">🔴 Point restriction: ${pointLines}</div>`);
+                        }
+                        return `<div style="margin-bottom:10px;"><strong>${name}</strong>${lines.join("")}</div>`;
                     }).join("");
                 } else {
-                    // Player sees only their own warnings
-                    list.innerHTML = data.warnings.map(w => {
-                        const icon = w.type === "age" ? "🔴" : "🟡";
-                        return `<div style="margin:5px 0;padding:8px 12px;background:${w.type === 'age' ? '#ffebee' : '#fff8e1'};border-radius:4px;">${icon} ${w.message}</div>`;
-                    }).join("");
+                    // Player sees only their own warnings, grouped by type
+                    const ageWarnings = data.warnings.filter(w => w.type === "age");
+                    const pointWarnings = data.warnings.filter(w => w.type === "points");
+                    let lines = [];
+                    
+                    if (ageWarnings.length) {
+                        const categories = ageWarnings.map(w => w.event).join(", ");
+                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;">🟠 Must be at least 13 to play ${categories}</div>`);
+                    }
+                    if (pointWarnings.length) {
+                        const details = pointWarnings.map(w => w.message).join("<br>");
+                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;">🔴 ${details}</div>`);
+                    }
+                    
+                    list.innerHTML = lines.join("");
                 }
                 
                 banner.style.display = "block";
