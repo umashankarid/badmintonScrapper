@@ -20,9 +20,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = "supersecretkey"
 
-TOURNAMENTS_DIR = os.path.join(os.path.dirname(__file__), "tournaments")
-os.makedirs(TOURNAMENTS_DIR, exist_ok=True)
-
 # ==================== PRE-STARTUP TEST VERIFICATION ====================
 def run_startup_tests():
     """Run unit tests before startup - block if any fail"""
@@ -324,30 +321,14 @@ upload_all()
 logger.info("✅ Databases backed up on startup")
 
 
+
 def get_tournament_db(db_file):
-    path = os.path.join(TOURNAMENTS_DIR, db_file)
-    if not os.path.exists(path):
-        return None
-    conn = sqlite3.connect(path)
-    # Auto-migrate: add missing columns
-    cur = conn.cursor()
-    cur.execute("PRAGMA table_info(players)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "player_id" in columns:
-        if "license_id" not in columns:
-            conn.execute("ALTER TABLE players ADD COLUMN license_id TEXT DEFAULT ''")
-        if "email" not in columns:
-            conn.execute("ALTER TABLE players ADD COLUMN email TEXT DEFAULT ''")
-        if "phone" not in columns:
-            conn.execute("ALTER TABLE players ADD COLUMN phone TEXT DEFAULT ''")
-        if "ranking" not in columns:
-            conn.execute("ALTER TABLE players ADD COLUMN ranking TEXT DEFAULT ''")
-        if "dob" not in columns:
-            conn.execute("ALTER TABLE players ADD COLUMN dob TEXT DEFAULT ''")
-        if "age" not in columns:
-            conn.execute("ALTER TABLE players ADD COLUMN age TEXT DEFAULT ''")
-        conn.commit()
-    return conn
+    """
+    DEPRECATED: Legacy function for per-tournament DB access
+    This is being phased out - all tournament data should use tournaments.db
+    """
+    logger.warning(f"⚠️  DEPRECATED: get_tournament_db() called with {db_file} - this is legacy code")
+    return None  # Return None to indicate this path is not supported
 
 
 def get_player_club(player_name):
