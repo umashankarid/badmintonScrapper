@@ -183,10 +183,11 @@ def scrape_all_players():
             try:
                 logger.debug(f"Searching for players starting with: {letter}")
                 
-                resp = requests.post(
+                # Use GET request with params (not POST)
+                resp = requests.get(
                     SEARCH_URL,
-                    data={"Page": 1, "SportID": 2, "Query": letter},
-                    headers=HEADERS,
+                    params={"Page": 1, "SportID": 2, "Query": letter},
+                    headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
                     timeout=10
                 )
                 
