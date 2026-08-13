@@ -287,48 +287,27 @@ def check_player_data_stale(license_id, max_age_hours=24):
 
 def update_player_in_db(license_id, name, profile_url, ranking=None, email=None, phone=None):
     """
-    Insert or update player in players.db
+    Insert or replace player in players.db (simple insert, PRIMARY KEY handles duplicates)
     """
     try:
         conn = sqlite3.connect(PLAYERS_DB)
         cur = conn.cursor()
         
-        # Check if player exists
-        cur.execute("SELECT name FROM players WHERE license_id=?", (license_id,))
-        exists = cur.fetchone()
-        
         now = datetime.now().isoformat()
         
-        if exists:
-            # Update existing player
-            cur.execute("""
-                UPDATE players SET
-                    name=?,
-                    profile_url=?,
-                    ranking=?,
-                    email=?,
-                    phone=?,
-                    last_updated=?,
-                    last_scraped=?
-                WHERE license_id=?
-            """, (name, profile_url, ranking, email, phone, now, now, license_id))
-            logger.debug(f"✅ Updated player {license_id}: {name}")
-        else:
-            # Insert new player
-            cur.execute("""
-                INSERT INTO players
-                (license_id, name, profile_url, ranking, email, phone, last_updated, last_scraped)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (license_id, name, profile_url, ranking, email, phone, now, now))
-            logger.debug(f"✅ Inserted new player {license_id}: {name}")
+        # Simple INSERT OR REPLACE - PRIMARY KEY handles duplicates automatically
+        cur.execute("""
+            INSERT OR REPLACE INTO players
+            (license_id, name, profile_url, ranking, email, phone, last_updated, last_scraped)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (license_id, name, profile_url, ranking, email, phone, now, now))
         
         conn.commit()
         conn.close()
         return True
     
     except Exception as e:
-        logger.error(f"❌ Error updating player in DB: {e}")
-        return False
+        logger.error(f"❌ Error inserting player in DB: {e}")
         return False
 
 
