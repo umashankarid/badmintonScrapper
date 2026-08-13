@@ -36,44 +36,9 @@ class DropboxSync:
         self.authenticated = False
         self._init_dropbox_client()
     
-    def _refresh_access_token(self):
-        """Refresh access token using refresh token"""
-        try:
-            refresh_token = os.getenv('DROPBOX_REFRESH_TOKEN')
-            if not refresh_token:
-                logger.warning("⚠️  DROPBOX_REFRESH_TOKEN not set - cannot auto-refresh")
-                return False
-            
-            logger.info("🔄 Refreshing Dropbox access token...")
-            
-            response = requests.post('https://api.dropboxapi.com/oauth2/token', data={
-                'grant_type': 'refresh_token',
-                'refresh_token': refresh_token,
-                'client_id': DROPBOX_APP_KEY,
-                'client_secret': DROPBOX_APP_SECRET
-            }, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                new_access_token = data.get('access_token')
-                logger.info("✅ Access token refreshed successfully")
-                
-                # Update environment variable for this session
-                os.environ['DROPBOX_ACCESS_TOKEN'] = new_access_token
-                
-                # Reinitialize with new token
-                self.dbx = dropbox.Dropbox(new_access_token)
-                return True
-            else:
-                logger.error(f"❌ Failed to refresh token: {response.text}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Error refreshing access token: {str(e)}")
-            return False
     
     def _init_dropbox_client(self):
-        """Initialize Dropbox client using access token, with auto-refresh on expiry"""
+        """Initialize Dropbox client using access token"""
         try:
             # Get access token from environment
             access_token = os.getenv('DROPBOX_ACCESS_TOKEN')
@@ -91,12 +56,10 @@ class DropboxSync:
                 logger.info("✅ Dropbox client initialized")
             except ApiError as e:
                 if 'expired_access_token' in str(e):
-                    logger.warning("⚠️  Access token expired, attempting refresh...")
-                    if self._refresh_access_token():
-                        logger.info("✅ Successfully refreshed token and reconnected")
-                    else:
-                        logger.error("❌ Could not refresh token - set DROPBOX_REFRESH_TOKEN in environment")
-                        return False
+                    logger.error("❌ Access token expired!")
+                    logger.error("❌ To fix: Go to Dropbox app page → 'Generated access token' → Generate new token")
+                    logger.error("❌ Then add it to Render environment variables as DROPBOX_ACCESS_TOKEN")
+                    return False
                 else:
                     raise
             
