@@ -4099,83 +4099,127 @@ def send_email(to_email, subject, body):
 
 
 def send_reminders():
-    """Check all tournaments and send reminders if registration closes within X days."""
+    """
+    Auto-email reminders to eligible players (based on tournament groups).
+    Sends at 7 days and 3 days before admin_reg_end_date.
+    Skips players already registered for the tournament.
+    """
     from datetime import datetime, timedelta
 
-    conn = sqlite3.connect(ADMIN_DB)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM smtp_settings WHERE id=1")
-    settings = cur.fetchone()
-    conn.close()
-
-    if not settings or not settings["smtp_email"] or not settings["smtp_password"]:
-        return
-
-    reminder_days = settings["reminder_days"] or 3
+    logger.info("📧 Checking for reminder emails to send...")
+    
     today = datetime.now().date()
-    reminder_date = today + timedelta(days=reminder_days)
-
-    if not os.path.exists(TOURNAMENTS_DIR):
-        return
-
-    for f in os.listdir(TOURNAMENTS_DIR):
-        if not f.endswith(".db"):
-            continue
-        t_conn = get_tournament_db(f)
-        if not t_conn:
-            continue
-        try:
-            cur = t_conn.cursor()
-            cur.execute("SELECT name, final_registration_date FROM tournaments LIMIT 1")
-            row = cur.fetchone()
-            if not row or not row[1]:
-                t_conn.close()
+    
+    try:
+        # Get all selected tournaments with admin_reg_end_date
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
+        cur_t = conn_t.cursor()
+        cur_t.execute("""
+            SELECT tournament_name, admin_reg_end_date, tournament_groups
+            FROM tournaments 
+            WHERE selected_for_view = 1 AND admin_reg_end_date IS NOT NULL AND admin_reg_end_date != ''
+        """)
+        tournaments = cur_t.fetchall()
+        
+        for tournament_name, admin_reg_end_date, tournament_groups_json in tournaments:
+            try:
+                reg_close = datetime.strptime(admin_reg_end_date, "%Y-%m-%d").date()
+            except Exception:
                 continue
-
-            tournament_name = row[0]
-            reg_close = datetime.strptime(row[1], "%Y-%m-%d").date()
-
-            # Only send if registration closes within reminder_days
-            if today <= reg_close <= reminder_date:
-                # Get all players with email
-                t_conn.row_factory = sqlite3.Row
-                cur = t_conn.cursor()
-                cur.execute("SELECT player_name, email FROM players WHERE email IS NOT NULL AND email != ''")
-                players = cur.fetchall()
-
-                admin_conn = sqlite3.connect(ADMIN_DB)
-                for player in players:
-                    # Check if reminder already sent
-                    admin_cur = admin_conn.cursor()
-                    admin_cur.execute(
-                        "SELECT id FROM reminders_sent WHERE tournament_db=? AND player_email=?",
-                        (f, player["email"])
+            
+            days_left = (reg_close - today).days
+            
+            # Only send at 7 days or 3 days before close
+            if days_left not in (7, 3):
+                continue
+            
+            reminder_type = f"{days_left}days"
+            
+            # Get tournament groups
+            tournament_groups = []
+            try:
+                tournament_groups = json.loads(tournament_groups_json) if tournament_groups_json else []
+            except Exception:
+                pass
+            
+            # Get registered player license_ids for this tournament (to skip them)
+            cur_t.execute(
+                "SELECT license_id FROM tournament_registrations WHERE tournament_name = ?",
+                (tournament_name,)
+            )
+            registered_ids = {row[0] for row in cur_t.fetchall()}
+            
+            # Get eligible players from kometPlayers
+            conn_p = sqlite3.connect(PLAYERS_DB)
+            cur_p = conn_p.cursor()
+            cur_p.execute("SELECT name, license_id, email, groups FROM kometPlayers WHERE email IS NOT NULL AND email != ''")
+            
+            sent_count = 0
+            for p_row in cur_p.fetchall():
+                player_name, license_id, email, player_groups_json = p_row
+                
+                # Skip if already registered
+                if license_id in registered_ids:
+                    continue
+                
+                # Check group eligibility
+                player_groups = []
+                try:
+                    player_groups = json.loads(player_groups_json) if player_groups_json else []
+                except Exception:
+                    pass
+                
+                if tournament_groups:
+                    if "All" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                        continue  # Player's groups don't match
+                
+                # Check if reminder already sent for this type
+                conn_admin = sqlite3.connect(ADMIN_DB)
+                cur_admin = conn_admin.cursor()
+                cur_admin.execute(
+                    "SELECT id FROM reminders_sent WHERE tournament_db = ? AND player_email = ? AND sent_at LIKE ?",
+                    (f"{tournament_name}_{reminder_type}", email, f"{today.isoformat()}%")
+                )
+                if cur_admin.fetchone():
+                    conn_admin.close()
+                    continue  # Already sent today
+                
+                # Build email
+                if days_left == 7:
+                    subject = f"📋 Registration closing in 1 week: {tournament_name}"
+                    body = (f"Hi {player_name},\n\n"
+                            f"This is a friendly reminder that registration for '{tournament_name}' "
+                            f"closes in 1 week ({admin_reg_end_date}).\n\n"
+                            f"Don't forget to register if you want to participate!\n\n"
+                            f"Best regards,\nBMK Komet")
+                else:
+                    subject = f"⚠️ Last chance to register: {tournament_name} (3 days left!)"
+                    body = (f"Hi {player_name},\n\n"
+                            f"⚠️ Registration for '{tournament_name}' closes in 3 days ({admin_reg_end_date})!\n\n"
+                            f"If you haven't registered yet, please do so soon.\n\n"
+                            f"Best regards,\nBMK Komet")
+                
+                # Send
+                result = send_email(email, subject, body)
+                if result is True:
+                    conn_admin.execute(
+                        "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                        (f"{tournament_name}_{reminder_type}", email, datetime.now().isoformat())
                     )
-                    if admin_cur.fetchone():
-                        continue
-
-                    # Send reminder
-                    subject = f"Reminder: Registration closing soon for {tournament_name}"
-                    body = (f"Hi {player['player_name']},\n\n"
-                            f"This is a reminder that registration for '{tournament_name}' "
-                            f"closes on {row[1]}.\n\n"
-                            f"Please make sure your registration is complete.\n\n"
-                            f"Best regards,\nBadminton Tournament System")
-
-                    if send_email(player["email"], subject, body):
-                        admin_conn.execute(
-                            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
-                            (f, player["email"], datetime.now().isoformat())
-                        )
-                        print(f"[Reminder] Sent to {player['email']} for {tournament_name}")
-
-                admin_conn.commit()
-                admin_conn.close()
-        except Exception as e:
-            print(f"[Reminder Error] {f}: {e}")
-        finally:
-            t_conn.close()
+                    conn_admin.commit()
+                    sent_count += 1
+                    logger.info(f"📧 Reminder sent to {email} for {tournament_name} ({days_left} days left)")
+                
+                conn_admin.close()
+            
+            conn_p.close()
+            
+            if sent_count > 0:
+                logger.info(f"📧 Sent {sent_count} reminders for {tournament_name} ({days_left} days before close)")
+        
+        conn_t.close()
+    except Exception as e:
+        logger.error(f"❌ Error in send_reminders: {e}")
 
 
 # --- Results Page ---
