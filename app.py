@@ -568,9 +568,15 @@ def init_players_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             license_id TEXT UNIQUE,
             name TEXT NOT NULL,
-            email TEXT
+            email TEXT,
+            groups TEXT
         )
     """)
+    # Add groups column if it doesn't exist (for existing DBs)
+    try:
+        conn.execute("ALTER TABLE kometPlayers ADD COLUMN groups TEXT")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -3633,14 +3639,14 @@ def get_komet_players():
                        (f"%{search}%", f"%{search}%", f"%{search}%"))
             total = cur.fetchone()[0]
             cur.execute("""
-                SELECT id, license_id, name, email FROM kometPlayers 
+                SELECT id, license_id, name, email, groups FROM kometPlayers 
                 WHERE name LIKE ? OR license_id LIKE ? OR email LIKE ?
                 ORDER BY name LIMIT ? OFFSET ?
             """, (f"%{search}%", f"%{search}%", f"%{search}%", page_size, offset))
         else:
             cur.execute("SELECT COUNT(*) FROM kometPlayers")
             total = cur.fetchone()[0]
-            cur.execute("SELECT id, license_id, name, email FROM kometPlayers ORDER BY name LIMIT ? OFFSET ?",
+            cur.execute("SELECT id, license_id, name, email, groups FROM kometPlayers ORDER BY name LIMIT ? OFFSET ?",
                        (page_size, offset))
         
         players = [dict(row) for row in cur.fetchall()]
@@ -3659,14 +3665,22 @@ def create_komet_player():
     license_id = data.get("license_id", "").strip()
     name = data.get("name", "").strip()
     email = data.get("email", "").strip()
+    groups = data.get("groups", "").strip()
+    
+    # Store groups as JSON array
+    if groups:
+        groups_list = [g.strip() for g in groups.split(",") if g.strip()]
+        groups_json = json.dumps(groups_list)
+    else:
+        groups_json = None
     
     if not name:
         return jsonify(success=False, error="Name required")
     
     try:
         conn = sqlite3.connect(PLAYERS_DB)
-        conn.execute("INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
-                    (license_id or None, name, email or None))
+        conn.execute("INSERT INTO kometPlayers (license_id, name, email, groups) VALUES (?, ?, ?, ?)",
+                    (license_id or None, name, email or None, groups_json))
         conn.commit()
         conn.close()
         return jsonify(success=True)
@@ -3685,14 +3699,22 @@ def update_komet_player(player_id):
     license_id = data.get("license_id", "").strip()
     name = data.get("name", "").strip()
     email = data.get("email", "").strip()
+    groups = data.get("groups", "").strip()
+    
+    # Store groups as JSON array
+    if groups:
+        groups_list = [g.strip() for g in groups.split(",") if g.strip()]
+        groups_json = json.dumps(groups_list)
+    else:
+        groups_json = None
     
     if not name:
         return jsonify(success=False, error="Name required")
     
     try:
         conn = sqlite3.connect(PLAYERS_DB)
-        conn.execute("UPDATE kometPlayers SET license_id = ?, name = ?, email = ? WHERE id = ?",
-                    (license_id or None, name, email or None, player_id))
+        conn.execute("UPDATE kometPlayers SET license_id = ?, name = ?, email = ?, groups = ? WHERE id = ?",
+                    (license_id or None, name, email or None, groups_json, player_id))
         conn.commit()
         conn.close()
         return jsonify(success=True)
