@@ -4133,6 +4133,134 @@ def send_email(to_email, subject, body):
         return f"Error: {type(e).__name__} - {e}"
 
 
+@app.route("/api/tournament-reminders", methods=["GET"])
+def get_tournament_reminders():
+    """Get reminder info for a tournament: schedule, recipients list"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    tournament_name = request.args.get("dbFile", "").strip()
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required")
+    
+    try:
+        # Get tournament info
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
+        cur_t = conn_t.cursor()
+        cur_t.execute("SELECT admin_reg_end_date, tournament_groups FROM tournaments WHERE tournament_name = ?", (tournament_name,))
+        row = cur_t.fetchone()
+        if not row:
+            conn_t.close()
+            return jsonify(success=True, admin_reg_end_date="", recipients=[])
+        
+        admin_reg_end_date = row[0] or ""
+        tournament_groups = []
+        try:
+            tournament_groups = json.loads(row[1]) if row[1] else []
+        except Exception:
+            pass
+        
+        # Get registered player license_ids
+        cur_t.execute("SELECT license_id FROM tournament_registrations WHERE tournament_name = ?", (tournament_name,))
+        registered_ids = {r[0] for r in cur_t.fetchall()}
+        conn_t.close()
+        
+        # Get eligible players not yet registered
+        conn_p = sqlite3.connect(PLAYERS_DB)
+        cur_p = conn_p.cursor()
+        cur_p.execute("SELECT name, license_id, email, groups FROM kometPlayers WHERE email IS NOT NULL AND email != ''")
+        
+        recipients = []
+        for p_row in cur_p.fetchall():
+            name, license_id, email, groups_json = p_row
+            if license_id in registered_ids:
+                continue
+            player_groups = []
+            try:
+                player_groups = json.loads(groups_json) if groups_json else []
+            except Exception:
+                pass
+            if tournament_groups:
+                if "All" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                    continue
+            recipients.append({"name": name, "email": email})
+        
+        conn_p.close()
+        return jsonify(success=True, admin_reg_end_date=admin_reg_end_date, recipients=recipients)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/send-tournament-reminder", methods=["POST"])
+def send_tournament_reminder_now():
+    """Send reminder email NOW to all eligible unregistered players"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required")
+    
+    try:
+        # Get tournament info
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
+        cur_t = conn_t.cursor()
+        cur_t.execute("SELECT admin_reg_end_date, tournament_groups FROM tournaments WHERE tournament_name = ?", (tournament_name,))
+        row = cur_t.fetchone()
+        if not row or not row[0]:
+            conn_t.close()
+            return jsonify(success=False, error="No registration deadline set for this tournament")
+        
+        admin_reg_end_date = row[0]
+        tournament_groups = []
+        try:
+            tournament_groups = json.loads(row[1]) if row[1] else []
+        except Exception:
+            pass
+        
+        # Get registered player license_ids
+        cur_t.execute("SELECT license_id FROM tournament_registrations WHERE tournament_name = ?", (tournament_name,))
+        registered_ids = {r[0] for r in cur_t.fetchall()}
+        conn_t.close()
+        
+        # Get eligible players
+        conn_p = sqlite3.connect(PLAYERS_DB)
+        cur_p = conn_p.cursor()
+        cur_p.execute("SELECT name, license_id, email, groups FROM kometPlayers WHERE email IS NOT NULL AND email != ''")
+        
+        sent = 0
+        for p_row in cur_p.fetchall():
+            name, license_id, email, groups_json = p_row
+            if license_id in registered_ids:
+                continue
+            player_groups = []
+            try:
+                player_groups = json.loads(groups_json) if groups_json else []
+            except Exception:
+                pass
+            if tournament_groups:
+                if "All" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                    continue
+            
+            subject = f"📋 Reminder: Register for {tournament_name}"
+            body = (f"Hi {name},\n\n"
+                    f"This is a reminder that registration for '{tournament_name}' "
+                    f"closes on {admin_reg_end_date}.\n\n"
+                    f"Don't forget to register if you want to participate!\n\n"
+                    f"Best regards,\nBMK Komet")
+            
+            result = send_email(email, subject, body)
+            if result is True:
+                sent += 1
+                logger.info(f"📧 Manual reminder sent to {email} for {tournament_name}")
+        
+        conn_p.close()
+        return jsonify(success=True, sent=sent)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 def send_reminders():
     """
     Auto-email reminders to eligible players (based on tournament groups).

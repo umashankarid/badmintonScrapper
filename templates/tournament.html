@@ -82,6 +82,14 @@
         </form>
     </div>
 
+    <!-- Auto Reminder Section (admin only) -->
+    <div id="auto-reminder-section" style="display:none;margin:20px 0;padding:15px;border-radius:8px;background:#f5f5f5;border:1px solid #e0e0e0;">
+        <details>
+            <summary style="cursor:pointer;font-weight:bold;color:#0d47a1;">📧 Auto Reminder</summary>
+            <div id="reminder-details" style="margin-top:10px;"></div>
+        </details>
+    </div>
+
     <div style="display:flex;align-items:center;gap:15px;margin-top:20px;">
         <h2 id="players-heading" style="margin:0;">Registered Players</h2>
         <button id="download-csv-btn" onclick="downloadCSV()" style="display:none;width:auto;padding:6px 14px;background:#28a745;font-size:0.85em;">📥 Download CSV</button>
@@ -991,6 +999,91 @@
             loadPlayers();
         });
 
+        async function loadReminders() {
+            if (!dbFile) return;
+            try {
+                const res = await fetch(`/api/tournament-reminders?dbFile=${encodeURIComponent(dbFile)}`);
+                const data = await res.json();
+                if (!data.success) return;
+                
+                const section = document.getElementById("auto-reminder-section");
+                const details = document.getElementById("reminder-details");
+                
+                if (!data.admin_reg_end_date) {
+                    details.innerHTML = `<p style="color:#999;">No registration deadline set. Set it in Add/Remove Tournaments page.</p>`;
+                    section.style.display = "block";
+                    return;
+                }
+                
+                const regClose = data.admin_reg_end_date;
+                const today = new Date().toISOString().slice(0, 10);
+                const daysLeft = Math.ceil((new Date(regClose) - new Date(today)) / (1000*60*60*24));
+                
+                let scheduleHtml = `<p><strong>Registration closes:</strong> ${regClose} (${daysLeft} days left)</p>`;
+                scheduleHtml += `<p><strong>Scheduled reminders:</strong></p><ul style="margin:5px 0;padding-left:20px;">`;
+                
+                if (daysLeft > 7) {
+                    const d7 = new Date(new Date(regClose).getTime() - 7*24*60*60*1000).toISOString().slice(0,10);
+                    scheduleHtml += `<li>7-day reminder: <strong>${d7}</strong></li>`;
+                } else if (daysLeft === 7) {
+                    scheduleHtml += `<li>7-day reminder: <strong>Today!</strong></li>`;
+                } else {
+                    scheduleHtml += `<li style="color:#999;text-decoration:line-through;">7-day reminder: passed</li>`;
+                }
+                
+                if (daysLeft > 3) {
+                    const d3 = new Date(new Date(regClose).getTime() - 3*24*60*60*1000).toISOString().slice(0,10);
+                    scheduleHtml += `<li>3-day reminder: <strong>${d3}</strong></li>`;
+                } else if (daysLeft === 3) {
+                    scheduleHtml += `<li>3-day reminder: <strong>Today!</strong></li>`;
+                } else {
+                    scheduleHtml += `<li style="color:#999;text-decoration:line-through;">3-day reminder: passed</li>`;
+                }
+                scheduleHtml += `</ul>`;
+                
+                // Show recipients
+                const recipients = data.recipients || [];
+                scheduleHtml += `<p><strong>Recipients (${recipients.length} players not yet registered):</strong></p>`;
+                if (recipients.length) {
+                    scheduleHtml += `<div style="max-height:150px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px;padding:8px;background:white;font-size:0.85em;">`;
+                    scheduleHtml += recipients.map(r => `${r.name} — ${r.email}`).join("<br>");
+                    scheduleHtml += `</div>`;
+                } else {
+                    scheduleHtml += `<p style="color:#999;font-size:0.9em;">All eligible players are already registered!</p>`;
+                }
+                
+                // Send Now button
+                if (recipients.length && daysLeft > 0) {
+                    scheduleHtml += `<button onclick="sendReminderNow()" style="margin-top:10px;width:auto;padding:8px 16px;background:#f57c00;font-size:0.9em;">📧 Send Reminder Now</button>`;
+                }
+                
+                details.innerHTML = scheduleHtml;
+                section.style.display = "block";
+            } catch(e) {
+                console.error("Error loading reminders:", e);
+            }
+        }
+
+        async function sendReminderNow() {
+            if (!confirm("Send reminder email now to all listed recipients?")) return;
+            try {
+                const res = await fetch(`/api/send-tournament-reminder`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({tournament_name: dbFile})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`✅ Sent ${data.sent} reminder emails!`);
+                    loadReminders();
+                } else {
+                    alert(data.error || "Failed to send reminders");
+                }
+            } catch(e) {
+                alert("Error: " + e.message);
+            }
+        }
+
         async function downloadCSV() {
             try {
                 const res = await fetch(`/api/tournament-players?dbFile=${encodeURIComponent(dbFile)}&page=1&pageSize=10000`);
@@ -1063,6 +1156,7 @@
             }
             await loadPlayers();
             await loadWarnings();
+            if (isAdmin) await loadReminders();
         }
 
         async function loadWarnings() {
