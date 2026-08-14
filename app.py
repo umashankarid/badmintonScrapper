@@ -4230,6 +4230,57 @@ def send_tournament_reminder_now():
         return jsonify(success=False, error=str(e))
 
 
+def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
+    """Send notification to all admins that a tournament's registration has closed."""
+    try:
+        # Get admin emails (username IS the email)
+        conn_admin = sqlite3.connect(ADMIN_DB)
+        cur_admin = conn_admin.cursor()
+        cur_admin.execute("SELECT username FROM admin_users")
+        admin_emails = [row[0] for row in cur_admin.fetchall() if row[0] and "@" in row[0]]
+        
+        # Check if already notified today
+        from datetime import datetime
+        today = datetime.now().date().isoformat()
+        cur_admin.execute(
+            "SELECT id FROM reminders_sent WHERE tournament_db = ? AND sent_at LIKE ?",
+            (f"{tournament_name}_admin_closed", f"{today}%")
+        )
+        if cur_admin.fetchone():
+            conn_admin.close()
+            return  # Already notified today
+        
+        # Get registration count
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
+        cur_t = conn_t.cursor()
+        cur_t.execute("SELECT COUNT(*) FROM tournament_registrations WHERE tournament_name = ?", (tournament_name,))
+        reg_count = cur_t.fetchone()[0]
+        conn_t.close()
+        
+        subject = f"🏸 Registration closed: {tournament_name}"
+        body = (f"Hi Admin,\n\n"
+                f"The Komet registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
+                f"📊 Total registrations: {reg_count} players\n\n"
+                f"Please verify the registration details and ensure everything is in order.\n\n"
+                f"You can view the registrations at: https://activitylogger.bmkkomet.se/\n\n"
+                f"Best regards,\nBMK Komet System")
+        
+        for email in admin_emails:
+            result = send_email(email, subject, body)
+            if result is True:
+                logger.info(f"📧 Admin notification sent to {email} for {tournament_name}")
+        
+        # Mark as sent
+        conn_admin.execute(
+            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+            (f"{tournament_name}_admin_closed", "admin", datetime.now().isoformat())
+        )
+        conn_admin.commit()
+        conn_admin.close()
+    except Exception as e:
+        logger.error(f"❌ Error sending admin notification: {e}")
+
+
 def send_reminders():
     """
     Auto-email reminders to eligible players (based on tournament groups).
@@ -4261,7 +4312,11 @@ def send_reminders():
             
             days_left = (reg_close - today).days
             
-            # Only send at 7 days or 3 days before close
+            # Send admin notification on the day registration closes
+            if days_left == 0:
+                _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date)
+            
+            # Only send player reminders at 7 days or 3 days before close
             if days_left not in (7, 3):
                 continue
             
