@@ -228,9 +228,15 @@ def init_admin_db():
         CREATE TABLE IF NOT EXISTS admin_users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            password TEXT
+            password TEXT,
+            email TEXT
         )
     """)
+    # Add email column if it doesn't exist (for existing DBs)
+    try:
+        conn.execute("ALTER TABLE admin_users ADD COLUMN email TEXT")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS smtp_settings (
             id INTEGER PRIMARY KEY,
@@ -1230,19 +1236,20 @@ def admin_exists():
 
 @app.route("/admin/add-admin-by-id", methods=["POST"])
 def add_admin_by_id():
-    """Add admin by username only (admin-only operation, no verification)"""
+    """Add admin by username and email (admin-only operation, no verification)"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
     data = request.json
     username = data.get("username", "").strip()
+    email = data.get("email", "").strip()
     if not username:
         return jsonify(success=False, error="Username required"), 400
     
     # Add as admin
     conn = sqlite3.connect(ADMIN_DB)
     try:
-        conn.execute("INSERT INTO admin_users (username) VALUES (?)", (username,))
+        conn.execute("INSERT INTO admin_users (username, email) VALUES (?, ?)", (username, email or None))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -1342,8 +1349,8 @@ def api_list_admins():
         return jsonify(success=False, error="Unauthorized"), 401
     conn = sqlite3.connect(ADMIN_DB)
     cur = conn.cursor()
-    cur.execute("SELECT username FROM admin_users ORDER BY username")
-    admins = [row[0] for row in cur.fetchall()]
+    cur.execute("SELECT username, email FROM admin_users ORDER BY username")
+    admins = [{"username": row[0], "email": row[1] or ""} for row in cur.fetchall()]
     conn.close()
     return jsonify(success=True, admins=admins)
 
@@ -4233,11 +4240,16 @@ def send_tournament_reminder_now():
 def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
     """Send notification to all admins that a tournament's registration has closed."""
     try:
-        # Get admin emails (username IS the email)
+        # Get admin emails
         conn_admin = sqlite3.connect(ADMIN_DB)
         cur_admin = conn_admin.cursor()
-        cur_admin.execute("SELECT username FROM admin_users")
-        admin_emails = [row[0] for row in cur_admin.fetchall() if row[0] and "@" in row[0]]
+        cur_admin.execute("SELECT username, email FROM admin_users")
+        admin_emails = []
+        for row in cur_admin.fetchall():
+            # Use email field if set, otherwise fall back to username if it looks like email
+            email = row[1] if row[1] and "@" in row[1] else (row[0] if "@" in row[0] else None)
+            if email:
+                admin_emails.append(email)
         
         # Check if already notified today
         from datetime import datetime

@@ -13,10 +13,14 @@
     <div style="margin-top:20px;">
         <!-- Add Admin -->
         <h2>Add Admin</h2>
-        <form id="add-admin-form" style="display:flex;gap:10px;align-items:flex-end;max-width:500px;">
-            <div style="flex:1;">
-                <label for="new-admin-username">Email (used for login and notifications)</label>
-                <input type="email" id="new-admin-username" placeholder="admin@email.com" required style="margin-bottom:0;">
+        <form id="add-admin-form" style="display:flex;gap:10px;align-items:flex-end;max-width:600px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;">
+                <label for="new-admin-username">Username (Badminton Sweden login)</label>
+                <input type="text" id="new-admin-username" placeholder="e.g. username or email" required style="margin-bottom:0;">
+            </div>
+            <div style="flex:1;min-width:200px;">
+                <label for="new-admin-email">Email (for notifications)</label>
+                <input type="email" id="new-admin-email" placeholder="admin@email.com" style="margin-bottom:0;">
             </div>
             <button type="submit" style="padding:10px 20px;background:#0d47a1;white-space:nowrap;">Add Admin</button>
         </form>
@@ -49,8 +53,11 @@
                 container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
                     data.admins.map(admin => `
                         <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 15px;background:white;border:1px solid #e0e0e0;border-radius:8px;">
-                            <span style="font-weight:500;">${admin}</span>
-                            <button onclick="removeAdmin('${admin.replace(/'/g, "\\'")}')" style="padding:6px 14px;background:#cc3333;font-size:0.85em;width:auto;">Remove</button>
+                            <div>
+                                <span style="font-weight:500;">${admin.username}</span>
+                                ${admin.email ? `<span style="color:#666;font-size:0.85em;margin-left:8px;">📧 ${admin.email}</span>` : '<span style="color:#cc3333;font-size:0.8em;margin-left:8px;">(no email)</span>'}
+                            </div>
+                            <button onclick="removeAdmin('${admin.username.replace(/'/g, "\\'")}')" style="padding:6px 14px;background:#cc3333;font-size:0.85em;width:auto;">Remove</button>
                         </div>
                     `).join("") +
                     `</div>`;
@@ -62,6 +69,7 @@
         document.getElementById("add-admin-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const username = document.getElementById("new-admin-username").value.trim();
+            const email = document.getElementById("new-admin-email").value.trim();
             if (!username) return;
             
             const resultEl = document.getElementById("add-result");
@@ -70,7 +78,7 @@
             const res = await fetch("/admin/add-admin-by-id", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({username})
+                body: JSON.stringify({username, email})
             });
             const data = await res.json();
             
@@ -79,6 +87,7 @@
                 resultEl.style.background = "#e8f5e9";
                 resultEl.style.color = "#2e7d32";
                 document.getElementById("new-admin-username").value = "";
+                document.getElementById("new-admin-email").value = "";
                 loadAdmins();
             } else {
                 resultEl.textContent = `❌ ${data.error || 'Failed to add admin'}`;
