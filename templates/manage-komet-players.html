@@ -5,13 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Komet Players</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .tabs { display:flex;gap:0;border-bottom:2px solid #ddd;margin-bottom:20px; }
+        .tab-btn { padding:12px 24px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:1em;color:#666; }
+        .tab-btn.active { color:#1b5e20;border-bottom-color:#2e7d32;font-weight:bold; }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; }
+        .group-tag { display:inline-block;padding:2px 8px;background:#e8f5e9;border-radius:12px;font-size:0.8em;color:#2e7d32;margin:1px; }
+    </style>
 </head>
 <body>
     <h1>🏸 Manage Komet Players</h1>
     <a href="/manage.html">← Back to Manage</a>
 
-    <div style="margin-top:20px;max-width:700px;">
-        <!-- Add/Edit Form -->
+    <div class="tabs" style="margin-top:20px;">
+        <button class="tab-btn active" onclick="switchTab('players')">Add Players</button>
+        <button class="tab-btn" onclick="switchTab('groups')">Add Groups</button>
+    </div>
+
+    <!-- Tab 1: Add Players -->
+    <div id="players-tab" class="tab-content active" style="max-width:700px;">
         <form id="player-form" style="padding:15px;background:#f5f5f5;border-radius:8px;margin-bottom:20px;">
             <h3 id="form-title" style="margin-top:0;">Add Player</h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -29,8 +42,8 @@
                     <input type="email" id="player-email" placeholder="email@example.com">
                 </div>
                 <div>
-                    <label>Groups (comma separated)</label>
-                    <input type="text" id="player-groups" placeholder="e.g. U13, Parents, Board">
+                    <label>Groups</label>
+                    <div id="groups-checkboxes" style="max-height:100px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;padding:8px;background:white;"></div>
                 </div>
             </div>
             <input type="hidden" id="edit-id" value="">
@@ -44,19 +57,108 @@
         <div style="margin-bottom:15px;">
             <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="max-width:400px;">
         </div>
-
-        <!-- Player count -->
         <p id="player-count" style="color:#666;font-size:0.9em;"></p>
-
-        <!-- Players List -->
         <div id="players-list"></div>
         <div id="pagination" style="margin-top:15px;display:flex;gap:10px;align-items:center;"></div>
+    </div>
+
+    <!-- Tab 2: Add Groups -->
+    <div id="groups-tab" class="tab-content" style="max-width:500px;">
+        <h3>Create Player Groups</h3>
+        <p style="color:#666;font-size:0.9em;">Groups are used to categorize players (e.g. U13, U15, Parents, Board).</p>
+        
+        <form id="group-form" style="display:flex;gap:10px;margin-bottom:20px;">
+            <input type="text" id="new-group-name" placeholder="Group name (e.g. U13, Parents)" required style="flex:1;margin:0;">
+            <button type="submit" style="background:#28a745;width:auto;padding:8px 16px;">Add Group</button>
+        </form>
+
+        <h3>Existing Groups</h3>
+        <div id="groups-list"></div>
     </div>
 
     <script>
         let currentPage = 1;
         const pageSize = 30;
+        let allGroups = [];
 
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tab + '-tab').classList.add('active');
+            document.querySelectorAll('.tab-btn')[tab === 'players' ? 0 : 1].classList.add('active');
+            if (tab === 'groups') loadGroupsList();
+        }
+
+        // === Groups Management ===
+        async function loadGroups() {
+            const res = await fetch("/api/player-groups");
+            const data = await res.json();
+            allGroups = data.success ? data.groups : [];
+            renderGroupCheckboxes();
+        }
+
+        function renderGroupCheckboxes(selectedGroups = []) {
+            const container = document.getElementById("groups-checkboxes");
+            if (!allGroups.length) {
+                container.innerHTML = "<span style='color:#999;font-size:0.85em;'>No groups yet. Create one in the Groups tab.</span>";
+                return;
+            }
+            container.innerHTML = allGroups.map(g => `
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.9em;margin:2px 0;">
+                    <input type="checkbox" class="group-checkbox" value="${g.group_name}" 
+                        ${selectedGroups.includes(g.group_name) ? 'checked' : ''}>
+                    ${g.group_name}
+                </label>
+            `).join("");
+        }
+
+        function getSelectedGroups() {
+            return Array.from(document.querySelectorAll(".group-checkbox:checked")).map(cb => cb.value);
+        }
+
+        async function loadGroupsList() {
+            await loadGroups();
+            const container = document.getElementById("groups-list");
+            if (!allGroups.length) {
+                container.innerHTML = "<p style='color:#999;'>No groups yet.</p>";
+                return;
+            }
+            container.innerHTML = allGroups.map(g => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:white;border:1px solid #e0e0e0;border-radius:6px;margin-bottom:6px;">
+                    <span>${g.group_name}</span>
+                    <button onclick="deleteGroup(${g.id}, '${g.group_name.replace(/'/g,"\\'")}')" style="width:auto;padding:4px 10px;font-size:0.8em;background:#cc3333;">Delete</button>
+                </div>
+            `).join("");
+        }
+
+        document.getElementById("group-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const name = document.getElementById("new-group-name").value.trim();
+            if (!name) return;
+            const res = await fetch("/api/player-groups", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({group_name: name})
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById("new-group-name").value = "";
+                loadGroupsList();
+                loadGroups(); // Refresh checkboxes in players tab
+            } else {
+                alert(data.error || "Failed to add group");
+            }
+        });
+
+        async function deleteGroup(id, name) {
+            if (!confirm(`Delete group "${name}"?`)) return;
+            const res = await fetch(`/api/player-groups/${id}`, {method: "DELETE"});
+            const data = await res.json();
+            if (data.success) { loadGroupsList(); loadGroups(); }
+            else alert(data.error || "Failed to delete");
+        }
+
+        // === Players Management ===
         async function loadPlayers(page = 1, search = "") {
             currentPage = page;
             const container = document.getElementById("players-list");
@@ -87,15 +189,17 @@
                     </thead>
                     <tbody>
                         ${data.players.map(p => {
-                            const groups = p.groups ? JSON.parse(p.groups).join(", ") : "";
+                            let groups = [];
+                            try { groups = p.groups ? JSON.parse(p.groups) : []; } catch(e) {}
+                            const groupTags = groups.map(g => `<span class="group-tag">${g}</span>`).join("");
                             return `
                             <tr>
                                 <td>${p.name}</td>
                                 <td>${p.license_id || ""}</td>
                                 <td>${p.email || ""}</td>
-                                <td><span style="font-size:0.85em;color:#666;">${groups}</span></td>
+                                <td>${groupTags}</td>
                                 <td>
-                                    <button onclick="editPlayer(${p.id}, '${(p.license_id||'').replace(/'/g,"\\'")}', '${(p.name||'').replace(/'/g,"\\'")}', '${(p.email||'').replace(/'/g,"\\'")}', '${groups.replace(/'/g,"\\'")}')" style="width:auto;padding:4px 10px;font-size:0.8em;background:#f57c00;">Edit</button>
+                                    <button onclick='editPlayer(${JSON.stringify(p)})' style="width:auto;padding:4px 10px;font-size:0.8em;background:#f57c00;">Edit</button>
                                     <button onclick="deletePlayer(${p.id}, '${(p.name||'').replace(/'/g,"\\'")}')" style="width:auto;padding:4px 10px;font-size:0.8em;background:#cc3333;">Delete</button>
                                 </td>
                             </tr>`;
@@ -104,7 +208,6 @@
                 </table>
             `;
             
-            // Pagination
             const totalPages = Math.ceil(data.total / pageSize);
             let pagHtml = `<span style="color:#666;font-size:0.9em;">Page ${page} of ${totalPages}</span>`;
             if (page > 1) pagHtml += `<button onclick="loadPlayers(${page-1}, document.getElementById('search-input').value)" style="width:auto;padding:5px 12px;">← Prev</button>`;
@@ -116,11 +219,12 @@
         document.getElementById("player-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const editId = document.getElementById("edit-id").value;
+            const selectedGroups = getSelectedGroups();
             const playerData = {
                 license_id: document.getElementById("player-license").value.trim(),
                 name: document.getElementById("player-name").value.trim(),
                 email: document.getElementById("player-email").value.trim(),
-                groups: document.getElementById("player-groups").value.trim()
+                groups: selectedGroups.join(", ")
             };
             
             let res;
@@ -146,14 +250,17 @@
             }
         });
 
-        function editPlayer(id, licenseId, name, email, groups) {
-            document.getElementById("edit-id").value = id;
-            document.getElementById("player-license").value = licenseId;
+        function editPlayer(p) {
+            let groups = [];
+            try { groups = p.groups ? JSON.parse(p.groups) : []; } catch(e) {}
+            
+            document.getElementById("edit-id").value = p.id;
+            document.getElementById("player-license").value = p.license_id || "";
             document.getElementById("player-license").readOnly = false;
             document.getElementById("player-license").style.background = "";
-            document.getElementById("player-name").value = name;
-            document.getElementById("player-email").value = email;
-            document.getElementById("player-groups").value = groups;
+            document.getElementById("player-name").value = p.name || "";
+            document.getElementById("player-email").value = p.email || "";
+            renderGroupCheckboxes(groups);
             document.getElementById("form-title").textContent = "Edit Player";
             document.getElementById("cancel-btn").style.display = "inline-block";
             document.getElementById("player-form").scrollIntoView({behavior: "smooth"});
@@ -166,17 +273,15 @@
             document.getElementById("player-license").style.background = "#f0f0f0";
             document.getElementById("form-title").textContent = "Add Player";
             document.getElementById("cancel-btn").style.display = "none";
+            renderGroupCheckboxes([]);
         }
 
         async function deletePlayer(id, name) {
             if (!confirm(`Delete ${name} from Komet players?`)) return;
             const res = await fetch(`/api/komet-players/${id}`, {method: "DELETE"});
             const data = await res.json();
-            if (data.success) {
-                loadPlayers(currentPage, document.getElementById("search-input").value);
-            } else {
-                alert(data.error || "Failed to delete");
-            }
+            if (data.success) loadPlayers(currentPage, document.getElementById("search-input").value);
+            else alert(data.error || "Failed to delete");
         }
 
         // Live search on name field
@@ -191,10 +296,7 @@
             nameSearchTimeout = setTimeout(async () => {
                 const res = await fetch(`/api/search-players?q=${encodeURIComponent(q)}`);
                 const players = await res.json();
-                if (!players.length) {
-                    nameResults.style.display = "none";
-                    return;
-                }
+                if (!players.length) { nameResults.style.display = "none"; return; }
                 nameResults.innerHTML = players.map((p, i) => 
                     `<div class="search-item" data-index="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;"
                          onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background='white'">
@@ -203,35 +305,30 @@
                     </div>`
                 ).join("");
                 nameResults.style.display = "block";
-                
-                // Click handler for each result
                 nameResults.querySelectorAll(".search-item").forEach((el, idx) => {
                     el.addEventListener("click", () => {
-                        const selected = players[idx];
-                        document.getElementById("player-name").value = selected.name || "";
-                        document.getElementById("player-license").value = selected.license_id || "";
+                        document.getElementById("player-name").value = players[idx].name || "";
+                        document.getElementById("player-license").value = players[idx].license_id || "";
                         nameResults.style.display = "none";
                     });
                 });
             }, 300);
         });
 
-        // Hide results when clicking outside
         document.addEventListener("click", (e) => {
-            if (!nameInput.contains(e.target) && !nameResults.contains(e.target)) {
+            if (!nameInput.contains(e.target) && !nameResults.contains(e.target))
                 nameResults.style.display = "none";
-            }
         });
 
-        // Search with debounce
+        // Search players list
         let searchTimeout;
         document.getElementById("search-input").addEventListener("input", (e) => {
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                loadPlayers(1, e.target.value.trim());
-            }, 300);
+            searchTimeout = setTimeout(() => loadPlayers(1, e.target.value.trim()), 300);
         });
 
+        // Init
+        loadGroups();
         loadPlayers();
     </script>
 </body>

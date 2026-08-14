@@ -250,6 +250,12 @@ def init_admin_db():
             emails TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS player_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_name TEXT UNIQUE NOT NULL
+        )
+    """)
     conn.commit()
     
     # Insert default admin if it doesn't exist
@@ -3616,6 +3622,58 @@ def get_player_dob():
         return jsonify(success=True, dob="", age="")
     except Exception as e:
         return jsonify(success=True, dob="", age="")
+
+
+@app.route("/api/player-groups", methods=["GET"])
+def get_player_groups():
+    """Get all player groups"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT id, group_name FROM player_groups ORDER BY group_name")
+        groups = [{"id": row[0], "group_name": row[1]} for row in cur.fetchall()]
+        conn.close()
+        return jsonify(success=True, groups=groups)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/player-groups", methods=["POST"])
+def create_player_group():
+    """Create a new player group"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    data = request.json
+    group_name = data.get("group_name", "").strip()
+    if not group_name:
+        return jsonify(success=False, error="Group name required")
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        conn.execute("INSERT INTO player_groups (group_name) VALUES (?)", (group_name,))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True)
+    except sqlite3.IntegrityError:
+        return jsonify(success=False, error=f"Group '{group_name}' already exists")
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/player-groups/<int:group_id>", methods=["DELETE"])
+def delete_player_group(group_id):
+    """Delete a player group"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        conn.execute("DELETE FROM player_groups WHERE id = ?", (group_id,))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
 
 
 @app.route("/api/komet-players", methods=["GET"])
