@@ -1752,10 +1752,52 @@ def delete_tournament():
 
 @app.route("/admin/submit-tournament", methods=["POST"])
 def submit_tournament():
+    """Submit tournament registrations to Badminton Sweden via Playwright automation."""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
-    # TODO: Implement actual submission to Badminton Sweden
-    return jsonify(success=True, message="Submit functionality will be implemented later.")
+
+    data = request.json
+    tournament_name = data.get("db", "").strip()
+    club_password = data.get("password", "").strip()
+
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required"), 400
+    if not club_password:
+        return jsonify(success=False, error="Club account password required"), 400
+
+    # Use the club account (sbf04959) for registration
+    club_login = "sbf04959"
+
+    try:
+        from bwf_submit import submit_tournament_sync
+
+        logger.info(f"🏸 Starting BWF submission for tournament: {tournament_name}")
+
+        result = submit_tournament_sync(
+            tournament_name=tournament_name,
+            club_login=club_login,
+            club_password=club_password,
+            headless=True
+        )
+
+        if result["success"]:
+            logger.info(f"✅ BWF submission complete: {result['message']}")
+        else:
+            logger.warning(f"⚠️  BWF submission issues: {result['message']}")
+
+        return jsonify(
+            success=result["success"],
+            message=result["message"],
+            submitted=result.get("submitted", []),
+            failed=result.get("failed", [])
+        )
+
+    except ImportError as e:
+        logger.error(f"❌ Playwright not available: {e}")
+        return jsonify(success=False, error="Playwright is not installed. Run: pip install playwright && playwright install chromium"), 500
+    except Exception as e:
+        logger.error(f"❌ BWF submission error: {e}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route("/admin/edit-tournament", methods=["POST"])

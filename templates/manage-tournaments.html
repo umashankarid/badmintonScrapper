@@ -177,7 +177,7 @@
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                         <button onclick="window.location.href='/tournament.html?db=${t.db}'" style="padding:8px 14px;font-size:0.85em;">View</button>
                         <button onclick="editTournament('${t.db}')" style="background:#f0a000;padding:8px 14px;font-size:0.85em;">Edit</button>
-                        <button onclick="submitTournament('${t.db}', '${t.name.replace(/'/g, "\\'")}')" style="background:#28a745;padding:8px 14px;font-size:0.85em;">Submit</button>
+                        <button onclick="submitTournament('${t.db}', '${t.name.replace(/'/g, "\\'")}')" style="background:#28a745;padding:8px 14px;font-size:0.85em;">Submit to BWF</button>
                         <button onclick="downloadPlayerData('${t.db}')" style="background:#0066cc;padding:8px 14px;font-size:0.85em;">Download CSV</button>
                         <button onclick="deleteTournament('${t.db}')" style="background:#cc3333;padding:8px 14px;font-size:0.85em;">Delete</button>
                     </div>
@@ -243,17 +243,84 @@
         }
 
         async function submitTournament(db, name) {
-            if (!confirm(`Submit "${name}" to Badminton Sweden?\n\nThis will submit all registrations. (Not yet implemented)`)) return;
-            const res = await fetch("/admin/submit-tournament", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({db})
-            });
-            const data = await res.json();
-            if (data.success) {
-                alert(data.message || "Tournament submitted successfully!");
-            } else {
-                alert(data.error || "Submit failed");
+            if (!confirm(`Submit "${name}" to Badminton Sweden?\n\nThis will submit all registered players using the club account (sbf04959).\n\nYou will need the club account password.`)) return;
+            
+            const password = prompt("Enter club account (sbf04959) password:");
+            if (!password) return;
+            
+            // Show loading state
+            const submitBtns = document.querySelectorAll('button');
+            submitBtns.forEach(btn => { if (btn.textContent === 'Submit to BWF') btn.disabled = true; });
+            
+            // Create a status overlay
+            const overlay = document.createElement('div');
+            overlay.id = 'submit-overlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;';
+            overlay.innerHTML = `
+                <div style="background:white;border-radius:12px;padding:30px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+                    <h3 style="margin-top:0;">🏸 Submitting to Badminton Sweden...</h3>
+                    <p id="submit-status">Logging in and processing registrations. This may take a few minutes.</p>
+                    <div id="submit-progress" style="margin:15px 0;">
+                        <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
+                            <div id="progress-bar" style="width:0%;height:100%;background:#28a745;transition:width 0.3s;"></div>
+                        </div>
+                    </div>
+                    <div id="submit-results" style="display:none;"></div>
+                    <button id="close-overlay-btn" style="display:none;margin-top:15px;padding:10px 20px;" onclick="document.getElementById('submit-overlay').remove()">Close</button>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            
+            try {
+                const res = await fetch("/admin/submit-tournament", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({db, password})
+                });
+                const data = await res.json();
+                
+                // Show results
+                const statusEl = document.getElementById('submit-status');
+                const resultsEl = document.getElementById('submit-results');
+                const closeBtn = document.getElementById('close-overlay-btn');
+                const progressBar = document.getElementById('progress-bar');
+                
+                progressBar.style.width = '100%';
+                resultsEl.style.display = 'block';
+                closeBtn.style.display = 'inline-block';
+                
+                if (data.success) {
+                    statusEl.innerHTML = `<span style="color:#28a745;font-weight:bold;">✅ ${data.message}</span>`;
+                } else {
+                    statusEl.innerHTML = `<span style="color:#cc3333;font-weight:bold;">⚠️ ${data.message || data.error || 'Submission failed'}</span>`;
+                }
+                
+                let html = '';
+                if (data.submitted && data.submitted.length) {
+                    html += '<h4 style="color:#28a745;margin-bottom:8px;">✅ Submitted Successfully:</h4><ul style="margin-top:0;">';
+                    data.submitted.forEach(p => {
+                        html += `<li><strong>${p.player_name}</strong> (${p.license_id}) — ${p.message || 'OK'}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                if (data.failed && data.failed.length) {
+                    html += '<h4 style="color:#cc3333;margin-bottom:8px;">❌ Failed:</h4><ul style="margin-top:0;">';
+                    data.failed.forEach(p => {
+                        html += `<li><strong>${p.player_name}</strong> (${p.license_id}) — ${p.error}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                if (!html) {
+                    html = `<p>${data.error || data.message || 'No details available'}</p>`;
+                }
+                resultsEl.innerHTML = html;
+            } catch (e) {
+                const statusEl = document.getElementById('submit-status');
+                const closeBtn = document.getElementById('close-overlay-btn');
+                if (statusEl) statusEl.innerHTML = `<span style="color:#cc3333;">❌ Error: ${e.message}</span>`;
+                if (closeBtn) closeBtn.style.display = 'inline-block';
+            } finally {
+                submitBtns.forEach(btn => { if (btn.textContent === 'Submit to BWF') btn.disabled = false; });
             }
         }
 
