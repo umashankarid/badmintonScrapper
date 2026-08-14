@@ -4204,8 +4204,11 @@ def send_tournament_reminder_now():
             WHERE tr.tournament_name = ? AND p.email IS NOT NULL AND p.email != ''
         """, (tournament_name,))
         
+        rows = cur_t.fetchall()
+        logger.info(f"📧 Send reminder: tournament={tournament_name}, reg_end={admin_reg_end_date}, recipients found={len(rows)}")
+        
         sent = 0
-        for name, email in cur_t.fetchall():
+        for name, email in rows:
             subject = f"📋 Reminder: {tournament_name}"
             body = (f"Hi {name},\n\n"
                     f"This is a reminder about your registration for '{tournament_name}'.\n"
@@ -4213,10 +4216,13 @@ def send_tournament_reminder_now():
                     f"Make sure your registration details are complete.\n\n"
                     f"Best regards,\nBMK Komet")
             
+            logger.info(f"📧 Attempting to send reminder to {email}...")
             result = send_email(email, subject, body)
             if result is True:
                 sent += 1
-                logger.info(f"📧 Manual reminder sent to {email} for {tournament_name}")
+                logger.info(f"📧 ✅ Reminder sent to {email}")
+            else:
+                logger.error(f"📧 ❌ Failed to send to {email}: {result}")
         
         conn_t.close()
         return jsonify(success=True, sent=sent)
