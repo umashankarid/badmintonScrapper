@@ -4249,29 +4249,25 @@ def get_tournament_reminders():
 
 @app.route("/api/send-tournament-reminder", methods=["POST"])
 def send_tournament_reminder_now():
-    """Send reminder email NOW to all registered players in the tournament"""
+    """Send email to all registered players in the tournament with custom subject/message"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
     data = request.json
     tournament_name = data.get("tournament_name", "").strip()
+    custom_subject = data.get("subject", "").strip()
+    custom_message = data.get("message", "").strip()
+    
     if not tournament_name:
         return jsonify(success=False, error="Tournament name required")
+    if not custom_subject or not custom_message:
+        return jsonify(success=False, error="Subject and message required")
     
     try:
-        # Get tournament info
-        conn_t = sqlite3.connect(TOURNAMENTS_DB)
-        cur_t = conn_t.cursor()
-        cur_t.execute("SELECT admin_reg_end_date FROM tournaments WHERE tournament_name = ?", (tournament_name,))
-        row = cur_t.fetchone()
-        if not row or not row[0]:
-            conn_t.close()
-            return jsonify(success=False, error="No registration deadline set for this tournament")
-        
-        admin_reg_end_date = row[0]
-        
         # Get registered players with emails
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
         conn_t.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
+        cur_t = conn_t.cursor()
         cur_t.execute("""
             SELECT p.name, p.email
             FROM tournament_registrations tr
@@ -4280,26 +4276,22 @@ def send_tournament_reminder_now():
         """, (tournament_name,))
         
         rows = cur_t.fetchall()
-        logger.info(f"📧 Send reminder: tournament={tournament_name}, reg_end={admin_reg_end_date}, recipients found={len(rows)}")
+        conn_t.close()
+        logger.info(f"📧 Sending to {len(rows)} registered players for {tournament_name}")
         
         sent = 0
         for name, email in rows:
-            subject = f"📋 Reminder: {tournament_name}"
-            body = (f"Hi {name},\n\n"
-                    f"This is a reminder about your registration for '{tournament_name}'.\n"
-                    f"Registration closes on {admin_reg_end_date}.\n\n"
-                    f"Make sure your registration details are complete.\n\n"
-                    f"Best regards,\nBMK Komet")
+            # Personalize: add greeting
+            body = f"Hi {name},\n\n{custom_message}\n\nBest regards,\nBMK Komet"
             
-            logger.info(f"📧 Attempting to send reminder to {email}...")
-            result = send_email(email, subject, body)
+            logger.info(f"📧 Sending to {email}...")
+            result = send_email(email, custom_subject, body)
             if result is True:
                 sent += 1
-                logger.info(f"📧 ✅ Reminder sent to {email}")
+                logger.info(f"📧 ✅ Sent to {email}")
             else:
                 logger.error(f"📧 ❌ Failed to send to {email}: {result}")
         
-        conn_t.close()
         return jsonify(success=True, sent=sent)
     except Exception as e:
         return jsonify(success=False, error=str(e))
