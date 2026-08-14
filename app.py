@@ -1875,7 +1875,8 @@ def get_all_bwf_tournaments():
         conn.close()
         
         # STEP 2: For each tournament, extract complete date details and categories
-        logger.info(f"📝 Processing {len(tournaments)} tournaments to extract complete date details and categories...")
+        # OPTIMIZATION: Skip detail fetch for tournaments that already exist (have dates/categories)
+        logger.info(f"📝 Processing {len(tournaments)} tournaments...")
         added_count = 0
         updated_count = 0
         
@@ -1884,22 +1885,29 @@ def get_all_bwf_tournaments():
                 # Check if tournament already exists by tournament_name
                 conn = sqlite3.connect(TOURNAMENTS_DB)
                 cur = conn.cursor()
-                cur.execute("SELECT tournament_name FROM tournaments WHERE tournament_name = ?", (t["name"],))
+                cur.execute("SELECT tournament_name, categories FROM tournaments WHERE tournament_name = ?", (t["name"],))
                 existing = cur.fetchone()
                 conn.close()
                 
-                # Fetch tournament page directly to extract all dates
-                logger.debug(f"🔍 Extracting complete data for: {t['name']}")
+                # If tournament already exists with categories, just update basic info (no scraping needed)
+                if existing and existing[1]:
+                    conn = sqlite3.connect(TOURNAMENTS_DB)
+                    cur = conn.cursor()
+                    cur.execute("""
+                        UPDATE tournaments 
+                        SET tournament_url = ?, location = ?, date_start = COALESCE(date_start, ?), 
+                            date_end = COALESCE(date_end, ?), last_updated = CURRENT_TIMESTAMP
+                        WHERE tournament_name = ?
+                    """, (t["url"], t["location"], t["date_start"], t["date_end"], t["name"]))
+                    conn.commit()
+                    conn.close()
+                    updated_count += 1
+                    continue
                 
-                s_detail = ext_requests.Session()
-                s_detail.headers.update({"User-Agent": "Mozilla/5.0"})
-                s_detail.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-                    "ReturnUrl": "/",
-                    "SettingsOpen": "false",
-                    "CookieWallCategoryPreferences": "1,2,3"
-                }, allow_redirects=True, timeout=5)
+                # NEW tournament: fetch full details (dates + categories)
+                logger.info(f"🔍 Fetching details for NEW tournament: {t['name']}")
                 
-                resp_detail = s_detail.get(t["url"], timeout=10)
+                resp_detail = s.get(t["url"], timeout=10)
                 soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
                 
                 # Extract detailed dates
@@ -1937,7 +1945,7 @@ def get_all_bwf_tournaments():
                 if tid_match:
                     tid = tid_match.group(1)
                     try:
-                        events_resp = s_detail.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
+                        events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
                         events_soup = BeautifulSoup(events_resp.text, "html.parser")
                         
                         # Extract event categories and map to registration fields
@@ -1975,8 +1983,7 @@ def get_all_bwf_tournaments():
                 cur = conn.cursor()
                 
                 if existing:
-                    # Tournament exists - preserve selected_for_view, update ALL fields
-                    preserved_selected = selection_map.get(t["name"], 0)
+                    # Tournament exists but had no categories - update with full data
                     cur.execute("""
                         UPDATE tournaments 
                         SET tournament_url = ?, location = ?, date_start = ?, date_end = ?,
@@ -1989,7 +1996,7 @@ def get_all_bwf_tournaments():
                         dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
                         dates.get("competition_end", ""), json.dumps(categories), t["name"]
                     ))
-                    logger.info(f"✅ Updated tournament: {t['name']} (preserved selection={preserved_selected})")
+                    logger.info(f"✅ Updated tournament with details: {t['name']}")
                     updated_count += 1
                 else:
                     # New tournament - insert with selected_for_view = 0
