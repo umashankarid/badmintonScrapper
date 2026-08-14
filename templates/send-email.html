@@ -12,17 +12,35 @@
 
     <div style="margin-top:20px;max-width:700px;">
         <form id="email-form">
-            <label>To (email addresses)</label>
-            <div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-                <select id="tournament-select" style="width:auto;padding:6px;font-size:0.85em;" onchange="loadFromTournament()">
-                    <option value="">-- Send to tournament players --</option>
-                </select>
-                <select id="group-select" style="width:auto;padding:6px;font-size:0.85em;" onchange="loadFromGroup()">
-                    <option value="">-- Send to group --</option>
-                </select>
-                <button type="button" onclick="loadAllKometEmails()" style="width:auto;padding:6px 12px;background:#0d47a1;font-size:0.85em;">Load All Komet Players</button>
+            <label>Load Recipients</label>
+            <div style="margin-bottom:10px;padding:12px;background:#f5f5f5;border-radius:8px;">
+                <div style="display:flex;gap:15px;margin-bottom:10px;">
+                    <label style="cursor:pointer;font-size:0.9em;"><input type="radio" name="load-type" value="tournament" onchange="showLoadOption()"> By Tournament</label>
+                    <label style="cursor:pointer;font-size:0.9em;"><input type="radio" name="load-type" value="group" onchange="showLoadOption()"> By Group</label>
+                    <label style="cursor:pointer;font-size:0.9em;"><input type="radio" name="load-type" value="all" onchange="showLoadOption()"> All Komet Players</label>
+                </div>
+                
+                <div id="tournament-option" style="display:none;">
+                    <select id="tournament-select" style="width:100%;padding:8px;font-size:0.9em;">
+                        <option value="">-- Select tournament --</option>
+                    </select>
+                    <button type="button" onclick="loadFromTournament()" style="margin-top:8px;width:auto;padding:6px 14px;background:#0d47a1;font-size:0.85em;">Load Emails</button>
+                </div>
+                
+                <div id="group-option" style="display:none;">
+                    <select id="group-select" multiple style="width:100%;padding:8px;font-size:0.9em;height:80px;">
+                    </select>
+                    <p style="color:#999;font-size:0.8em;margin:4px 0 0;">Hold Ctrl/Cmd to select multiple groups</p>
+                    <button type="button" onclick="loadFromGroups()" style="margin-top:8px;width:auto;padding:6px 14px;background:#0d47a1;font-size:0.85em;">Load Emails</button>
+                </div>
+                
+                <div id="all-option" style="display:none;">
+                    <button type="button" onclick="loadAllKometEmails()" style="width:auto;padding:6px 14px;background:#0d47a1;font-size:0.85em;">Load All Komet Player Emails</button>
+                </div>
             </div>
-            <textarea id="email-to" rows="3" placeholder="Enter email addresses separated by comma, or use the button above to load..." style="width:100%;font-size:0.9em;"></textarea>
+
+            <label>To (email addresses)</label>
+            <textarea id="email-to" rows="3" placeholder="Email addresses will be loaded here..." style="width:100%;font-size:0.9em;"></textarea>
             <p style="color:#999;font-size:0.8em;margin-top:2px;" id="email-count"></p>
             
             <label>Subject</label>
@@ -41,22 +59,35 @@
     </div>
 
     <script>
-        // Load tournaments for filter
+        function showLoadOption() {
+            document.getElementById("tournament-option").style.display = "none";
+            document.getElementById("group-option").style.display = "none";
+            document.getElementById("all-option").style.display = "none";
+            
+            const selected = document.querySelector('input[name="load-type"]:checked');
+            if (selected) {
+                document.getElementById(selected.value + "-option").style.display = "block";
+            }
+        }
+
         async function loadTournaments() {
             try {
-                const res = await fetch("/api/open-tournaments");
+                // Use bwf-tournaments-all cached data for admin (shows all selected tournaments)
+                const res = await fetch("/api/bwf-tournaments-all");
                 const data = await res.json();
                 const select = document.getElementById("tournament-select");
-                (data.tournaments || []).forEach(t => {
-                    const opt = document.createElement("option");
-                    opt.value = t.name;
-                    opt.textContent = t.name;
-                    select.appendChild(opt);
-                });
+                if (data.success && data.tournaments) {
+                    data.tournaments.filter(t => t.selected_for_view).forEach(t => {
+                        const opt = document.createElement("option");
+                        opt.value = t.name;
+                        opt.textContent = t.name;
+                        select.appendChild(opt);
+                    });
+                }
             } catch(e) {}
         }
 
-        async function loadGroups() {
+        async function loadPlayerGroups() {
             try {
                 const res = await fetch("/api/player-groups");
                 const data = await res.json();
@@ -74,8 +105,7 @@
 
         async function loadFromTournament() {
             const tournament = document.getElementById("tournament-select").value;
-            if (!tournament) return;
-            document.getElementById("group-select").value = "";
+            if (!tournament) { alert("Select a tournament first"); return; }
             try {
                 const res = await fetch(`/api/registered-emails?tournament=${encodeURIComponent(tournament)}`);
                 const data = await res.json();
@@ -89,26 +119,30 @@
             }
         }
 
-        async function loadFromGroup() {
-            const group = document.getElementById("group-select").value;
-            if (!group) return;
-            document.getElementById("tournament-select").value = "";
+        async function loadFromGroups() {
+            const select = document.getElementById("group-select");
+            const selectedGroups = Array.from(select.selectedOptions).map(o => o.value);
+            if (!selectedGroups.length) { alert("Select at least one group"); return; }
+            
             try {
-                const res = await fetch(`/api/group-emails?group=${encodeURIComponent(group)}`);
-                const data = await res.json();
-                if (data.success) {
-                    const emails = data.emails.filter(e => e && e.includes("@"));
-                    document.getElementById("email-to").value = emails.join(", ");
-                    document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} from group "${group}"`;
+                // Fetch emails for each selected group and combine
+                let allEmails = new Set();
+                for (const group of selectedGroups) {
+                    const res = await fetch(`/api/group-emails?group=${encodeURIComponent(group)}`);
+                    const data = await res.json();
+                    if (data.success) {
+                        data.emails.filter(e => e && e.includes("@")).forEach(e => allEmails.add(e));
+                    }
                 }
+                const emails = Array.from(allEmails);
+                document.getElementById("email-to").value = emails.join(", ");
+                document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} from group${selectedGroups.length > 1 ? 's' : ''}: ${selectedGroups.join(", ")}`;
             } catch(e) {
                 alert("Error: " + e.message);
             }
         }
 
         async function loadAllKometEmails() {
-            document.getElementById("tournament-select").value = "";
-            document.getElementById("group-select").value = "";
             try {
                 const res = await fetch("/api/group-emails");
                 const data = await res.json();
@@ -118,9 +152,6 @@
                     document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} (all Komet players)`;
                 }
             } catch(e) {
-                alert("Error: " + e.message);
-            }
-        }
                 alert("Error: " + e.message);
             }
         }
@@ -195,7 +226,7 @@
         }
 
         loadTournaments();
-        loadGroups();
+        loadPlayerGroups();
     </script>
 </body>
 </html>
