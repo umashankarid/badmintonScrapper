@@ -85,7 +85,16 @@
                                 ${t.selected_for_view ? 'checked' : ''} 
                                 style="cursor: pointer; width: 20px; height: 20px;">
                             <div style="flex: 1;">
-                                <div style="font-weight: bold; color: #1a237e;">${t.name}</div>
+                                <div style="font-weight: bold; color: #1a237e;">${t.name} ${(() => {
+                                    const cats = t.categories || {};
+                                    const allLevels = [...(cats.singles_levels||[]), ...(cats.doubles_levels||[]), ...(cats.mixed_levels||[])];
+                                    const hasJunior = allLevels.some(l => /U\d/.test(l));
+                                    const hasSenior = allLevels.some(l => /(Elit|\\bA\\b|\\bB\\b|\\bC\\b|\\bD\\b)/.test(l.split(' ').pop()));
+                                    if (hasJunior && hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#e3f2fd;color:#1565c0;margin-left:5px;">Junior+Senior</span>';
+                                    if (hasJunior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span>';
+                                    if (hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#f3e5f5;color:#6a1b9a;margin-left:5px;">Senior</span>';
+                                    return '';
+                                })()}</div>
                                 <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
                                 ${t.registration_closes ? `<div style="color:#e65100;font-size:0.8em;">📝 reg. closes: ${t.registration_closes}</div>` : ''}
                                 ${t.categories && (t.categories.singles_levels || t.categories.doubles_levels || t.categories.mixed_levels) ? `<div style="font-size:0.75em;color:#555;margin-top:3px;">🏸 ${[...(t.categories.singles_levels||[]), ...(t.categories.doubles_levels||[]), ...(t.categories.mixed_levels||[])].join(', ')}</div>` : ''}
