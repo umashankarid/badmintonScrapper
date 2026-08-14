@@ -44,8 +44,8 @@
                     <input type="email" id="player-email" placeholder="email@example.com">
                 </div>
                 <div>
-                    <label>Groups (select one or more)</label>
-                    <div id="groups-checkboxes" style="max-height:120px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;padding:8px;background:white;"></div>
+                    <label>Groups</label>
+                    <div id="groups-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0;"></div>
                 </div>
             </div>
             <input type="hidden" id="edit-id" value="">
@@ -105,13 +105,15 @@
                 container.innerHTML = "<span style='color:#999;font-size:0.85em;'>No groups yet. Create one in the Groups tab.</span>";
                 return;
             }
-            container.innerHTML = allGroups.map(g => `
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.9em;margin:2px 0;">
+            container.innerHTML = allGroups.map(g => {
+                const checked = selectedGroups.includes(g.group_name);
+                return `
+                <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px 10px;border-radius:16px;font-size:0.85em;border:1px solid ${checked ? '#2e7d32' : '#ccc'};background:${checked ? '#e8f5e9' : '#fff'};color:${checked ? '#2e7d32' : '#666'};transition:all 0.2s;">
                     <input type="checkbox" class="group-checkbox" value="${g.group_name}" 
-                        ${selectedGroups.includes(g.group_name) ? 'checked' : ''}>
+                        ${checked ? 'checked' : ''} style="display:none;" onchange="this.parentElement.style.background=this.checked?'#e8f5e9':'#fff';this.parentElement.style.borderColor=this.checked?'#2e7d32':'#ccc';this.parentElement.style.color=this.checked?'#2e7d32':'#666';">
                     ${g.group_name}
-                </label>
-            `).join("");
+                </label>`;
+            }).join("");
         }
 
         function getSelectedGroups() {
