@@ -18,7 +18,10 @@
             <span id="cache-status" style="color:#999;font-size:0.85em;margin-left:10px;"></span>
         </div>
         <div id="bwf-tournaments-list"></div>
-        <button id="save-btn" onclick="saveSelection()" style="margin-top:20px;background:#28a745;padding:12px 24px;font-size:1em;">Save Selected Tournaments</button>
+        <div style="margin-top:20px;display:flex;gap:10px;">
+            <button id="save-btn" onclick="saveSelection()" style="background:#28a745;padding:12px 24px;font-size:1em;width:auto;">Save Selected Tournaments</button>
+            <button onclick="deselectAll()" style="background:#666;padding:12px 24px;font-size:1em;width:auto;">Deselect All</button>
+        </div>
     </div>
 
     <script>
@@ -73,7 +76,7 @@
                             <div style="flex: 1;">
                                 <div style="font-weight: bold; color: #1a237e;">${t.name}</div>
                                 <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
-                                ${t.registration_closes ? `<div style="color:#e65100;font-size:0.8em;">📝 BWF reg. closes: ${t.registration_closes}</div>` : ''}
+                                ${t.registration_closes ? `<div style="color:#e65100;font-size:0.8em;">📝 reg. closes: ${t.registration_closes}</div>` : ''}
                             </div>
                             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
                                 <label style="font-size:0.75em;color:#666;margin:0;">Reg. deadline</label>
@@ -124,6 +127,10 @@
 
         function hardRefresh() {
             loadTournaments(true);
+        }
+
+        function deselectAll() {
+            document.querySelectorAll(".bwf-tournament-checkbox").forEach(cb => cb.checked = false);
         }
 
         async function saveRegDate(input) {
