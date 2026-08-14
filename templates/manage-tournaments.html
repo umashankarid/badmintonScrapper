@@ -177,7 +177,6 @@
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                         <button onclick="window.location.href='/tournament.html?db=${t.db}'" style="padding:8px 14px;font-size:0.85em;">View</button>
                         <button onclick="editTournament('${t.db}')" style="background:#f0a000;padding:8px 14px;font-size:0.85em;">Edit</button>
-                        <button onclick="submitTournament('${t.db}', '${t.name.replace(/'/g, "\\'")}')" style="background:#28a745;padding:8px 14px;font-size:0.85em;">Submit to BWF</button>
                         <button onclick="downloadPlayerData('${t.db}')" style="background:#0066cc;padding:8px 14px;font-size:0.85em;">Download CSV</button>
                         <button onclick="deleteTournament('${t.db}')" style="background:#cc3333;padding:8px 14px;font-size:0.85em;">Delete</button>
                     </div>
