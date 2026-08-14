@@ -129,6 +129,7 @@
             const statusData = await statusRes.json();
             let registeredUrls = new Set();
             let regCounts = {};
+            let optedOutTournaments = new Set();
 
             if (statusData.logged_in && statusData.is_admin) {
                 // Admin: fetch registration counts per tournament
@@ -143,6 +144,12 @@
                 const regData = await regRes.json();
                 if (regData.success) {
                     registeredUrls = new Set(regData.registered_urls);
+                }
+                // Fetch reminder opt-outs
+                const optRes = await fetch("/api/reminder-opt-out");
+                const optData = await optRes.json();
+                if (optData.success) {
+                    optedOutTournaments = new Set(optData.opted_out);
                 }
             }
 
@@ -192,11 +199,31 @@
                             ${t.admin_reg_end_date ? `<span style="color:#e65100;font-weight:500;">📝 Komet registration closes: ${t.admin_reg_end_date}</span>` : ''}
                             ${t.cancellation_deadline ? `<span style="color:#666;">🔄 Cancellation deadline: ${t.cancellation_deadline}</span>` : ''}
                         </div>
+                        ${statusData.logged_in && !statusData.is_admin ? `
+                            <button onclick="toggleReminder('${t.name.replace(/'/g, "\\'")}')" 
+                                id="reminder-btn-${t.name.replace(/[^a-zA-Z0-9]/g, '_')}"
+                                style="margin-top:8px;width:auto;padding:4px 10px;font-size:0.8em;background:${optedOutTournaments.has(t.name) ? '#999' : '#4caf50'};">
+                                ${optedOutTournaments.has(t.name) ? '🔕 Reminders off' : '🔔 Reminders on'}
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
             `}).join("");
 
             container.innerHTML = html;
+        }
+
+        async function toggleReminder(tournamentName) {
+            const res = await fetch("/api/reminder-opt-out", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({tournament_name: tournamentName})
+            });
+            const data = await res.json();
+            if (data.success) {
+                // Refresh the page to update buttons
+                loadTournaments();
+            }
         }
 
         checkBwfStatus();

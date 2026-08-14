@@ -199,6 +199,16 @@ def init_tournaments_db():
     except Exception:
         pass  # Column already exists
     
+    # Reminder opt-out table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reminder_opt_out (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_id TEXT NOT NULL,
+            tournament_name TEXT NOT NULL,
+            UNIQUE(license_id, tournament_name)
+        )
+    """)
+    
     # Player registrations for tournaments - references tournament_name
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournament_registrations (
@@ -2256,6 +2266,63 @@ def get_all_bwf_tournaments():
 
 
 # --- Tournament info ---
+@app.route("/api/reminder-opt-out", methods=["GET"])
+def get_reminder_opt_outs():
+    """Get list of tournaments the logged-in player has opted out of reminders"""
+    license_id = session.get("bwf_license_id")
+    if not license_id:
+        return jsonify(success=True, opted_out=[])
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT tournament_name FROM reminder_opt_out WHERE license_id = ?", (license_id,))
+        opted_out = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return jsonify(success=True, opted_out=opted_out)
+    except Exception:
+        return jsonify(success=True, opted_out=[])
+
+
+@app.route("/api/reminder-opt-out", methods=["POST"])
+def toggle_reminder_opt_out():
+    """Toggle reminder opt-out for a tournament"""
+    license_id = session.get("bwf_license_id")
+    if not license_id:
+        return jsonify(success=False, error="Not logged in")
+    
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required")
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        
+        # Check if already opted out
+        cur.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
+                   (license_id, tournament_name))
+        existing = cur.fetchone()
+        
+        if existing:
+            # Remove opt-out (re-enable reminders)
+            conn.execute("DELETE FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
+                        (license_id, tournament_name))
+            conn.commit()
+            conn.close()
+            return jsonify(success=True, opted_out=False)
+        else:
+            # Add opt-out (disable reminders)
+            conn.execute("INSERT INTO reminder_opt_out (license_id, tournament_name) VALUES (?, ?)",
+                        (license_id, tournament_name))
+            conn.commit()
+            conn.close()
+            return jsonify(success=True, opted_out=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/open-tournaments", methods=["GET"])
 def open_tournaments():
     """Fetch tournaments selected for view AND not expired, filtered by player's groups"""
@@ -4372,6 +4439,12 @@ def send_reminders():
                 if tournament_groups:
                     if "All" not in tournament_groups and "all" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
                         continue  # Player's groups don't match
+                
+                # Check if player opted out of reminders for this tournament
+                cur_t.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
+                             (license_id, tournament_name))
+                if cur_t.fetchone():
+                    continue  # Player opted out
                 
                 # Check if reminder already sent for this type
                 conn_admin = sqlite3.connect(ADMIN_DB)
