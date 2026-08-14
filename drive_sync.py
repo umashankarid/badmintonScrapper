@@ -15,11 +15,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Database files to sync (root level only)
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+
 DB_FILES = [
-    "players.db",
-    "admin.db", 
-    "point_rules.db",
-    "tournaments.db"
+    os.path.join(DATA_DIR, "players.db"),
+    os.path.join(DATA_DIR, "admin.db"),
+    os.path.join(DATA_DIR, "point_rules.db"),
+    os.path.join(DATA_DIR, "tournaments.db")
 ]
 
 # Dropbox OAuth info

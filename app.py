@@ -155,12 +155,15 @@ fallback_sync_thread.start()
 logger.info("✅ Fallback sync thread started (every 5 minutes)")
 logger.info("✅ Debounce sync ready (10 seconds after changes)")
 
-PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+PLAYERS_DB = os.path.join(DATA_DIR, "players.db")
 
 
-POINTS_DB = os.path.join(os.path.dirname(__file__), "point_rules.db")
-ADMIN_DB = os.path.join(os.path.dirname(__file__), "admin.db")
-TOURNAMENTS_DB = os.path.join(os.path.dirname(__file__), "tournaments.db")
+POINTS_DB = os.path.join(DATA_DIR, "point_rules.db")
+ADMIN_DB = os.path.join(DATA_DIR, "admin.db")
+TOURNAMENTS_DB = os.path.join(DATA_DIR, "tournaments.db")
 
 def init_tournaments_db():
     """Initialize tournaments.db with tournament and registration tables"""

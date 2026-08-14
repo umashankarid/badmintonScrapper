@@ -8,6 +8,7 @@ Functions:
 - get_player_by_license_id(license_id) - Get player data from local DB
 """
 
+import os
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -19,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://badmintonsweden.tournamentsoftware.com"
 SEARCH_URL = f"{BASE_URL}/find/player/DoSearch"
-PLAYERS_DB = "players.db"
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
+PLAYERS_DB = os.path.join(DATA_DIR, "players.db")
 
 HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
