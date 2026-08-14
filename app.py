@@ -2303,7 +2303,7 @@ def open_tournaments():
             if player_groups is not None and not is_admin:
                 if tournament_groups:
                     # Tournament has groups assigned - check if player's groups overlap
-                    if "all" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                    if "all" not in tournament_groups and "All" not in player_groups and not set(player_groups).intersection(set(tournament_groups)):
                         continue  # Player's groups don't match this tournament
                 # If tournament has no groups assigned, show to everyone
             
@@ -4181,7 +4181,7 @@ def get_tournament_reminders():
             except Exception:
                 pass
             if tournament_groups:
-                if "All" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                if "All" not in tournament_groups and "All" not in player_groups and not set(player_groups).intersection(set(tournament_groups)):
                     continue
             recipients.append({"name": name, "email": email})
         
@@ -4240,7 +4240,7 @@ def send_tournament_reminder_now():
             except Exception:
                 pass
             if tournament_groups:
-                if "All" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                if "All" not in tournament_groups and "All" not in player_groups and not set(player_groups).intersection(set(tournament_groups)):
                     continue
             
             subject = f"📋 Reminder: Register for {tournament_name}"
@@ -4333,7 +4333,7 @@ def send_reminders():
                     pass
                 
                 if tournament_groups:
-                    if "All" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                    if "All" not in tournament_groups and "All" not in player_groups and not set(player_groups).intersection(set(tournament_groups)):
                         continue  # Player's groups don't match
                 
                 # Check if reminder already sent for this type
