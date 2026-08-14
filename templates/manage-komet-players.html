@@ -15,13 +15,14 @@
         <form id="player-form" style="padding:15px;background:#f5f5f5;border-radius:8px;margin-bottom:20px;">
             <h3 id="form-title" style="margin-top:0;">Add Player</h3>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                <div>
-                    <label>License ID</label>
-                    <input type="text" id="player-license" placeholder="e.g. IID05778873" required>
+                <div style="position:relative;">
+                    <label>Name</label>
+                    <input type="text" id="player-name" placeholder="Search player..." autocomplete="off" required>
+                    <div id="name-search-results" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:4px;max-height:200px;overflow-y:auto;z-index:10;display:none;"></div>
                 </div>
                 <div>
-                    <label>Name</label>
-                    <input type="text" id="player-name" placeholder="Full name" required>
+                    <label>License ID</label>
+                    <input type="text" id="player-license" placeholder="Auto-filled from search" readonly style="background:#f0f0f0;">
                 </div>
                 <div>
                     <label>Email</label>
@@ -140,6 +141,8 @@
         function editPlayer(id, licenseId, name, email) {
             document.getElementById("edit-id").value = id;
             document.getElementById("player-license").value = licenseId;
+            document.getElementById("player-license").readOnly = false;
+            document.getElementById("player-license").style.background = "";
             document.getElementById("player-name").value = name;
             document.getElementById("player-email").value = email;
             document.getElementById("form-title").textContent = "Edit Player";
@@ -150,6 +153,8 @@
         function cancelEdit() {
             document.getElementById("player-form").reset();
             document.getElementById("edit-id").value = "";
+            document.getElementById("player-license").readOnly = true;
+            document.getElementById("player-license").style.background = "#f0f0f0";
             document.getElementById("form-title").textContent = "Add Player";
             document.getElementById("cancel-btn").style.display = "none";
         }
@@ -164,6 +169,50 @@
                 alert(data.error || "Failed to delete");
             }
         }
+
+        // Live search on name field
+        let nameSearchTimeout;
+        const nameInput = document.getElementById("player-name");
+        const nameResults = document.getElementById("name-search-results");
+        
+        nameInput.addEventListener("input", (e) => {
+            clearTimeout(nameSearchTimeout);
+            const q = e.target.value.trim();
+            if (q.length < 2) { nameResults.style.display = "none"; return; }
+            nameSearchTimeout = setTimeout(async () => {
+                const res = await fetch(`/api/search-players?q=${encodeURIComponent(q)}`);
+                const players = await res.json();
+                if (!players.length) {
+                    nameResults.style.display = "none";
+                    return;
+                }
+                nameResults.innerHTML = players.map((p, i) => 
+                    `<div class="search-item" data-index="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;"
+                         onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background='white'">
+                        <strong>${p.name}</strong>${p.license_id ? ' (' + p.license_id + ')' : ''}<br>
+                        <span style="color:#666;font-size:0.85em;">${p.club || 'No club'}</span>
+                    </div>`
+                ).join("");
+                nameResults.style.display = "block";
+                
+                // Click handler for each result
+                nameResults.querySelectorAll(".search-item").forEach((el, idx) => {
+                    el.addEventListener("click", () => {
+                        const selected = players[idx];
+                        document.getElementById("player-name").value = selected.name || "";
+                        document.getElementById("player-license").value = selected.license_id || "";
+                        nameResults.style.display = "none";
+                    });
+                });
+            }, 300);
+        });
+
+        // Hide results when clicking outside
+        document.addEventListener("click", (e) => {
+            if (!nameInput.contains(e.target) && !nameResults.contains(e.target)) {
+                nameResults.style.display = "none";
+            }
+        });
 
         // Search with debounce
         let searchTimeout;
