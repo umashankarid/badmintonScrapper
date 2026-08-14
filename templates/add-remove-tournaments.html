@@ -90,7 +90,7 @@
                                     const allLevels = [...(cats.singles_levels||[]), ...(cats.doubles_levels||[]), ...(cats.mixed_levels||[])];
                                     const hasJunior = allLevels.some(l => /U\d/.test(l));
                                     const hasSenior = allLevels.some(l => /(Elit|\\bA\\b|\\bB\\b|\\bC\\b|\\bD\\b)/.test(l.split(' ').pop()));
-                                    if (hasJunior && hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#e3f2fd;color:#1565c0;margin-left:5px;">Junior+Senior</span>';
+                                    if (hasJunior && hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span><span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#f3e5f5;color:#6a1b9a;margin-left:3px;">Senior</span>';
                                     if (hasJunior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span>';
                                     if (hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#f3e5f5;color:#6a1b9a;margin-left:5px;">Senior</span>';
                                     return '';
