@@ -3600,11 +3600,8 @@ def send_bulk_email():
 
 
 def send_email(to_email, subject, body):
-    """Send an email using configured SMTP settings. Returns True on success, or error string on failure."""
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-
+    """Send an email using Brevo HTTP API (works on platforms that block SMTP ports)."""
+    
     conn = sqlite3.connect(ADMIN_DB)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -3613,57 +3610,44 @@ def send_email(to_email, subject, body):
     conn.close()
 
     if not settings:
-        logger.error("📧 ❌ No SMTP settings found in database")
-        return "No SMTP settings found. Save settings first."
+        logger.error("📧 ❌ No email settings found in database")
+        return "No email settings found. Save settings first."
     if not settings["smtp_email"]:
-        logger.error("📧 ❌ SMTP email address not configured")
-        return "SMTP email address not configured."
+        logger.error("📧 ❌ Sender email not configured")
+        return "Sender email not configured."
     if not settings["smtp_password"]:
-        logger.error("📧 ❌ SMTP password not configured")
-        return "SMTP password not configured."
+        logger.error("📧 ❌ API key not configured")
+        return "API key not configured."
 
-    host = settings["smtp_host"]
-    port = settings["smtp_port"]
-    smtp_email = settings["smtp_email"]
-    smtp_password = settings["smtp_password"]
+    sender_email = settings["smtp_email"]
+    api_key = settings["smtp_password"]  # We reuse the password field for Brevo API key
     
-    logger.info(f"📧 Sending email to: {to_email}")
-    logger.info(f"📧 SMTP config: host={host}, port={port}, from={smtp_email}")
+    logger.info(f"📧 Sending email to: {to_email} (via Brevo API)")
 
     try:
-        msg = MIMEMultipart()
-        msg["From"] = smtp_email
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
-
-        logger.info(f"📧 Connecting to {host}:{port}...")
-        if port == 465:
-            server = smtplib.SMTP_SSL(host, port, timeout=15)
+        response = ext_requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "accept": "application/json"
+            },
+            json={
+                "sender": {"email": sender_email, "name": "BMK Komet"},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "textContent": body
+            },
+            timeout=15
+        )
+        
+        if response.status_code in (200, 201):
+            logger.info(f"📧 ✅ Email sent successfully to {to_email}")
+            return True
         else:
-            server = smtplib.SMTP(host, port, timeout=15)
-            logger.info("📧 Starting TLS...")
-            server.starttls()
-
-        logger.info("📧 Logging in...")
-        server.login(smtp_email, smtp_password)
-        logger.info("📧 Sending message...")
-        server.sendmail(smtp_email, to_email, msg.as_string())
-        server.quit()
-        logger.info(f"📧 ✅ Email sent successfully to {to_email}")
-        return True
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"📧 ❌ Authentication failed: {e}")
-        return f"Authentication failed. Check email/password. ({e})"
-    except smtplib.SMTPConnectError as e:
-        logger.error(f"📧 ❌ Connection failed: {e}")
-        return f"Connection to {host}:{port} failed. ({e})"
-    except TimeoutError as e:
-        logger.error(f"📧 ❌ Connection timed out: {e}")
-        return f"Connection to {host}:{port} timed out."
-    except OSError as e:
-        logger.error(f"📧 ❌ Network error: {e}")
-        return f"Network error: {e}"
+            error_msg = response.json().get("message", response.text) if response.text else f"HTTP {response.status_code}"
+            logger.error(f"📧 ❌ Brevo API error: {response.status_code} - {error_msg}")
+            return f"Brevo API error: {error_msg}"
     except Exception as e:
         logger.error(f"📧 ❌ Email error [{type(e).__name__}]: {e}")
         return f"Error: {type(e).__name__} - {e}"
