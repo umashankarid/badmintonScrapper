@@ -165,9 +165,9 @@
                 document.getElementById("tournament-name").textContent = data.tournament.name;
                 window.tournamentCompDate = data.tournament.competition_date || "";
                 
-                // Check if registration is still open (based on registration_closes, not cancellation_deadline)
-                // The registration_closes is what matters for new registrations
-                const registrationCloses = data.tournament.registration_closes;
+                // Check if registration is still open
+                // Use admin_reg_end_date if set, otherwise fall back to registration_closes
+                const registrationCloses = data.tournament.admin_reg_end_date || data.tournament.registration_closes;
                 if (registrationCloses) {
                     const today = new Date().toISOString().slice(0, 10);
                     if (today > registrationCloses) {

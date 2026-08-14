@@ -162,10 +162,12 @@
                 }
                 
                 // Check if registration closes within 7 days and calculate days left
+                // Use admin_reg_end_date if set, otherwise fall back to registration_closes
                 let urgentStyle = "";
                 let daysCounter = "";
-                if (t.registration_closes) {
-                    const closeDate = new Date(t.registration_closes);
+                const regEndDate = t.admin_reg_end_date || t.registration_closes;
+                if (regEndDate) {
+                    const closeDate = new Date(regEndDate);
                     const today = new Date();
                     const daysLeft = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
                     

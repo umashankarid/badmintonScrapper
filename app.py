@@ -176,6 +176,7 @@ def init_tournaments_db():
             date_end TEXT,
             registration_opens TEXT,
             registration_closes TEXT,
+            admin_reg_end_date TEXT,
             cancellation_deadline TEXT,
             competition_start TEXT,
             competition_end TEXT,
@@ -185,6 +186,12 @@ def init_tournaments_db():
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Add admin_reg_end_date column if it doesn't exist (for existing DBs)
+    try:
+        conn.execute("ALTER TABLE tournaments ADD COLUMN admin_reg_end_date TEXT")
+    except Exception:
+        pass  # Column already exists
     
     # Player registrations for tournaments - references tournament_name
     conn.execute("""
@@ -562,14 +569,10 @@ def init_players_db():
 
 init_players_db()
 
-# Initialize allplayers table and start background scraper
-from players_scraper import init_allplayers_table, scrape_all_players_background
+# Initialize allplayers table (but don't start background scraper for now)
+from players_scraper import init_allplayers_table
 init_allplayers_table()
-
-# Start background scraper in a daemon thread (non-blocking)
-_allplayers_thread = threading.Thread(target=scrape_all_players_background, daemon=True)
-_allplayers_thread.start()
-logger.info("✅ Background player scraper started (non-blocking)")
+_allplayers_thread = None  # Scraper disabled
 
 
 # --- Static pages ---
@@ -1786,6 +1789,33 @@ def toggle_tournament_visibility():
     return jsonify(success=True)
 
 
+@app.route("/api/tournament-reg-date", methods=["POST"])
+def set_tournament_reg_date():
+    """Set admin_reg_end_date for a tournament"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    admin_reg_end_date = data.get("admin_reg_end_date", "").strip()
+    
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required")
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(
+            "UPDATE tournaments SET admin_reg_end_date = ? WHERE tournament_name = ?",
+            (admin_reg_end_date or None, tournament_name)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Set admin_reg_end_date={admin_reg_end_date} for {tournament_name}")
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/bwf-tournament-visibility/save", methods=["POST"])
 def save_bwf_tournament_visibility():
     """Save selected tournaments - toggle selected_for_view in tournaments.db"""
@@ -1861,7 +1891,7 @@ def get_all_bwf_tournaments():
             
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view FROM tournaments ORDER BY date_start")
+                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, admin_reg_end_date FROM tournaments ORDER BY date_start")
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
                     tournaments_cached.append({
@@ -1870,7 +1900,8 @@ def get_all_bwf_tournaments():
                         "location": row[2],
                         "date_start": row[3],
                         "date_end": row[4],
-                        "selected_for_view": row[5]
+                        "selected_for_view": row[5],
+                        "admin_reg_end_date": row[6] or ""
                     })
                 conn_cache.close()
                 logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
@@ -2116,13 +2147,18 @@ def get_all_bwf_tournaments():
         # STEP 4: Get updated selection status
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
-        cur.execute("SELECT tournament_url, selected_for_view FROM tournaments")
-        selection_map_updated = {row[0]: row[1] for row in cur.fetchall()}
+        cur.execute("SELECT tournament_url, selected_for_view, admin_reg_end_date FROM tournaments")
+        selection_map_updated = {}
+        reg_date_map = {}
+        for row in cur.fetchall():
+            selection_map_updated[row[0]] = row[1]
+            reg_date_map[row[0]] = row[2] or ""
         conn.close()
 
-        # Add selected_for_view flag to each tournament
+        # Add selected_for_view and admin_reg_end_date to each tournament
         for t in tournaments:
             t["selected_for_view"] = selection_map_updated.get(t["url"], 0)
+            t["admin_reg_end_date"] = reg_date_map.get(t["url"], "")
 
         trigger_sync()
         logger.info(f"✅ get_all_bwf_tournaments completed successfully")
@@ -2147,7 +2183,7 @@ def open_tournaments():
         cur.execute("""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
-                   competition_start, competition_end
+                   competition_start, competition_end, admin_reg_end_date
             FROM tournaments 
             WHERE selected_for_view = 1 
             AND date_start >= ?
@@ -2168,7 +2204,8 @@ def open_tournaments():
                 "registration_closes": row[6],
                 "cancellation_deadline": row[7],
                 "competition_start": row[8],
-                "competition_end": row[9]
+                "competition_end": row[9],
+                "admin_reg_end_date": row[10] or ""
             })
         
         return jsonify(tournaments=tournaments)
@@ -2476,7 +2513,7 @@ def get_tournament_info():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT tournament_name, registration_closes, cancellation_deadline, categories
+            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date
             FROM tournaments WHERE tournament_name = ?
         """, (tournament_name,))
         
@@ -2495,6 +2532,7 @@ def get_tournament_info():
                 return jsonify(success=True, tournament={
                     "name": f"Tournament {tournament_name}",
                     "registration_closes": "",
+                    "admin_reg_end_date": "",
                     "cancellation_deadline": "",
                     "categories": {}
                 })
@@ -2502,13 +2540,14 @@ def get_tournament_info():
                 conn.close()
                 return jsonify(success=False, error="Tournament not found"), 404
         
-        tournament_name_val, registration_closes, cancellation_deadline, categories_json = row
+        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date = row
         categories = json.loads(categories_json) if categories_json else {}
         
         conn.close()
         return jsonify(success=True, tournament={
             "name": tournament_name_val,
             "registration_closes": registration_closes or "",
+            "admin_reg_end_date": admin_reg_end_date or "",
             "cancellation_deadline": cancellation_deadline or "",
             "categories": categories
         })

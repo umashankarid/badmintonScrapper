@@ -56,7 +56,7 @@
 
                 container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
                     data.tournaments.map(t => `
-                        <label style="display: flex; align-items: center; gap: 12px; padding: 12px 15px; background: white; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 15px; background: white; border: 1px solid #e0e0e0; border-radius: 8px;">
                             <input type="checkbox" class="bwf-tournament-checkbox" 
                                 data-url="${t.url}" 
                                 data-name="${t.name.replace(/"/g, '&quot;')}"
@@ -74,7 +74,15 @@
                                 <div style="font-weight: bold; color: #1a237e;">${t.name}</div>
                                 <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
                             </div>
-                        </label>
+                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+                                <label style="font-size:0.75em;color:#666;margin:0;">Reg. deadline</label>
+                                <input type="date" class="reg-end-date" 
+                                    data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
+                                    value="${t.admin_reg_end_date || ''}" 
+                                    onchange="saveRegDate(this)"
+                                    style="padding:4px 6px;font-size:0.85em;width:auto;margin:0;">
+                            </div>
+                        </div>
                     `).join("") +
                     `</div>`;
             } catch (err) {
@@ -115,6 +123,23 @@
 
         function hardRefresh() {
             loadTournaments(true);
+        }
+
+        async function saveRegDate(input) {
+            const tournamentName = input.dataset.tournamentName;
+            const date = input.value;
+            const res = await fetch("/api/tournament-reg-date", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({tournament_name: tournamentName, admin_reg_end_date: date})
+            });
+            const data = await res.json();
+            if (data.success) {
+                input.style.borderColor = "#4caf50";
+                setTimeout(() => { input.style.borderColor = ""; }, 1500);
+            } else {
+                alert(data.error || "Failed to save date");
+            }
         }
 
         loadTournaments();
