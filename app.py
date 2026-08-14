@@ -1875,24 +1875,22 @@ def get_all_bwf_tournaments():
         conn.close()
         
         # STEP 2: For each tournament, extract complete date details and categories
-        # Uses single session (cookies accepted once) for all requests
-        logger.info(f"📝 Processing {len(tournaments)} tournaments...")
+        # Uses ThreadPoolExecutor for parallel fetching (5 concurrent requests)
+        logger.info(f"📝 Processing {len(tournaments)} tournaments in parallel...")
         added_count = 0
         updated_count = 0
         
-        for t in tournaments:
+        def fetch_tournament_details(t):
+            """Fetch dates and categories for a single tournament (thread-safe)"""
             try:
-                # Check if tournament already exists by tournament_name
-                conn = sqlite3.connect(TOURNAMENTS_DB)
-                cur = conn.cursor()
-                cur.execute("SELECT tournament_name, categories FROM tournaments WHERE tournament_name = ?", (t["name"],))
-                existing = cur.fetchone()
-                conn.close()
+                # Create per-thread session (sharing session across threads is unsafe)
+                ts = ext_requests.Session()
+                ts.headers.update({"User-Agent": "Mozilla/5.0"})
+                ts.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+                    "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+                }, allow_redirects=True, timeout=5)
                 
-                # Fetch tournament page to extract all dates
-                logger.debug(f"🔍 Fetching details for: {t['name']}")
-                
-                resp_detail = s.get(t["url"], timeout=10)
+                resp_detail = ts.get(t["url"], timeout=10)
                 soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
                 
                 # Extract detailed dates
@@ -1916,9 +1914,7 @@ def get_all_bwf_tournaments():
                             elif "slut" in label.lower():
                                 dates["competition_end"] = datetime_val
                 
-                logger.debug(f"✅ Extracted dates: {dates}")
-                
-                # Extract event categories/levels mapped to registration fields
+                # Extract event categories
                 categories = {
                     "singles_levels": [],
                     "doubles_levels": [],
@@ -1930,21 +1926,18 @@ def get_all_bwf_tournaments():
                 if tid_match:
                     tid = tid_match.group(1)
                     try:
-                        events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
+                        events_resp = ts.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
                         events_soup = BeautifulSoup(events_resp.text, "html.parser")
                         
-                        # Extract event categories and map to registration fields
                         all_events = set()
                         for a in events_soup.select("a"):
                             text = a.get_text(strip=True)
                             if text and len(text) < 50:
-                                # Check for category codes
                                 for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
                                     if cat in text:
                                         all_events.add(text.strip())
                                         break
                         
-                        # Map events to registration fields
                         for event in sorted(all_events):
                             if event.startswith(("HS", "DS")):
                                 categories["singles_levels"].append(event)
@@ -1953,19 +1946,41 @@ def get_all_bwf_tournaments():
                             elif event.startswith("MD"):
                                 categories["mixed_levels"].append(event)
                         
-                        # Set partner options (typical pattern)
                         if categories["doubles_levels"]:
                             categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
                         if categories["mixed_levels"]:
                             categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
-                        
-                        logger.debug(f"✅ Extracted categories: {categories}")
-                    except Exception as e:
-                        logger.debug(f"⚠️  Could not extract categories: {e}")
+                    except Exception:
+                        pass
                 
-                # Now update or insert with complete data (NEVER override selected_for_view)
+                return {"tournament": t, "dates": dates, "categories": categories, "success": True}
+            except Exception as e:
+                logger.debug(f"⚠️  Error fetching {t.get('name', 'Unknown')}: {e}")
+                return {"tournament": t, "dates": {}, "categories": {}, "success": False}
+        
+        # Fetch all tournament details in parallel (5 threads)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fetch_tournament_details, t): t for t in tournaments}
+            for future in as_completed(futures):
+                results.append(future.result())
+        
+        logger.info(f"✅ Fetched details for {len(results)} tournaments")
+        
+        # Write results to DB sequentially (SQLite is single-writer)
+        for result in results:
+            if not result["success"]:
+                continue
+            t = result["tournament"]
+            dates = result["dates"]
+            categories = result["categories"]
+            
+            try:
                 conn = sqlite3.connect(TOURNAMENTS_DB)
                 cur = conn.cursor()
+                cur.execute("SELECT tournament_name FROM tournaments WHERE tournament_name = ?", (t["name"],))
+                existing = cur.fetchone()
                 
                 if existing:
                     # Tournament exists - update all fields EXCEPT selected_for_view
