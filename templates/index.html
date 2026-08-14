@@ -171,11 +171,11 @@
                     
                     if (daysLeft > 0) {
                         const dayWord = daysLeft === 1 ? "day" : "days";
-                        daysCounter = `<div style="position:absolute;left:0;top:0;background:#0d47a1;color:white;padding:8px 12px;border-radius:0 0 8px 0;font-weight:bold;font-size:0.95em;min-width:60px;text-align:center;"><div style="font-size:1.3em;">${daysLeft}</div><div style="font-size:0.75em;">${dayWord}</div></div>`;
+                        daysCounter = `<div style="float:right;background:#0d47a1;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;margin-left:10px;"><div style="font-size:1.2em;">${daysLeft}</div><div style="font-size:0.7em;">${dayWord} left</div></div>`;
                     }
                     
                     if (daysLeft > 0 && daysLeft <= 7) {
-                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left-color: #ff6f00;position:relative;";
+                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
                     }
                 }
                 
