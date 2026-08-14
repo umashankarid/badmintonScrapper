@@ -249,12 +249,6 @@ def init_admin_db():
             sent_at TEXT
         )
     """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS player_groups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_name TEXT UNIQUE NOT NULL
-        )
-    """)
     conn.commit()
     
     # Insert default admin if it doesn't exist
@@ -580,6 +574,17 @@ def init_players_db():
     # Add groups column if it doesn't exist (for existing DBs)
     try:
         conn.execute("ALTER TABLE kometPlayers ADD COLUMN groups TEXT")
+    except Exception:
+        pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS player_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_name TEXT UNIQUE NOT NULL
+        )
+    """)
+    # Insert default "All" group if it doesn't exist
+    try:
+        conn.execute("INSERT OR IGNORE INTO player_groups (group_name) VALUES ('All')")
     except Exception:
         pass
     conn.commit()
@@ -3706,7 +3711,7 @@ def get_player_groups():
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     try:
-        conn = sqlite3.connect(ADMIN_DB)
+        conn = sqlite3.connect(PLAYERS_DB)
         cur = conn.cursor()
         cur.execute("SELECT id, group_name FROM player_groups ORDER BY group_name")
         groups = [{"id": row[0], "group_name": row[1]} for row in cur.fetchall()]
@@ -3726,7 +3731,7 @@ def create_player_group():
     if not group_name:
         return jsonify(success=False, error="Group name required")
     try:
-        conn = sqlite3.connect(ADMIN_DB)
+        conn = sqlite3.connect(PLAYERS_DB)
         conn.execute("INSERT INTO player_groups (group_name) VALUES (?)", (group_name,))
         conn.commit()
         conn.close()
@@ -3743,7 +3748,7 @@ def delete_player_group(group_id):
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     try:
-        conn = sqlite3.connect(ADMIN_DB)
+        conn = sqlite3.connect(PLAYERS_DB)
         conn.execute("DELETE FROM player_groups WHERE id = ?", (group_id,))
         conn.commit()
         conn.close()
