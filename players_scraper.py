@@ -283,3 +283,153 @@ if __name__ == "__main__":
     
     print("Testing players_scraper module...")
     print("\nUse scrape_player_by_license_id(license_id) to scrape individual players.")
+
+
+# ==================== ALL PLAYERS BACKGROUND SCRAPER ====================
+
+def init_allplayers_table():
+    """Create the allplayers table in players.db if it doesn't exist"""
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS allplayers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                license_id TEXT UNIQUE,
+                name TEXT NOT NULL,
+                profile_url TEXT,
+                club TEXT,
+                gender TEXT,
+                last_scraped TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+        logger.info("✅ allplayers table initialized")
+    except Exception as e:
+        logger.error(f"❌ Error creating allplayers table: {e}")
+
+
+def scrape_all_players_background():
+    """
+    Background scraper: fetches ALL players from Badminton Sweden A-Z with pagination.
+    Stores in allplayers table. Deduplicates by license_id using a visited set.
+    Runs in a background thread — does not block the app startup.
+    """
+    import time
+    
+    logger.info("=" * 60)
+    logger.info("🔄 BACKGROUND: Starting full player scrape from Badminton Sweden...")
+    logger.info("=" * 60)
+    
+    # Initialize table
+    init_allplayers_table()
+    
+    # Load already-visited license_ids from DB to avoid re-processing on restart
+    visited_license_ids = set()
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT license_id FROM allplayers WHERE license_id IS NOT NULL")
+        visited_license_ids = {row[0] for row in cur.fetchall()}
+        conn.close()
+        logger.info(f"📋 Already have {len(visited_license_ids)} players in allplayers table")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not load existing license_ids: {e}")
+    
+    # Create session with cookies accepted
+    try:
+        s = requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+        s.post(f"{BASE_URL}/cookiewall/Save", data={
+            "ReturnUrl": "/",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=10)
+    except Exception as e:
+        logger.error(f"❌ BACKGROUND: Could not connect to Badminton Sweden: {e}")
+        return
+    
+    search_letters = list("ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖ")
+    total_added = 0
+    total_skipped = 0
+    
+    for letter in search_letters:
+        page = 1
+        while True:
+            try:
+                resp = s.get(
+                    SEARCH_URL,
+                    params={"Page": page, "SportID": 2, "Query": letter},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
+                    timeout=10
+                )
+                
+                soup = BeautifulSoup(resp.text, "html.parser")
+                items = soup.select("li.list__item")
+                
+                if not items:
+                    break  # No more pages for this letter
+                
+                batch_entries = []
+                
+                for item in items:
+                    name_el = item.select_one("a.media__link span.nav-link__value")
+                    license_el = item.select_one(".media__title-aside")
+                    
+                    if not name_el or not license_el:
+                        continue
+                    
+                    name = name_el.get_text(strip=True)
+                    license_id = license_el.get_text(strip=True).strip("()")
+                    
+                    if not name or not license_id:
+                        continue
+                    
+                    # DEDUPLICATION: Skip if already visited
+                    if license_id in visited_license_ids:
+                        total_skipped += 1
+                        continue
+                    
+                    # Mark as visited
+                    visited_license_ids.add(license_id)
+                    
+                    # Get profile URL and club
+                    profile_link = item.select_one("a.media__link")
+                    profile_url = profile_link.get("href", "") if profile_link else ""
+                    
+                    club = ""
+                    club_el = item.select_one(".media__subheading span.nav-link__value")
+                    if club_el:
+                        club = club_el.get_text(strip=True).split("|")[0].strip()
+                    
+                    batch_entries.append((license_id, name, profile_url, club))
+                
+                # Batch insert to DB
+                if batch_entries:
+                    try:
+                        conn = sqlite3.connect(PLAYERS_DB)
+                        now = datetime.now().isoformat()
+                        conn.executemany("""
+                            INSERT OR IGNORE INTO allplayers (license_id, name, profile_url, club, last_scraped)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, [(lid, n, p, c, now) for lid, n, p, c in batch_entries])
+                        conn.commit()
+                        conn.close()
+                        total_added += len(batch_entries)
+                    except Exception as e:
+                        logger.error(f"⚠️  DB error for letter '{letter}' page {page}: {e}")
+                
+                if total_added % 100 == 0 and total_added > 0:
+                    logger.info(f"🔄 BACKGROUND: {total_added} players added, {total_skipped} skipped (letter: {letter}, page: {page})")
+                
+                page += 1
+                time.sleep(0.5)  # Be nice to the server
+                
+            except Exception as e:
+                logger.warning(f"⚠️  Error on letter '{letter}' page {page}: {e}")
+                break  # Move to next letter on error
+    
+    logger.info("=" * 60)
+    logger.info(f"✅ BACKGROUND SCRAPE COMPLETE: {total_added} new players added, {total_skipped} duplicates skipped")
+    logger.info(f"📊 Total in allplayers table: {len(visited_license_ids)}")
+    logger.info("=" * 60)

@@ -555,6 +555,15 @@ def init_players_db():
 
 init_players_db()
 
+# Initialize allplayers table and start background scraper
+from players_scraper import init_allplayers_table, scrape_all_players_background
+init_allplayers_table()
+
+# Start background scraper in a daemon thread (non-blocking)
+_allplayers_thread = threading.Thread(target=scrape_all_players_background, daemon=True)
+_allplayers_thread.start()
+logger.info("✅ Background player scraper started (non-blocking)")
+
 
 # --- Static pages ---
 @app.route("/")
@@ -590,6 +599,11 @@ def manage_admins_page():
 @app.route("/manage.html")
 def manage_page():
     return send_from_directory("templates", "manage.html")
+
+
+@app.route("/manage-komet-players.html")
+def manage_komet_players_page():
+    return send_from_directory("templates", "manage-komet-players.html")
 
 
 @app.route("/email-settings.html")
@@ -3530,6 +3544,69 @@ def get_player_dob():
         return jsonify(success=True, dob="", age="")
     except Exception as e:
         return jsonify(success=True, dob="", age="")
+
+
+@app.route("/api/allplayers-status", methods=["GET"])
+def allplayers_status():
+    """Get status of allplayers table (count + whether scrape is running)"""
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM allplayers")
+        total = cur.fetchone()[0]
+        conn.close()
+        
+        # Check if background thread is still running
+        scraping = _allplayers_thread.is_alive() if _allplayers_thread else False
+        
+        return jsonify(success=True, total=total, scraping=scraping)
+    except Exception as e:
+        return jsonify(success=True, total=0, scraping=False)
+
+
+@app.route("/api/allplayers", methods=["GET"])
+def get_allplayers():
+    """Get paginated list of all players with optional search"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    page = int(request.args.get("page", 1))
+    page_size = int(request.args.get("pageSize", 50))
+    search = request.args.get("search", "").strip()
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        offset = (page - 1) * page_size
+        
+        if search:
+            cur.execute("SELECT COUNT(*) FROM allplayers WHERE name LIKE ? OR license_id LIKE ?",
+                       (f"%{search}%", f"%{search}%"))
+            total = cur.fetchone()[0]
+            
+            cur.execute("""
+                SELECT license_id, name, profile_url, club FROM allplayers 
+                WHERE name LIKE ? OR license_id LIKE ?
+                ORDER BY name LIMIT ? OFFSET ?
+            """, (f"%{search}%", f"%{search}%", page_size, offset))
+        else:
+            cur.execute("SELECT COUNT(*) FROM allplayers")
+            total = cur.fetchone()[0]
+            
+            cur.execute("""
+                SELECT license_id, name, profile_url, club FROM allplayers 
+                ORDER BY name LIMIT ? OFFSET ?
+            """, (page_size, offset))
+        
+        players = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        
+        return jsonify(success=True, players=players, total=total)
+    except Exception as e:
+        logger.error(f"❌ Error fetching allplayers: {e}")
+        return jsonify(success=False, error=str(e))
 
 
 @app.route("/api/registered-emails", methods=["GET"])

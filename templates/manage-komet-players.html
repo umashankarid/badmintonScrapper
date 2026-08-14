@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Komet Players</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>🏸 Manage Komet Players</h1>
+    <a href="/manage.html">← Back to Manage</a>
+
+    <div style="margin-top:20px;">
+        <div id="scrape-status" style="padding:12px;background:#e3f2fd;border-radius:6px;margin-bottom:15px;">
+            <span id="status-text">Loading player count...</span>
+        </div>
+        
+        <div style="margin-bottom:15px;">
+            <input type="text" id="search-input" placeholder="Search by name or license ID..." autocomplete="off" style="max-width:400px;">
+        </div>
+        
+        <div id="players-list"></div>
+        <div id="pagination" style="margin-top:15px;display:flex;gap:10px;align-items:center;"></div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const pageSize = 50;
+
+        async function loadStatus() {
+            const res = await fetch("/api/allplayers-status");
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById("status-text").textContent = 
+                    `📊 ${data.total} players in database` + (data.scraping ? " (⏳ background scrape in progress...)" : "");
+            }
+        }
+
+        async function loadPlayers(page = 1, search = "") {
+            currentPage = page;
+            const container = document.getElementById("players-list");
+            container.innerHTML = "<p style='color:#999;'>Loading...</p>";
+            
+            let url = `/api/allplayers?page=${page}&pageSize=${pageSize}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            if (!data.success) {
+                container.innerHTML = `<p style="color:red;">${data.error || 'Failed to load'}</p>`;
+                return;
+            }
+            
+            if (!data.players.length) {
+                container.innerHTML = "<p>No players found.</p>";
+                document.getElementById("pagination").innerHTML = "";
+                return;
+            }
+            
+            container.innerHTML = `
+                <table style="width:100%;font-size:0.9em;">
+                    <thead>
+                        <tr><th>Name</th><th>License ID</th><th>Club</th><th>Profile</th></tr>
+                    </thead>
+                    <tbody>
+                        ${data.players.map(p => `
+                            <tr>
+                                <td>${p.name}</td>
+                                <td>${p.license_id}</td>
+                                <td>${p.club || ""}</td>
+                                <td>${p.profile_url ? `<a href="https://badmintonsweden.tournamentsoftware.com${p.profile_url}" target="_blank">View</a>` : ""}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            `;
+            
+            // Pagination
+            const totalPages = Math.ceil(data.total / pageSize);
+            let pagHtml = `<span>Page ${page} of ${totalPages} (${data.total} total)</span>`;
+            if (page > 1) pagHtml += `<button onclick="loadPlayers(${page-1}, document.getElementById('search-input').value)" style="width:auto;padding:5px 12px;">← Prev</button>`;
+            if (page < totalPages) pagHtml += `<button onclick="loadPlayers(${page+1}, document.getElementById('search-input').value)" style="width:auto;padding:5px 12px;">Next →</button>`;
+            document.getElementById("pagination").innerHTML = pagHtml;
+        }
+
+        // Search with debounce
+        let searchTimeout;
+        document.getElementById("search-input").addEventListener("input", (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                loadPlayers(1, e.target.value.trim());
+            }, 300);
+        });
+
+        loadStatus();
+        loadPlayers();
+    </script>
+</body>
+</html>
