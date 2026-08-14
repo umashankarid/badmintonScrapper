@@ -2626,7 +2626,7 @@ def get_tournament_info():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date
+            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups
             FROM tournaments WHERE tournament_name = ?
         """, (tournament_name,))
         
@@ -2647,22 +2647,60 @@ def get_tournament_info():
                     "registration_closes": "",
                     "admin_reg_end_date": "",
                     "cancellation_deadline": "",
-                    "categories": {}
+                    "categories": {},
+                    "tournament_groups": [],
+                    "eligible_players": []
                 })
             else:
                 conn.close()
                 return jsonify(success=False, error="Tournament not found"), 404
         
-        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date = row
+        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json = row
         categories = json.loads(categories_json) if categories_json else {}
+        tournament_groups = []
+        try:
+            tournament_groups = json.loads(tournament_groups_json) if tournament_groups_json else []
+        except Exception:
+            pass
         
         conn.close()
+        
+        # Get eligible players from kometPlayers based on tournament groups
+        eligible_players = []
+        if session.get("admin"):
+            try:
+                conn_p = sqlite3.connect(PLAYERS_DB)
+                cur_p = conn_p.cursor()
+                
+                if tournament_groups:
+                    # Get players whose groups overlap with tournament groups
+                    cur_p.execute("SELECT name, license_id, email, groups FROM kometPlayers ORDER BY name")
+                    for p_row in cur_p.fetchall():
+                        player_groups = []
+                        try:
+                            player_groups = json.loads(p_row[3]) if p_row[3] else []
+                        except Exception:
+                            pass
+                        # Player is eligible if: "All" in tournament_groups, or player's groups overlap
+                        if "All" in tournament_groups or set(player_groups).intersection(set(tournament_groups)):
+                            eligible_players.append({"name": p_row[0], "license_id": p_row[1], "email": p_row[2] or ""})
+                else:
+                    # No groups assigned - all komet players are eligible
+                    cur_p.execute("SELECT name, license_id, email FROM kometPlayers ORDER BY name")
+                    eligible_players = [{"name": r[0], "license_id": r[1], "email": r[2] or ""} for r in cur_p.fetchall()]
+                
+                conn_p.close()
+            except Exception as e:
+                logger.debug(f"Could not fetch eligible players: {e}")
+        
         return jsonify(success=True, tournament={
             "name": tournament_name_val,
             "registration_closes": registration_closes or "",
             "admin_reg_end_date": admin_reg_end_date or "",
             "cancellation_deadline": cancellation_deadline or "",
-            "categories": categories
+            "categories": categories,
+            "tournament_groups": tournament_groups,
+            "eligible_players": eligible_players
         })
     
     except Exception as e:
