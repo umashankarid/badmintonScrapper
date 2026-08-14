@@ -1423,7 +1423,7 @@ def send_test_email():
     result = send_email(to_email, "Test Email - Badminton Tournament", "This is a test email from your Badminton Tournament system.")
     if result:
         return jsonify(success=True, message="Test email sent!")
-    return jsonify(success=False, error="Failed to send email. Check SMTP settings."), 500
+    return jsonify(success=False, error="Failed to send email. Check server logs for details (network/auth issue).")
 
 
 # --- Tournament CRUD ---
