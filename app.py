@@ -1875,7 +1875,7 @@ def get_all_bwf_tournaments():
         conn.close()
         
         # STEP 2: For each tournament, extract complete date details and categories
-        # OPTIMIZATION: Skip detail fetch for tournaments that already exist (have dates/categories)
+        # Uses single session (cookies accepted once) for all requests
         logger.info(f"📝 Processing {len(tournaments)} tournaments...")
         added_count = 0
         updated_count = 0
@@ -1889,23 +1889,8 @@ def get_all_bwf_tournaments():
                 existing = cur.fetchone()
                 conn.close()
                 
-                # If tournament already exists with categories, just update basic info (no scraping needed)
-                if existing and existing[1]:
-                    conn = sqlite3.connect(TOURNAMENTS_DB)
-                    cur = conn.cursor()
-                    cur.execute("""
-                        UPDATE tournaments 
-                        SET tournament_url = ?, location = ?, date_start = COALESCE(date_start, ?), 
-                            date_end = COALESCE(date_end, ?), last_updated = CURRENT_TIMESTAMP
-                        WHERE tournament_name = ?
-                    """, (t["url"], t["location"], t["date_start"], t["date_end"], t["name"]))
-                    conn.commit()
-                    conn.close()
-                    updated_count += 1
-                    continue
-                
-                # NEW tournament: fetch full details (dates + categories)
-                logger.info(f"🔍 Fetching details for NEW tournament: {t['name']}")
+                # Fetch tournament page to extract all dates
+                logger.debug(f"🔍 Fetching details for: {t['name']}")
                 
                 resp_detail = s.get(t["url"], timeout=10)
                 soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
@@ -1978,12 +1963,12 @@ def get_all_bwf_tournaments():
                     except Exception as e:
                         logger.debug(f"⚠️  Could not extract categories: {e}")
                 
-                # Now update or insert with complete data
+                # Now update or insert with complete data (NEVER override selected_for_view)
                 conn = sqlite3.connect(TOURNAMENTS_DB)
                 cur = conn.cursor()
                 
                 if existing:
-                    # Tournament exists but had no categories - update with full data
+                    # Tournament exists - update all fields EXCEPT selected_for_view
                     cur.execute("""
                         UPDATE tournaments 
                         SET tournament_url = ?, location = ?, date_start = ?, date_end = ?,
@@ -1996,7 +1981,6 @@ def get_all_bwf_tournaments():
                         dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
                         dates.get("competition_end", ""), json.dumps(categories), t["name"]
                     ))
-                    logger.info(f"✅ Updated tournament with details: {t['name']}")
                     updated_count += 1
                 else:
                     # New tournament - insert with selected_for_view = 0
