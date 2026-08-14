@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Send Email</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>Send Email</h1>
+    <a href="/">← Back to home</a>
+
+    <div style="margin-top:20px;max-width:700px;">
+        <form id="email-form">
+            <label>To (email addresses)</label>
+            <div style="margin-bottom:10px;">
+                <button type="button" onclick="loadRegisteredEmails()" style="width:auto;padding:6px 12px;background:#0d47a1;font-size:0.85em;">Load all registered players' emails</button>
+                <select id="tournament-select" style="width:auto;padding:6px;font-size:0.85em;margin-left:5px;">
+                    <option value="">-- All tournaments --</option>
+                </select>
+            </div>
+            <textarea id="email-to" rows="3" placeholder="Enter email addresses separated by comma, or use the button above to load..." style="width:100%;font-size:0.9em;"></textarea>
+            <p style="color:#999;font-size:0.8em;margin-top:2px;" id="email-count"></p>
+            
+            <label>Subject</label>
+            <input type="text" id="email-subject" placeholder="Email subject" required>
+            
+            <label>Message</label>
+            <textarea id="email-body" rows="10" placeholder="Write your message here..." required style="width:100%;font-size:0.95em;"></textarea>
+            
+            <div style="display:flex;gap:10px;margin-top:15px;">
+                <button type="submit" style="background:#28a745;">Send to All</button>
+                <button type="button" onclick="sendTest()" style="background:#f57c00;">Send Test to Me</button>
+            </div>
+        </form>
+        
+        <div id="send-result" style="display:none;margin-top:15px;padding:12px;border-radius:6px;"></div>
+    </div>
+
+    <script>
+        // Load tournaments for filter
+        async function loadTournaments() {
+            try {
+                const res = await fetch("/api/open-tournaments");
+                const data = await res.json();
+                const select = document.getElementById("tournament-select");
+                (data.tournaments || []).forEach(t => {
+                    const opt = document.createElement("option");
+                    opt.value = t.name;
+                    opt.textContent = t.name;
+                    select.appendChild(opt);
+                });
+            } catch(e) {}
+        }
+
+        async function loadRegisteredEmails() {
+            const tournament = document.getElementById("tournament-select").value;
+            try {
+                const url = tournament 
+                    ? `/api/registered-emails?tournament=${encodeURIComponent(tournament)}`
+                    : `/api/registered-emails`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.success) {
+                    const emails = data.emails.filter(e => e && e.includes("@"));
+                    document.getElementById("email-to").value = emails.join(", ");
+                    document.getElementById("email-count").textContent = `${emails.length} email address${emails.length !== 1 ? 'es' : ''} loaded`;
+                } else {
+                    alert(data.error || "Failed to load emails");
+                }
+            } catch(e) {
+                alert("Error: " + e.message);
+            }
+        }
+
+        document.getElementById("email-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const emails = document.getElementById("email-to").value.split(",").map(e => e.trim()).filter(e => e.includes("@"));
+            const subject = document.getElementById("email-subject").value;
+            const body = document.getElementById("email-body").value;
+            
+            if (!emails.length) { alert("No valid email addresses"); return; }
+            if (!subject || !body) { alert("Subject and message required"); return; }
+            
+            if (!confirm(`Send email to ${emails.length} recipient${emails.length !== 1 ? 's' : ''}?`)) return;
+            
+            const resultEl = document.getElementById("send-result");
+            resultEl.style.display = "block";
+            resultEl.style.background = "#e3f2fd";
+            resultEl.style.color = "#1565c0";
+            resultEl.textContent = `Sending to ${emails.length} recipients...`;
+            
+            const res = await fetch("/api/send-bulk-email", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({emails, subject, body})
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                resultEl.style.background = "#e8f5e9";
+                resultEl.style.color = "#2e7d32";
+                resultEl.textContent = `✅ Sent to ${data.sent} of ${data.total} recipients.${data.failed > 0 ? ` (${data.failed} failed)` : ''}`;
+            } else {
+                resultEl.style.background = "#ffebee";
+                resultEl.style.color = "#c62828";
+                resultEl.textContent = `❌ ${data.error || 'Failed to send'}`;
+            }
+        });
+
+        async function sendTest() {
+            const subject = document.getElementById("email-subject").value;
+            const body = document.getElementById("email-body").value;
+            if (!subject || !body) { alert("Enter subject and message first"); return; }
+            
+            const res = await fetch("/api/bwf-status");
+            const status = await res.json();
+            const myEmail = status.email;
+            if (!myEmail) { alert("Your email not found. Log in first."); return; }
+            
+            const resultEl = document.getElementById("send-result");
+            resultEl.style.display = "block";
+            resultEl.style.background = "#e3f2fd";
+            resultEl.style.color = "#1565c0";
+            resultEl.textContent = `Sending test to ${myEmail}...`;
+            
+            const sendRes = await fetch("/api/send-bulk-email", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({emails: [myEmail], subject: "[TEST] " + subject, body})
+            });
+            const data = await sendRes.json();
+            
+            if (data.success) {
+                resultEl.style.background = "#e8f5e9";
+                resultEl.style.color = "#2e7d32";
+                resultEl.textContent = `✅ Test email sent to ${myEmail}`;
+            } else {
+                resultEl.style.background = "#ffebee";
+                resultEl.style.color = "#c62828";
+                resultEl.textContent = `❌ ${data.error || 'Failed to send test'}`;
+            }
+        }
+
+        loadTournaments();
+    </script>
+</body>
+</html>

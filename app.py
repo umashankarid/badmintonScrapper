@@ -587,6 +587,11 @@ def manage_admins_page():
     return send_from_directory("templates", "manage-admins.html")
 
 
+@app.route("/send-email.html")
+def send_email_page():
+    return send_from_directory("templates", "send-email.html")
+
+
 @app.route("/login.html")
 def login_page():
     return send_from_directory("templates", "login.html")
@@ -3515,6 +3520,73 @@ def get_player_dob():
         return jsonify(success=True, dob="", age="")
     except Exception as e:
         return jsonify(success=True, dob="", age="")
+
+
+@app.route("/api/registered-emails", methods=["GET"])
+def get_registered_emails():
+    """Get email addresses of all registered players, optionally filtered by tournament"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    tournament = request.args.get("tournament", "").strip()
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
+        cur = conn.cursor()
+        
+        if tournament:
+            cur.execute("""
+                SELECT DISTINCT p.email 
+                FROM tournament_registrations tr
+                JOIN players_db.players p ON tr.license_id = p.license_id
+                WHERE tr.tournament_name = ? AND p.email IS NOT NULL AND p.email != ''
+            """, (tournament,))
+        else:
+            cur.execute("""
+                SELECT DISTINCT p.email 
+                FROM tournament_registrations tr
+                JOIN players_db.players p ON tr.license_id = p.license_id
+                WHERE p.email IS NOT NULL AND p.email != ''
+            """)
+        
+        emails = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return jsonify(success=True, emails=emails)
+    except Exception as e:
+        logger.error(f"❌ Error fetching registered emails: {e}")
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/send-bulk-email", methods=["POST"])
+def send_bulk_email():
+    """Send email to multiple recipients"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    emails = data.get("emails", [])
+    subject = data.get("subject", "").strip()
+    body = data.get("body", "").strip()
+    
+    if not emails:
+        return jsonify(success=False, error="No email addresses provided")
+    if not subject or not body:
+        return jsonify(success=False, error="Subject and message required")
+    
+    sent = 0
+    failed = 0
+    for email in emails:
+        email = email.strip()
+        if not email or "@" not in email:
+            continue
+        if send_email(email, subject, body):
+            sent += 1
+        else:
+            failed += 1
+    
+    logger.info(f"📧 Bulk email: sent={sent}, failed={failed}, subject='{subject}'")
+    return jsonify(success=True, sent=sent, failed=failed, total=len(emails))
 
 
 def send_email(to_email, subject, body):
