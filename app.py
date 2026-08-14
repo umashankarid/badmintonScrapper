@@ -193,6 +193,12 @@ def init_tournaments_db():
     except Exception:
         pass  # Column already exists
     
+    # Add tournament_groups column if it doesn't exist (for existing DBs)
+    try:
+        conn.execute("ALTER TABLE tournaments ADD COLUMN tournament_groups TEXT")
+    except Exception:
+        pass  # Column already exists
+    
     # Player registrations for tournaments - references tournament_name
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournament_registrations (
@@ -1829,6 +1835,35 @@ def set_tournament_reg_date():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/tournament-groups", methods=["POST"])
+def set_tournament_groups():
+    """Set groups for a tournament (stored as JSON array)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    groups = data.get("groups", [])
+    
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required")
+    
+    groups_json = json.dumps(groups) if groups else None
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(
+            "UPDATE tournaments SET tournament_groups = ? WHERE tournament_name = ?",
+            (groups_json, tournament_name)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Set tournament_groups={groups} for {tournament_name}")
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/bwf-tournament-visibility/save", methods=["POST"])
 def save_bwf_tournament_visibility():
     """Save selected tournaments - toggle selected_for_view in tournaments.db"""
@@ -1904,9 +1939,14 @@ def get_all_bwf_tournaments():
             
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes FROM tournaments ORDER BY date_start")
+                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups FROM tournaments ORDER BY date_start")
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
+                    tg = []
+                    try:
+                        tg = json.loads(row[7]) if row[7] else []
+                    except Exception:
+                        pass
                     tournaments_cached.append({
                         "url": row[0],
                         "name": row[1],
@@ -1915,7 +1955,8 @@ def get_all_bwf_tournaments():
                         "date_end": row[4],
                         "selected_for_view": row[5],
                         "registration_closes": row[6] or "",
-                        "admin_reg_end_date": ""
+                        "admin_reg_end_date": "",
+                        "tournament_groups": tg
                     })
                 conn_cache.close()
                 logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
@@ -2162,15 +2203,23 @@ def get_all_bwf_tournaments():
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         try:
-            cur.execute("SELECT tournament_url, selected_for_view, admin_reg_end_date, registration_closes FROM tournaments")
+            cur.execute("SELECT tournament_url, selected_for_view, admin_reg_end_date, registration_closes, tournament_groups FROM tournaments")
         except Exception:
             cur.execute("SELECT tournament_url, selected_for_view, registration_closes FROM tournaments")
         selection_map_updated = {}
         reg_date_map = {}
         reg_closes_map = {}
+        groups_map = {}
         for row in cur.fetchall():
             selection_map_updated[row[0]] = row[1]
-            if len(row) > 3:
+            if len(row) > 4:
+                reg_date_map[row[0]] = row[2] or ""
+                reg_closes_map[row[0]] = row[3] or ""
+                try:
+                    groups_map[row[0]] = json.loads(row[4]) if row[4] else []
+                except Exception:
+                    groups_map[row[0]] = []
+            elif len(row) > 3:
                 reg_date_map[row[0]] = row[2] or ""
                 reg_closes_map[row[0]] = row[3] or ""
             else:
@@ -2178,10 +2227,11 @@ def get_all_bwf_tournaments():
                 reg_closes_map[row[0]] = row[2] or ""
         conn.close()
 
-        # Add selected_for_view, admin_reg_end_date, and registration_closes to each tournament
+        # Add selected_for_view, admin_reg_end_date, registration_closes, and tournament_groups
         for t in tournaments:
             t["selected_for_view"] = selection_map_updated.get(t["url"], 0)
             t["admin_reg_end_date"] = reg_date_map.get(t["url"], "")
+            t["tournament_groups"] = groups_map.get(t["url"], [])
             if not t.get("registration_closes"):
                 t["registration_closes"] = reg_closes_map.get(t["url"], "")
 
@@ -2196,7 +2246,7 @@ def get_all_bwf_tournaments():
 # --- Tournament info ---
 @app.route("/api/open-tournaments", methods=["GET"])
 def open_tournaments():
-    """Fetch tournaments selected for view AND not expired from tournaments.db"""
+    """Fetch tournaments selected for view AND not expired, filtered by player's groups"""
     try:
         from datetime import datetime as dt
         today = dt.now().strftime("%Y-%m-%d")
@@ -2208,7 +2258,7 @@ def open_tournaments():
         cur.execute("""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
-                   competition_start, competition_end, admin_reg_end_date
+                   competition_start, competition_end, admin_reg_end_date, tournament_groups
             FROM tournaments 
             WHERE selected_for_view = 1 
             AND date_start >= ?
@@ -2217,8 +2267,41 @@ def open_tournaments():
         rows = cur.fetchall()
         conn.close()
         
+        # Get current player's groups (if logged in and not admin)
+        player_groups = None
+        license_id = session.get("bwf_license_id")
+        is_admin = session.get("admin", False)
+        
+        if license_id and not is_admin:
+            try:
+                conn_p = sqlite3.connect(PLAYERS_DB)
+                cur_p = conn_p.cursor()
+                cur_p.execute("SELECT groups FROM kometPlayers WHERE license_id = ?", (license_id,))
+                row_p = cur_p.fetchone()
+                conn_p.close()
+                if row_p and row_p[0]:
+                    player_groups = json.loads(row_p[0])
+            except Exception:
+                player_groups = None
+        
         tournaments = []
         for row in rows:
+            tournament_groups_json = row[11]
+            tournament_groups = []
+            if tournament_groups_json:
+                try:
+                    tournament_groups = json.loads(tournament_groups_json)
+                except Exception:
+                    pass
+            
+            # Filter: if player has groups, only show tournaments that match OR have no groups/have "all"
+            if player_groups is not None and not is_admin:
+                if tournament_groups:
+                    # Tournament has groups assigned - check if player's groups overlap
+                    if "all" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                        continue  # Player's groups don't match this tournament
+                # If tournament has no groups assigned, show to everyone
+            
             tournaments.append({
                 "url": row[0],
                 "name": row[1],

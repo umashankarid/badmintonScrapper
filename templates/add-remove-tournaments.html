@@ -25,7 +25,18 @@
     </div>
 
     <script>
+        let allPlayerGroups = [];
+        
+        async function loadPlayerGroups() {
+            try {
+                const res = await fetch("/api/player-groups");
+                const data = await res.json();
+                allPlayerGroups = data.success ? data.groups.map(g => g.group_name) : [];
+            } catch(e) { allPlayerGroups = []; }
+        }
+
         async function loadTournaments(force = false) {
+            await loadPlayerGroups();
             const container = document.getElementById("bwf-tournaments-list");
             const cacheStatus = document.getElementById("cache-status");
             container.innerHTML = "<p style='color: #999;'>Loading tournaments...</p>";
@@ -78,13 +89,24 @@
                                 <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
                                 ${t.registration_closes ? `<div style="color:#e65100;font-size:0.8em;">📝 reg. closes: ${t.registration_closes}</div>` : ''}
                             </div>
-                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
-                                <label style="font-size:0.75em;color:#666;margin:0;">Reg. deadline</label>
-                                <input type="date" class="reg-end-date" 
-                                    data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
-                                    value="${t.admin_reg_end_date || ''}" 
-                                    onchange="saveRegDate(this)"
-                                    style="padding:4px 6px;font-size:0.85em;width:auto;margin:0;">
+                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                                <div>
+                                    <label style="font-size:0.75em;color:#666;margin:0;">Reg. deadline</label>
+                                    <input type="date" class="reg-end-date" 
+                                        data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
+                                        value="${t.admin_reg_end_date || ''}" 
+                                        onchange="saveRegDate(this)"
+                                        style="padding:4px 6px;font-size:0.85em;width:auto;margin:0;">
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75em;color:#666;margin:0;">Groups</label>
+                                    <select class="tournament-groups" multiple
+                                        data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
+                                        onchange="saveGroups(this)"
+                                        style="padding:2px;font-size:0.8em;width:120px;height:60px;margin:0;">
+                                        ${allPlayerGroups.map(g => `<option value="${g}" ${(t.tournament_groups || []).includes(g) ? 'selected' : ''}>${g}</option>`).join("")}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     `).join("") +
@@ -147,6 +169,23 @@
                 setTimeout(() => { input.style.borderColor = ""; }, 1500);
             } else {
                 alert(data.error || "Failed to save date");
+            }
+        }
+
+        async function saveGroups(select) {
+            const tournamentName = select.dataset.tournamentName;
+            const selectedGroups = Array.from(select.selectedOptions).map(o => o.value);
+            const res = await fetch("/api/tournament-groups", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({tournament_name: tournamentName, groups: selectedGroups})
+            });
+            const data = await res.json();
+            if (data.success) {
+                select.style.borderColor = "#4caf50";
+                setTimeout(() => { select.style.borderColor = ""; }, 1500);
+            } else {
+                alert(data.error || "Failed to save groups");
             }
         }
 
