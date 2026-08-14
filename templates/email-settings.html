@@ -128,6 +128,113 @@
         }
 
         loadSettings();
+        loadEmailGroups();
+    </script>
+
+    <!-- Email Groups Section -->
+    <div style="margin-top:40px;max-width:600px;">
+        <h2>📋 Email Groups</h2>
+        <p style="color:#666;font-size:0.9em;">Create named groups of email addresses for quick bulk emailing.</p>
+        
+        <form id="group-form" style="margin-bottom:20px;padding:15px;background:#f5f5f5;border-radius:8px;">
+            <label>Group Name</label>
+            <input type="text" id="group-name" placeholder="e.g. All Parents, U13 Players, Board Members" required>
+            <label>Email Addresses (comma separated)</label>
+            <textarea id="group-emails" rows="3" placeholder="email1@example.com, email2@example.com, ..." required style="width:100%;font-size:0.9em;"></textarea>
+            <input type="hidden" id="group-edit-id" value="">
+            <div style="display:flex;gap:10px;margin-top:10px;">
+                <button type="submit" style="background:#28a745;">Save Group</button>
+                <button type="button" onclick="cancelGroupEdit()" style="background:#666;display:none;" id="cancel-group-btn">Cancel</button>
+            </div>
+        </form>
+        
+        <div id="groups-list"></div>
+    </div>
+
+    <script>
+        async function loadEmailGroups() {
+            const container = document.getElementById("groups-list");
+            const res = await fetch("/api/email-groups");
+            const data = await res.json();
+            
+            if (!data.success || !data.groups.length) {
+                container.innerHTML = "<p style='color:#999;'>No email groups yet.</p>";
+                return;
+            }
+            
+            container.innerHTML = data.groups.map(g => {
+                const emailCount = g.emails.split(",").filter(e => e.trim()).length;
+                return `
+                    <div style="padding:12px 15px;background:white;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <strong>${g.group_name}</strong>
+                            <span style="color:#999;font-size:0.85em;margin-left:8px;">(${emailCount} email${emailCount !== 1 ? 's' : ''})</span>
+                            <div style="color:#666;font-size:0.8em;margin-top:3px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${g.emails}</div>
+                        </div>
+                        <div style="display:flex;gap:5px;">
+                            <button onclick="editGroup(${g.id}, '${g.group_name.replace(/'/g, "\\'")}', \`${g.emails}\`)" style="width:auto;padding:5px 10px;font-size:0.8em;background:#f57c00;">Edit</button>
+                            <button onclick="deleteGroup(${g.id}, '${g.group_name.replace(/'/g, "\\'")}')" style="width:auto;padding:5px 10px;font-size:0.8em;background:#cc3333;">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        document.getElementById("group-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const editId = document.getElementById("group-edit-id").value;
+            const groupName = document.getElementById("group-name").value.trim();
+            const emails = document.getElementById("group-emails").value.trim();
+            
+            let res;
+            if (editId) {
+                res = await fetch(`/api/email-groups/${editId}`, {
+                    method: "PUT",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({group_name: groupName, emails})
+                });
+            } else {
+                res = await fetch("/api/email-groups", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({group_name: groupName, emails})
+                });
+            }
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById("group-form").reset();
+                document.getElementById("group-edit-id").value = "";
+                document.getElementById("cancel-group-btn").style.display = "none";
+                loadEmailGroups();
+            } else {
+                alert(data.error || "Failed to save group");
+            }
+        });
+
+        function editGroup(id, name, emails) {
+            document.getElementById("group-edit-id").value = id;
+            document.getElementById("group-name").value = name;
+            document.getElementById("group-emails").value = emails;
+            document.getElementById("cancel-group-btn").style.display = "inline-block";
+            document.getElementById("group-form").scrollIntoView({behavior: "smooth"});
+        }
+
+        function cancelGroupEdit() {
+            document.getElementById("group-form").reset();
+            document.getElementById("group-edit-id").value = "";
+            document.getElementById("cancel-group-btn").style.display = "none";
+        }
+
+        async function deleteGroup(id, name) {
+            if (!confirm(`Delete group "${name}"?`)) return;
+            const res = await fetch(`/api/email-groups/${id}`, {method: "DELETE"});
+            const data = await res.json();
+            if (data.success) {
+                loadEmailGroups();
+            } else {
+                alert(data.error || "Failed to delete");
+            }
+        }
     </script>
 </body>
 </html>
