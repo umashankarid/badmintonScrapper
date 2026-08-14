@@ -32,19 +32,25 @@
             <h2 style="margin-top:0;">📋 SMTP Setup Instructions</h2>
             
             <h3>Setup with Brevo (Free - 300 emails/day)</h3>
-            <ol style="line-height:1.8;color:#333;">
-                <li>Create a free account at <a href="https://www.brevo.com/" target="_blank">brevo.com</a></li>
-                <li>Go to <strong>Settings</strong> → <strong>SMTP & API</strong> (<a href="https://app.brevo.com/settings/keys/smtp" target="_blank">direct link</a>)</li>
-                <li>Click <strong>Generate a new SMTP key</strong> or use existing one</li>
-                <li>Copy the <strong>SMTP key</strong> (looks like: <code>xkeysib-abc123...</code>)</li>
-                <li>In the form above:
-                    <ul>
-                        <li>Sender Email: the email you verified in Brevo (e.g. your Gmail)</li>
-                        <li>API Key: paste the SMTP key</li>
-                    </ul>
-                </li>
-                <li><strong>Important:</strong> You must verify your sender email in Brevo:
-                    <br>Go to <a href="https://app.brevo.com/senders/list" target="_blank">Senders & IPs</a> → Add a sender → Verify your email</li>
+            <ol style="line-height:2;color:#333;">
+                <li>Go to <a href="https://www.brevo.com/" target="_blank">brevo.com</a> and create a free account (or log in)</li>
+                <li>After login, click your name (top-right) → <strong>SMTP & API</strong>
+                    <br><em>Or go directly to: <a href="https://app.brevo.com/settings/keys/api" target="_blank">https://app.brevo.com/settings/keys/api</a></em></li>
+                <li>Click the <strong>"API Keys"</strong> tab</li>
+                <li>Click <strong>"Generate a new API key"</strong></li>
+                <li>Give it a name (e.g. "Badminton Tournament") and click <strong>Generate</strong></li>
+                <li>⚠️ <strong>Copy the key immediately</strong> — it starts with <code>xkeysib-</code> and is only shown once!</li>
+                <li>Paste it in the <strong>"Brevo API Key"</strong> field above</li>
+            </ol>
+            
+            <h3 style="margin-top:25px;">Verify Your Sender Email</h3>
+            <ol style="line-height:2;color:#333;">
+                <li>Go to <a href="https://app.brevo.com/senders/list" target="_blank">https://app.brevo.com/senders/list</a></li>
+                <li>Click <strong>"Add a sender"</strong></li>
+                <li>Enter your email (e.g. <code>umashankar1985@gmail.com</code>) and a name</li>
+                <li>Click <strong>Save</strong> — Brevo will send a verification email</li>
+                <li>Open your inbox, click the verification link</li>
+                <li>Done! Use this email as the <strong>"Sender Email"</strong> above</li>
             </ol>
 
             <div style="margin-top:20px;padding:12px;background:#e8f5e9;border-radius:6px;border-left:4px solid #4caf50;">
