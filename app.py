@@ -1810,8 +1810,39 @@ def get_all_bwf_tournaments():
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
+    force_refresh = request.args.get("force", "false") == "true"
+    
     try:
         from datetime import datetime, timedelta
+        
+        # CHECK CACHE: If already fetched today, return from DB (unless force refresh)
+        if not force_refresh:
+            conn_cache = sqlite3.connect(TOURNAMENTS_DB)
+            cur_cache = conn_cache.cursor()
+            today = datetime.now().strftime("%Y-%m-%d")
+            cur_cache.execute("SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ?", (f"{today}%",))
+            fetched_today = cur_cache.fetchone()[0]
+            
+            if fetched_today > 0:
+                # Already fetched today - return cached data
+                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view FROM tournaments ORDER BY date_start")
+                tournaments_cached = []
+                for row in cur_cache.fetchall():
+                    tournaments_cached.append({
+                        "url": row[0],
+                        "name": row[1],
+                        "location": row[2],
+                        "date_start": row[3],
+                        "date_end": row[4],
+                        "selected_for_view": row[5]
+                    })
+                conn_cache.close()
+                logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
+                return jsonify(success=True, tournaments=tournaments_cached, cached=True)
+            conn_cache.close()
+        
+        logger.info("🔄 Fetching fresh tournament data from Badminton Sweden...")
+        
         s = ext_requests.Session()
         s.headers.update({"User-Agent": "Mozilla/5.0"})
         s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={

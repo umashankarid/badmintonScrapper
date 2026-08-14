@@ -13,18 +13,31 @@
     <div style="margin-top:20px;">
         <h2>Available Tournaments from Badminton Sweden</h2>
         <p style="color:#666;font-size:0.9em;">Check the tournaments you want to appear in the available tournaments list on the homepage.</p>
+        <div style="margin-bottom:15px;">
+            <button onclick="hardRefresh()" style="width:auto;padding:8px 14px;background:#f57c00;font-size:0.85em;">🔄 Hard Refresh from Badminton Sweden</button>
+            <span id="cache-status" style="color:#999;font-size:0.85em;margin-left:10px;"></span>
+        </div>
         <div id="bwf-tournaments-list"></div>
         <button id="save-btn" onclick="saveSelection()" style="margin-top:20px;background:#28a745;padding:12px 24px;font-size:1em;">Save Selected Tournaments</button>
     </div>
 
     <script>
-        async function loadTournaments() {
+        async function loadTournaments(force = false) {
             const container = document.getElementById("bwf-tournaments-list");
-            container.innerHTML = "<p style='color: #999;'>Loading tournaments from Badminton Sweden...</p>";
+            const cacheStatus = document.getElementById("cache-status");
+            container.innerHTML = "<p style='color: #999;'>Loading tournaments...</p>";
+            cacheStatus.textContent = force ? "Fetching fresh data..." : "";
             
             try {
-                const res = await fetch("/api/bwf-tournaments-all");
+                const url = force ? "/api/bwf-tournaments-all?force=true" : "/api/bwf-tournaments-all";
+                const res = await fetch(url);
                 const data = await res.json();
+                
+                if (data.cached) {
+                    cacheStatus.textContent = "✅ Using today's cached data";
+                } else {
+                    cacheStatus.textContent = "✅ Fresh data loaded";
+                }
                 
                 if (!res.ok) {
                     container.innerHTML = `<p style="color: red;">HTTP Error ${res.status}: ${data.error || 'Failed to load tournaments'}</p>`;
@@ -98,6 +111,10 @@
             } else {
                 alert(data.error || "Failed to save");
             }
+        }
+
+        function hardRefresh() {
+            loadTournaments(true);
         }
 
         loadTournaments();
