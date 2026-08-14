@@ -4517,6 +4517,93 @@ def send_reminders():
         conn_t.close()
     except Exception as e:
         logger.error(f"❌ Error in send_reminders: {e}")
+    
+    # COMPETITION DATE REMINDERS: 7 days and 3 days before competition_start
+    # Sent to REGISTERED players only
+    try:
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
+        conn_t.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
+        cur_t = conn_t.cursor()
+        
+        cur_t.execute("""
+            SELECT tournament_name, competition_start, date_start
+            FROM tournaments 
+            WHERE selected_for_view = 1 
+            AND (competition_start IS NOT NULL AND competition_start != '' 
+                 OR date_start IS NOT NULL AND date_start != '')
+        """)
+        
+        for tournament_name, competition_start, date_start in cur_t.fetchall():
+            comp_date_str = competition_start or date_start
+            if not comp_date_str:
+                continue
+            
+            try:
+                comp_date = datetime.strptime(comp_date_str, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            
+            days_until_comp = (comp_date - today).days
+            
+            if days_until_comp not in (7, 3):
+                continue
+            
+            reminder_type = f"comp_{days_until_comp}days"
+            
+            # Get registered players with emails
+            cur_t.execute("""
+                SELECT p.name, p.email, tr.license_id
+                FROM tournament_registrations tr
+                LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+                WHERE tr.tournament_name = ? AND p.email IS NOT NULL AND p.email != ''
+            """, (tournament_name,))
+            
+            for name, email, license_id in cur_t.fetchall():
+                # Check opt-out
+                cur_t.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
+                             (license_id, tournament_name))
+                if cur_t.fetchone():
+                    continue
+                
+                # Check if already sent
+                conn_admin = sqlite3.connect(ADMIN_DB)
+                cur_admin = conn_admin.cursor()
+                cur_admin.execute(
+                    "SELECT id FROM reminders_sent WHERE tournament_db = ? AND player_email = ? AND sent_at LIKE ?",
+                    (f"{tournament_name}_{reminder_type}", email, f"{today.isoformat()}%")
+                )
+                if cur_admin.fetchone():
+                    conn_admin.close()
+                    continue
+                
+                # Build email
+                if days_until_comp == 7:
+                    subject = f"🏸 {tournament_name} starts in 1 week!"
+                    body = (f"Hi {name},\n\n"
+                            f"Just a reminder that '{tournament_name}' starts in 1 week ({comp_date_str}).\n\n"
+                            f"Make sure you're prepared and have everything you need!\n\n"
+                            f"Good luck! 🏸\n\n"
+                            f"Best regards,\nBMK Komet")
+                else:
+                    subject = f"🏸 {tournament_name} starts in 3 days!"
+                    body = (f"Hi {name},\n\n"
+                            f"'{tournament_name}' is just 3 days away ({comp_date_str})!\n\n"
+                            f"Final preparations time — good luck! 🏸\n\n"
+                            f"Best regards,\nBMK Komet")
+                
+                result = send_email(email, subject, body)
+                if result is True:
+                    conn_admin.execute(
+                        "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                        (f"{tournament_name}_{reminder_type}", email, datetime.now().isoformat())
+                    )
+                    conn_admin.commit()
+                    logger.info(f"📧 Competition reminder sent to {email} for {tournament_name} ({days_until_comp} days)")
+                conn_admin.close()
+        
+        conn_t.close()
+    except Exception as e:
+        logger.error(f"❌ Error in competition reminders: {e}")
 
 
 # --- Results Page ---
