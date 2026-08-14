@@ -1987,12 +1987,17 @@ def get_all_bwf_tournaments():
             
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups FROM tournaments ORDER BY date_start")
+                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories FROM tournaments ORDER BY date_start")
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
                     tg = []
                     try:
                         tg = json.loads(row[7]) if row[7] else []
+                    except Exception:
+                        pass
+                    cats = {}
+                    try:
+                        cats = json.loads(row[8]) if row[8] else {}
                     except Exception:
                         pass
                     tournaments_cached.append({
@@ -2004,7 +2009,8 @@ def get_all_bwf_tournaments():
                         "selected_for_view": row[5],
                         "registration_closes": row[6] or "",
                         "admin_reg_end_date": "",
-                        "tournament_groups": tg
+                        "tournament_groups": tg,
+                        "categories": cats
                     })
                 conn_cache.close()
                 logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
