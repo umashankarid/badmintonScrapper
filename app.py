@@ -1899,7 +1899,7 @@ def get_all_bwf_tournaments():
             
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, admin_reg_end_date FROM tournaments ORDER BY date_start")
+                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes FROM tournaments ORDER BY date_start")
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
                     tournaments_cached.append({
@@ -1909,7 +1909,8 @@ def get_all_bwf_tournaments():
                         "date_start": row[3],
                         "date_end": row[4],
                         "selected_for_view": row[5],
-                        "admin_reg_end_date": row[6] or ""
+                        "registration_closes": row[6] or "",
+                        "admin_reg_end_date": ""
                     })
                 conn_cache.close()
                 logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
@@ -2155,18 +2156,29 @@ def get_all_bwf_tournaments():
         # STEP 4: Get updated selection status
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
-        cur.execute("SELECT tournament_url, selected_for_view, admin_reg_end_date FROM tournaments")
+        try:
+            cur.execute("SELECT tournament_url, selected_for_view, admin_reg_end_date, registration_closes FROM tournaments")
+        except Exception:
+            cur.execute("SELECT tournament_url, selected_for_view, registration_closes FROM tournaments")
         selection_map_updated = {}
         reg_date_map = {}
+        reg_closes_map = {}
         for row in cur.fetchall():
             selection_map_updated[row[0]] = row[1]
-            reg_date_map[row[0]] = row[2] or ""
+            if len(row) > 3:
+                reg_date_map[row[0]] = row[2] or ""
+                reg_closes_map[row[0]] = row[3] or ""
+            else:
+                reg_date_map[row[0]] = ""
+                reg_closes_map[row[0]] = row[2] or ""
         conn.close()
 
-        # Add selected_for_view and admin_reg_end_date to each tournament
+        # Add selected_for_view, admin_reg_end_date, and registration_closes to each tournament
         for t in tournaments:
             t["selected_for_view"] = selection_map_updated.get(t["url"], 0)
             t["admin_reg_end_date"] = reg_date_map.get(t["url"], "")
+            if not t.get("registration_closes"):
+                t["registration_closes"] = reg_closes_map.get(t["url"], "")
 
         trigger_sync()
         logger.info(f"✅ get_all_bwf_tournaments completed successfully")
