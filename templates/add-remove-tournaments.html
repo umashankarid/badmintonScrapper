@@ -91,7 +91,7 @@
                                     const hasJunior = allLevels.some(l => /U\d/.test(l));
                                     const hasSenior = allLevels.some(l => {
                                         const level = l.split(' ').pop();
-                                        return ['Elit','A','B','C','D'].includes(level);
+                                        return ['Elit','A','B','C','D'].includes(level) || /^[A-Z]{2}[ABCD]$/.test(l) || /V\d/.test(l);
                                     });
                                     if (hasJunior && hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span><span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#f3e5f5;color:#6a1b9a;margin-left:3px;">Senior</span>';
                                     if (hasJunior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span>';
