@@ -1043,13 +1043,13 @@
                 
                 // Show recipients
                 const recipients = data.recipients || [];
-                scheduleHtml += `<p><strong>Recipients (${recipients.length} players not yet registered):</strong></p>`;
+                scheduleHtml += `<p><strong>Will send to (${recipients.length} registered players with email):</strong></p>`;
                 if (recipients.length) {
                     scheduleHtml += `<div style="max-height:150px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px;padding:8px;background:white;font-size:0.85em;">`;
                     scheduleHtml += recipients.map(r => `${r.name} — ${r.email}`).join("<br>");
                     scheduleHtml += `</div>`;
                 } else {
-                    scheduleHtml += `<p style="color:#999;font-size:0.9em;">All eligible players are already registered!</p>`;
+                    scheduleHtml += `<p style="color:#999;font-size:0.9em;">No registered players with email addresses.</p>`;
                 }
                 
                 // Send Now button
