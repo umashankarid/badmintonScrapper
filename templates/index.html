@@ -7,17 +7,17 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:20px;">
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
         <div id="bwf-user" style="display:none;align-items:center;gap:8px;">
             <span id="bwf-player-info" style="font-weight:bold;"></span>
             <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
         </div>
-        <div id="admin-info" style="display:none;align-items:center;gap:8px;">
-            <span id="admin-player-info" style="font-weight:bold;"></span>
-            <a href="/add-remove-tournaments.html"><button style="width:auto;padding:8px 16px;background:#0d47a1;">Add/Remove Tournaments</button></a>
-            <a href="/manage-admins.html"><button style="width:auto;padding:8px 16px;background:#37474f;">Manage Admins</button></a>
-            <a href="/manage-db.html"><button style="width:auto;padding:8px 16px;background:#455a64;">Manage DB</button></a>
-            <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;background:#666;">Logout</button>
+        <div id="admin-info" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+            <span id="admin-player-info" style="font-weight:bold;width:100%;text-align:right;"></span>
+            <a href="/add-remove-tournaments.html"><button style="width:auto;padding:8px 12px;background:#0d47a1;font-size:0.85em;">Add/Remove Tournaments</button></a>
+            <a href="/manage-admins.html"><button style="width:auto;padding:8px 12px;background:#37474f;font-size:0.85em;">Manage Admins</button></a>
+            <a href="/manage-db.html"><button style="width:auto;padding:8px 12px;background:#455a64;font-size:0.85em;">Manage DB</button></a>
+            <button onclick="bwfLogout()" style="width:auto;padding:8px 12px;background:#666;font-size:0.85em;">Logout</button>
         </div>
     </div>
 
