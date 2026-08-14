@@ -4013,6 +4013,41 @@ def get_registered_emails():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/group-emails", methods=["GET"])
+def get_group_emails():
+    """Get emails from kometPlayers filtered by group (or all if no group specified)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    group = request.args.get("group", "").strip()
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT email, groups FROM kometPlayers WHERE email IS NOT NULL AND email != ''")
+        
+        emails = []
+        for row in cur.fetchall():
+            email, groups_json = row
+            if not group:
+                # No filter - return all
+                emails.append(email)
+            else:
+                # Filter by group
+                player_groups = []
+                try:
+                    player_groups = json.loads(groups_json) if groups_json else []
+                except Exception:
+                    pass
+                if group in player_groups or "All" in player_groups:
+                    emails.append(email)
+        
+        conn.close()
+        return jsonify(success=True, emails=list(set(emails)))
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/send-bulk-email", methods=["POST"])
 def send_bulk_email():
     """Send email to multiple recipients"""

@@ -14,10 +14,13 @@
         <form id="email-form">
             <label>To (email addresses)</label>
             <div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-                <button type="button" onclick="loadRegisteredEmails()" style="width:auto;padding:6px 12px;background:#0d47a1;font-size:0.85em;">Load All Komet Players</button>
-                <select id="tournament-select" style="width:auto;padding:6px;font-size:0.85em;" onchange="loadRegisteredEmails()">
-                    <option value="">-- Filter by tournament --</option>
+                <select id="tournament-select" style="width:auto;padding:6px;font-size:0.85em;" onchange="loadFromTournament()">
+                    <option value="">-- Send to tournament players --</option>
                 </select>
+                <select id="group-select" style="width:auto;padding:6px;font-size:0.85em;" onchange="loadFromGroup()">
+                    <option value="">-- Send to group --</option>
+                </select>
+                <button type="button" onclick="loadAllKometEmails()" style="width:auto;padding:6px 12px;background:#0d47a1;font-size:0.85em;">Load All Komet Players</button>
             </div>
             <textarea id="email-to" rows="3" placeholder="Enter email addresses separated by comma, or use the button above to load..." style="width:100%;font-size:0.9em;"></textarea>
             <p style="color:#999;font-size:0.8em;margin-top:2px;" id="email-count"></p>
@@ -53,22 +56,71 @@
             } catch(e) {}
         }
 
-        async function loadRegisteredEmails() {
-            const tournament = document.getElementById("tournament-select").value;
+        async function loadGroups() {
             try {
-                const url = tournament 
-                    ? `/api/registered-emails?tournament=${encodeURIComponent(tournament)}`
-                    : `/api/registered-emails`;
-                const res = await fetch(url);
+                const res = await fetch("/api/player-groups");
+                const data = await res.json();
+                const select = document.getElementById("group-select");
+                if (data.success && data.groups) {
+                    data.groups.forEach(g => {
+                        const opt = document.createElement("option");
+                        opt.value = g.group_name;
+                        opt.textContent = g.group_name;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        async function loadFromTournament() {
+            const tournament = document.getElementById("tournament-select").value;
+            if (!tournament) return;
+            document.getElementById("group-select").value = "";
+            try {
+                const res = await fetch(`/api/registered-emails?tournament=${encodeURIComponent(tournament)}`);
                 const data = await res.json();
                 if (data.success) {
                     const emails = data.emails.filter(e => e && e.includes("@"));
                     document.getElementById("email-to").value = emails.join(", ");
-                    document.getElementById("email-count").textContent = `${emails.length} email address${emails.length !== 1 ? 'es' : ''} loaded`;
-                } else {
-                    alert(data.error || "Failed to load emails");
+                    document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} from "${tournament}" registrations`;
                 }
             } catch(e) {
+                alert("Error: " + e.message);
+            }
+        }
+
+        async function loadFromGroup() {
+            const group = document.getElementById("group-select").value;
+            if (!group) return;
+            document.getElementById("tournament-select").value = "";
+            try {
+                const res = await fetch(`/api/group-emails?group=${encodeURIComponent(group)}`);
+                const data = await res.json();
+                if (data.success) {
+                    const emails = data.emails.filter(e => e && e.includes("@"));
+                    document.getElementById("email-to").value = emails.join(", ");
+                    document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} from group "${group}"`;
+                }
+            } catch(e) {
+                alert("Error: " + e.message);
+            }
+        }
+
+        async function loadAllKometEmails() {
+            document.getElementById("tournament-select").value = "";
+            document.getElementById("group-select").value = "";
+            try {
+                const res = await fetch("/api/group-emails");
+                const data = await res.json();
+                if (data.success) {
+                    const emails = data.emails.filter(e => e && e.includes("@"));
+                    document.getElementById("email-to").value = emails.join(", ");
+                    document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} (all Komet players)`;
+                }
+            } catch(e) {
+                alert("Error: " + e.message);
+            }
+        }
                 alert("Error: " + e.message);
             }
         }
@@ -143,6 +195,7 @@
         }
 
         loadTournaments();
+        loadGroups();
     </script>
 </body>
 </html>
