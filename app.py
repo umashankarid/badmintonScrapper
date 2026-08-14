@@ -244,13 +244,6 @@ def init_admin_db():
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS email_groups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_name TEXT UNIQUE NOT NULL,
-            emails TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
         CREATE TABLE IF NOT EXISTS player_groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_name TEXT UNIQUE NOT NULL
@@ -3855,86 +3848,6 @@ def get_allplayers():
         return jsonify(success=True, players=players, total=total)
     except Exception as e:
         logger.error(f"❌ Error fetching allplayers: {e}")
-        return jsonify(success=False, error=str(e))
-
-
-@app.route("/api/email-groups", methods=["GET"])
-def get_email_groups():
-    """Get all email groups"""
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
-    try:
-        conn = sqlite3.connect(ADMIN_DB)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute("SELECT id, group_name, emails FROM email_groups ORDER BY group_name")
-        groups = [dict(row) for row in cur.fetchall()]
-        conn.close()
-        return jsonify(success=True, groups=groups)
-    except Exception as e:
-        return jsonify(success=False, error=str(e))
-
-
-@app.route("/api/email-groups", methods=["POST"])
-def create_email_group():
-    """Create a new email group"""
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
-    data = request.json
-    group_name = data.get("group_name", "").strip()
-    emails = data.get("emails", "").strip()
-    
-    if not group_name:
-        return jsonify(success=False, error="Group name required")
-    if not emails:
-        return jsonify(success=False, error="At least one email required")
-    
-    try:
-        conn = sqlite3.connect(ADMIN_DB)
-        conn.execute("INSERT INTO email_groups (group_name, emails) VALUES (?, ?)", (group_name, emails))
-        conn.commit()
-        conn.close()
-        return jsonify(success=True)
-    except sqlite3.IntegrityError:
-        return jsonify(success=False, error=f"Group '{group_name}' already exists")
-    except Exception as e:
-        return jsonify(success=False, error=str(e))
-
-
-@app.route("/api/email-groups/<int:group_id>", methods=["PUT"])
-def update_email_group(group_id):
-    """Update an email group"""
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
-    data = request.json
-    group_name = data.get("group_name", "").strip()
-    emails = data.get("emails", "").strip()
-    
-    if not group_name or not emails:
-        return jsonify(success=False, error="Group name and emails required")
-    
-    try:
-        conn = sqlite3.connect(ADMIN_DB)
-        conn.execute("UPDATE email_groups SET group_name = ?, emails = ? WHERE id = ?", (group_name, emails, group_id))
-        conn.commit()
-        conn.close()
-        return jsonify(success=True)
-    except Exception as e:
-        return jsonify(success=False, error=str(e))
-
-
-@app.route("/api/email-groups/<int:group_id>", methods=["DELETE"])
-def delete_email_group(group_id):
-    """Delete an email group"""
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
-    try:
-        conn = sqlite3.connect(ADMIN_DB)
-        conn.execute("DELETE FROM email_groups WHERE id = ?", (group_id,))
-        conn.commit()
-        conn.close()
-        return jsonify(success=True)
-    except Exception as e:
         return jsonify(success=False, error=str(e))
 
 

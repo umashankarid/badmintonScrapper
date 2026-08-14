@@ -5,25 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Email Settings</title>
     <link rel="stylesheet" href="/static/styles.css">
-    <style>
-        .tabs { display:flex;gap:0;border-bottom:2px solid #ddd;margin-bottom:20px; }
-        .tab-btn { padding:12px 24px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:1em;color:#666; }
-        .tab-btn.active { color:#1a237e;border-bottom-color:#0d47a1;font-weight:bold; }
-        .tab-content { display:none; }
-        .tab-content.active { display:block; }
-    </style>
 </head>
 <body>
     <h1>📧 Email Settings</h1>
     <a href="/manage.html">← Back to Manage</a>
 
     <div class="tabs" style="margin-top:20px;">
-        <button class="tab-btn active" onclick="switchTab('config')">Email Configuration</button>
-        <button class="tab-btn" onclick="switchTab('groups')">Email Group Management</button>
-    </div>
-
-    <!-- Tab 1: Email Configuration -->
-    <div id="config-tab" class="tab-content active" style="max-width:600px;">
+    <div style="margin-top:20px;max-width:600px;">
         <h2>Brevo API Configuration</h2>
         <form id="smtp-form">
             <label>Sender Email Address</label>
@@ -70,35 +58,7 @@
         </div>
     </div>
 
-    <!-- Tab 2: Email Group Management -->
-    <div id="groups-tab" class="tab-content" style="max-width:600px;">
-        <h2>Email Groups</h2>
-        <p style="color:#666;font-size:0.9em;">Create named groups of email addresses for quick bulk emailing.</p>
-        
-        <form id="group-form" style="margin-bottom:20px;padding:15px;background:#f5f5f5;border-radius:8px;">
-            <label>Group Name</label>
-            <input type="text" id="group-name" placeholder="e.g. All Parents, U13 Players, Board Members" required>
-            <label>Email Addresses (comma separated)</label>
-            <textarea id="group-emails" rows="4" placeholder="email1@example.com, email2@example.com, ..." required style="width:100%;font-size:0.9em;"></textarea>
-            <input type="hidden" id="group-edit-id" value="">
-            <div style="display:flex;gap:10px;margin-top:10px;">
-                <button type="submit" style="background:#28a745;">Save Group</button>
-                <button type="button" onclick="cancelGroupEdit()" style="background:#666;display:none;" id="cancel-group-btn">Cancel</button>
-            </div>
-        </form>
-        
-        <h3>Existing Groups</h3>
-        <div id="groups-list"></div>
-    </div>
-
     <script>
-        function switchTab(tab) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById(tab + '-tab').classList.add('active');
-            document.querySelectorAll('.tab-btn')[tab === 'config' ? 0 : 1].classList.add('active');
-            if (tab === 'groups') loadEmailGroups();
-        }
 
         // === Email Configuration ===
         async function loadSettings() {
@@ -156,87 +116,6 @@
                 resultEl.style.background = "#ffebee"; resultEl.style.color = "#c62828";
                 resultEl.textContent = "❌ " + (data.error || "Failed to send.");
             }
-        }
-
-        // === Email Group Management ===
-        async function loadEmailGroups() {
-            const container = document.getElementById("groups-list");
-            const res = await fetch("/api/email-groups");
-            const data = await res.json();
-            
-            if (!data.success || !data.groups || !data.groups.length) {
-                container.innerHTML = "<p style='color:#999;'>No email groups yet. Create one above.</p>";
-                return;
-            }
-            
-            container.innerHTML = data.groups.map(g => {
-                const emailList = g.emails.split(",").map(e => e.trim()).filter(e => e);
-                return `
-                    <div style="padding:12px 15px;background:white;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:10px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                            <strong>${g.group_name}</strong>
-                            <div style="display:flex;gap:5px;">
-                                <button onclick="editGroup(${g.id}, '${g.group_name.replace(/'/g, "\\'")}', \`${g.emails}\`)" style="width:auto;padding:5px 10px;font-size:0.8em;background:#f57c00;">Edit</button>
-                                <button onclick="deleteGroup(${g.id}, '${g.group_name.replace(/'/g, "\\'")}')" style="width:auto;padding:5px 10px;font-size:0.8em;background:#cc3333;">Delete</button>
-                            </div>
-                        </div>
-                        <div style="color:#666;font-size:0.85em;">${emailList.length} email${emailList.length !== 1 ? 's' : ''}: ${emailList.join(', ')}</div>
-                    </div>
-                `;
-            }).join("");
-        }
-
-        document.getElementById("group-form").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const editId = document.getElementById("group-edit-id").value;
-            const groupName = document.getElementById("group-name").value.trim();
-            const emails = document.getElementById("group-emails").value.trim();
-            
-            let res;
-            if (editId) {
-                res = await fetch(`/api/email-groups/${editId}`, {
-                    method: "PUT",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({group_name: groupName, emails})
-                });
-            } else {
-                res = await fetch("/api/email-groups", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({group_name: groupName, emails})
-                });
-            }
-            const data = await res.json();
-            if (data.success) {
-                document.getElementById("group-form").reset();
-                document.getElementById("group-edit-id").value = "";
-                document.getElementById("cancel-group-btn").style.display = "none";
-                loadEmailGroups();
-            } else {
-                alert(data.error || "Failed to save group");
-            }
-        });
-
-        function editGroup(id, name, emails) {
-            document.getElementById("group-edit-id").value = id;
-            document.getElementById("group-name").value = name;
-            document.getElementById("group-emails").value = emails;
-            document.getElementById("cancel-group-btn").style.display = "inline-block";
-            document.getElementById("group-form").scrollIntoView({behavior: "smooth"});
-        }
-
-        function cancelGroupEdit() {
-            document.getElementById("group-form").reset();
-            document.getElementById("group-edit-id").value = "";
-            document.getElementById("cancel-group-btn").style.display = "none";
-        }
-
-        async function deleteGroup(id, name) {
-            if (!confirm(`Delete group "${name}"?`)) return;
-            const res = await fetch(`/api/email-groups/${id}`, {method: "DELETE"});
-            const data = await res.json();
-            if (data.success) loadEmailGroups();
-            else alert(data.error || "Failed to delete");
         }
 
         loadSettings();
