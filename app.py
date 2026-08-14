@@ -587,6 +587,16 @@ def manage_admins_page():
     return send_from_directory("templates", "manage-admins.html")
 
 
+@app.route("/manage.html")
+def manage_page():
+    return send_from_directory("templates", "manage.html")
+
+
+@app.route("/email-settings.html")
+def email_settings_page():
+    return send_from_directory("templates", "email-settings.html")
+
+
 @app.route("/send-email.html")
 def send_email_page():
     return send_from_directory("templates", "send-email.html")
