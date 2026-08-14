@@ -563,6 +563,14 @@ def init_players_db():
             last_scraped TIMESTAMP
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS kometPlayers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_id TEXT UNIQUE,
+            name TEXT NOT NULL,
+            email TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -3590,6 +3598,109 @@ def get_player_dob():
         return jsonify(success=True, dob="", age="")
     except Exception as e:
         return jsonify(success=True, dob="", age="")
+
+
+@app.route("/api/komet-players", methods=["GET"])
+def get_komet_players():
+    """Get paginated list of komet players with optional search"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    page = int(request.args.get("page", 1))
+    page_size = int(request.args.get("pageSize", 30))
+    search = request.args.get("search", "").strip()
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        offset = (page - 1) * page_size
+        
+        if search:
+            cur.execute("SELECT COUNT(*) FROM kometPlayers WHERE name LIKE ? OR license_id LIKE ? OR email LIKE ?",
+                       (f"%{search}%", f"%{search}%", f"%{search}%"))
+            total = cur.fetchone()[0]
+            cur.execute("""
+                SELECT id, license_id, name, email FROM kometPlayers 
+                WHERE name LIKE ? OR license_id LIKE ? OR email LIKE ?
+                ORDER BY name LIMIT ? OFFSET ?
+            """, (f"%{search}%", f"%{search}%", f"%{search}%", page_size, offset))
+        else:
+            cur.execute("SELECT COUNT(*) FROM kometPlayers")
+            total = cur.fetchone()[0]
+            cur.execute("SELECT id, license_id, name, email FROM kometPlayers ORDER BY name LIMIT ? OFFSET ?",
+                       (page_size, offset))
+        
+        players = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return jsonify(success=True, players=players, total=total)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/komet-players", methods=["POST"])
+def create_komet_player():
+    """Add a new komet player"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    data = request.json
+    license_id = data.get("license_id", "").strip()
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip()
+    
+    if not name:
+        return jsonify(success=False, error="Name required")
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        conn.execute("INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
+                    (license_id or None, name, email or None))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True)
+    except sqlite3.IntegrityError:
+        return jsonify(success=False, error=f"Player with license ID '{license_id}' already exists")
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/komet-players/<int:player_id>", methods=["PUT"])
+def update_komet_player(player_id):
+    """Update a komet player"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    data = request.json
+    license_id = data.get("license_id", "").strip()
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip()
+    
+    if not name:
+        return jsonify(success=False, error="Name required")
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        conn.execute("UPDATE kometPlayers SET license_id = ?, name = ?, email = ? WHERE id = ?",
+                    (license_id or None, name, email or None, player_id))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/komet-players/<int:player_id>", methods=["DELETE"])
+def delete_komet_player(player_id):
+    """Delete a komet player"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        conn.execute("DELETE FROM kometPlayers WHERE id = ?", (player_id,))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
 
 
 @app.route("/api/allplayers-status", methods=["GET"])
