@@ -1421,9 +1421,9 @@ def send_test_email():
         return jsonify(success=False, error="Email required"), 400
 
     result = send_email(to_email, "Test Email - Badminton Tournament", "This is a test email from your Badminton Tournament system.")
-    if result:
+    if result is True:
         return jsonify(success=True, message="Test email sent!")
-    return jsonify(success=False, error="Failed to send email. Check server logs for details (network/auth issue).")
+    return jsonify(success=False, error=result if isinstance(result, str) else "Unknown error")
 
 
 # --- Tournament CRUD ---
@@ -3590,7 +3590,7 @@ def send_bulk_email():
         email = email.strip()
         if not email or "@" not in email:
             continue
-        if send_email(email, subject, body):
+        if send_email(email, subject, body) is True:
             sent += 1
         else:
             failed += 1
@@ -3600,7 +3600,7 @@ def send_bulk_email():
 
 
 def send_email(to_email, subject, body):
-    """Send an email using configured SMTP settings."""
+    """Send an email using configured SMTP settings. Returns True on success, or error string on failure."""
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
@@ -3614,13 +3614,13 @@ def send_email(to_email, subject, body):
 
     if not settings:
         logger.error("📧 ❌ No SMTP settings found in database")
-        return False
+        return "No SMTP settings found. Save settings first."
     if not settings["smtp_email"]:
         logger.error("📧 ❌ SMTP email address not configured")
-        return False
+        return "SMTP email address not configured."
     if not settings["smtp_password"]:
         logger.error("📧 ❌ SMTP password not configured")
-        return False
+        return "SMTP password not configured."
 
     host = settings["smtp_host"]
     port = settings["smtp_port"]
@@ -3654,16 +3654,19 @@ def send_email(to_email, subject, body):
         return True
     except smtplib.SMTPAuthenticationError as e:
         logger.error(f"📧 ❌ Authentication failed: {e}")
-        return False
+        return f"Authentication failed. Check email/password. ({e})"
     except smtplib.SMTPConnectError as e:
         logger.error(f"📧 ❌ Connection failed: {e}")
-        return False
+        return f"Connection to {host}:{port} failed. ({e})"
     except TimeoutError as e:
         logger.error(f"📧 ❌ Connection timed out: {e}")
-        return False
+        return f"Connection to {host}:{port} timed out."
+    except OSError as e:
+        logger.error(f"📧 ❌ Network error: {e}")
+        return f"Network error: {e}"
     except Exception as e:
         logger.error(f"📧 ❌ Email error [{type(e).__name__}]: {e}")
-        return False
+        return f"Error: {type(e).__name__} - {e}"
 
 
 def send_reminders():
