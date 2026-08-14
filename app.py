@@ -271,9 +271,13 @@ def init_admin_db():
     try:
         conn.execute("INSERT INTO admin_users (username) VALUES (?)", ("umashankar1985@gmail.com",))
         conn.commit()
-        logger.info("Created default admin: umashankar1985@gmail.com")
     except sqlite3.IntegrityError:
-        # Admin already exists
+        pass
+    try:
+        conn.execute("INSERT INTO admin_users (username) VALUES (?)", ("sbf04959",))
+        conn.commit()
+        logger.info("Created default admin: sbf04959 (club account)")
+    except sqlite3.IntegrityError:
         pass
     
     conn.close()
@@ -741,7 +745,29 @@ def bwf_login():
         print(f"[BWF Login] Profile URL found: {profile_url}")
 
         if not profile_url:
-            return jsonify(success=False, error="Login succeeded but could not find player profile"), 500
+            # Club account (no player profile) - check if it's a known admin account
+            if login in ("sbf04959", "umashankar1985@gmail.com"):
+                # Club/admin account - proceed without player profile
+                player_name = login
+                name_el = soup.select_one(".masthead__user-title")
+                if name_el:
+                    player_name = name_el.get_text(strip=True)
+                
+                session["bwf_player"] = player_name
+                session["bwf_login"] = login
+                session["bwf_license_id"] = ""
+                session["bwf_club"] = ""
+                session["bwf_gender"] = ""
+                session["bwf_email"] = ""
+                session["bwf_phone"] = ""
+                session["bwf_dob"] = ""
+                session["bwf_age"] = ""
+                session["bwf_ranking"] = {}
+                session["admin"] = True
+                logger.info(f"✅ Club/admin account logged in: {login}")
+                return jsonify(success=True, player_name=player_name, license_id="", club="", gender="", email="", phone="", dob="", age="", ranking={})
+            else:
+                return jsonify(success=False, error="Login succeeded but could not find player profile"), 500
 
         # Get player name from the masthead (shown after login)
         player_name = ""
