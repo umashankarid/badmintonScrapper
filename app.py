@@ -3612,31 +3612,57 @@ def send_email(to_email, subject, body):
     settings = cur.fetchone()
     conn.close()
 
-    if not settings or not settings["smtp_email"] or not settings["smtp_password"]:
+    if not settings:
+        logger.error("📧 ❌ No SMTP settings found in database")
         return False
+    if not settings["smtp_email"]:
+        logger.error("📧 ❌ SMTP email address not configured")
+        return False
+    if not settings["smtp_password"]:
+        logger.error("📧 ❌ SMTP password not configured")
+        return False
+
+    host = settings["smtp_host"]
+    port = settings["smtp_port"]
+    smtp_email = settings["smtp_email"]
+    smtp_password = settings["smtp_password"]
+    
+    logger.info(f"📧 Sending email to: {to_email}")
+    logger.info(f"📧 SMTP config: host={host}, port={port}, from={smtp_email}")
 
     try:
         msg = MIMEMultipart()
-        msg["From"] = settings["smtp_email"]
+        msg["From"] = smtp_email
         msg["To"] = to_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
 
-        port = settings["smtp_port"]
-        host = settings["smtp_host"]
-
+        logger.info(f"📧 Connecting to {host}:{port}...")
         if port == 465:
             server = smtplib.SMTP_SSL(host, port, timeout=15)
         else:
             server = smtplib.SMTP(host, port, timeout=15)
+            logger.info("📧 Starting TLS...")
             server.starttls()
 
-        server.login(settings["smtp_email"], settings["smtp_password"])
-        server.sendmail(settings["smtp_email"], to_email, msg.as_string())
+        logger.info("📧 Logging in...")
+        server.login(smtp_email, smtp_password)
+        logger.info("📧 Sending message...")
+        server.sendmail(smtp_email, to_email, msg.as_string())
         server.quit()
+        logger.info(f"📧 ✅ Email sent successfully to {to_email}")
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"📧 ❌ Authentication failed: {e}")
+        return False
+    except smtplib.SMTPConnectError as e:
+        logger.error(f"📧 ❌ Connection failed: {e}")
+        return False
+    except TimeoutError as e:
+        logger.error(f"📧 ❌ Connection timed out: {e}")
+        return False
     except Exception as e:
-        print(f"[Email Error] {e}")
+        logger.error(f"📧 ❌ Email error [{type(e).__name__}]: {e}")
         return False
 
 
