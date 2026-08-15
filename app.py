@@ -2342,8 +2342,9 @@ def open_tournaments():
                 cur_p.execute("SELECT groups FROM kometPlayers WHERE license_id = ?", (license_id,))
                 row_p = cur_p.fetchone()
                 conn_p.close()
-                if row_p and row_p[0]:
-                    player_groups = json.loads(row_p[0])
+                if row_p is not None:
+                    # Player is in kometPlayers - apply group filtering
+                    player_groups = json.loads(row_p[0]) if row_p[0] else []
             except Exception:
                 player_groups = None
         
