@@ -523,11 +523,6 @@ def init_players_db():
             group_name TEXT UNIQUE NOT NULL
         )
     """)
-    # Insert default "All" group if it doesn't exist
-    try:
-        conn.execute("INSERT OR IGNORE INTO player_groups (group_name) VALUES ('All')")
-    except Exception:
-        pass
     conn.commit()
     conn.close()
 
@@ -2366,8 +2361,7 @@ def open_tournaments():
             if player_groups is not None and not is_admin:
                 if tournament_groups:
                     # Tournament has groups assigned - check if player's groups overlap
-                    # "All" in tournament_groups means show to everyone
-                    if "All" not in tournament_groups and "all" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                    if not set(player_groups).intersection(set(tournament_groups)):
                         continue  # Player's groups don't match this tournament
                 # If tournament has no groups assigned, show to everyone
             
@@ -2744,8 +2738,8 @@ def get_tournament_info():
                             player_groups = json.loads(p_row[3]) if p_row[3] else []
                         except Exception:
                             pass
-                        # Player is eligible if: "All" in tournament_groups, or player's groups overlap
-                        if "All" in tournament_groups or set(player_groups).intersection(set(tournament_groups)):
+                        # Player is eligible if their groups overlap with tournament groups
+                        if set(player_groups).intersection(set(tournament_groups)):
                             eligible_players.append({"name": p_row[0], "license_id": p_row[1], "email": p_row[2] or ""})
                 else:
                     # No groups assigned - all komet players are eligible
@@ -4118,7 +4112,7 @@ def get_group_emails():
                     player_groups = json.loads(groups_json) if groups_json else []
                 except Exception:
                     pass
-                if group in player_groups or "All" in player_groups:
+                if group in player_groups:
                     emails.append(email)
         
         conn.close()
@@ -4433,7 +4427,7 @@ def send_reminders():
                     pass
                 
                 if tournament_groups:
-                    if "All" not in tournament_groups and "all" not in tournament_groups and not set(player_groups).intersection(set(tournament_groups)):
+                    if not set(player_groups).intersection(set(tournament_groups)):
                         continue  # Player's groups don't match
                 
                 # Check if player opted out of reminders for this tournament

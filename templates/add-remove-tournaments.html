@@ -13,6 +13,22 @@
     <div style="margin-top:20px;">
         <h2>Available Tournaments from Badminton Sweden</h2>
         <p style="color:#666;font-size:0.9em;">Check the tournaments you want to appear in the available tournaments list for the players.</p>
+        
+        <details style="margin:15px 0;padding:12px 15px;background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;">
+            <summary style="cursor:pointer;font-weight:bold;color:#2e7d32;">ℹ️ How Groups Work</summary>
+            <div style="margin-top:10px;font-size:0.9em;color:#333;line-height:1.6;">
+                <p><strong>No groups selected</strong> = Tournament is visible to <strong>all players</strong>.</p>
+                <p><strong>One or more groups selected</strong> = Tournament is only visible to players who belong to <strong>at least one</strong> of the selected groups.</p>
+                <p style="margin-top:10px;"><strong>Example:</strong></p>
+                <ul style="margin:5px 0;">
+                    <li><em>Komet Hösttävling</em> with groups <strong>U11, U13</strong> → Only players in group U11 or U13 will see this tournament.</li>
+                    <li><em>Vikingaslaget</em> with <strong>no groups</strong> → All players see it.</li>
+                    <li><em>Spånga Open</em> with groups <strong>Senior, Vuxen</strong> → Only players in Senior or Vuxen group will see it.</li>
+                </ul>
+                <p style="margin-top:8px;color:#666;font-size:0.85em;">Tip: Hold Ctrl/Cmd to select multiple groups. To deselect all groups (make visible to everyone), click on a selected group while holding Ctrl/Cmd.</p>
+            </div>
+        </details>
+
         <div style="margin-bottom:15px;">
             <button onclick="hardRefresh()" style="width:auto;padding:8px 14px;background:#f57c00;font-size:0.85em;">🔄 Hard Refresh from Badminton Sweden</button>
             <span id="cache-status" style="color:#999;font-size:0.85em;margin-left:10px;"></span>
@@ -31,7 +47,7 @@
             try {
                 const res = await fetch("/api/player-groups");
                 const data = await res.json();
-                allPlayerGroups = data.success ? data.groups.map(g => g.group_name) : [];
+                allPlayerGroups = data.success ? data.groups.map(g => g.group_name).filter(g => g !== "All") : [];
             } catch(e) { allPlayerGroups = []; }
         }
 
