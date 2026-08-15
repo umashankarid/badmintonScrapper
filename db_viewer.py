@@ -20,10 +20,11 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Database paths
-PLAYERS_DB = "players.db"
-TOURNAMENTS_DB = "tournaments.db"
-ADMIN_DB = "admin.db"
-POINT_RULES_DB = "point_rules.db"
+DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(__file__))
+PLAYERS_DB = os.path.join(DATA_DIR, "players.db")
+TOURNAMENTS_DB = os.path.join(DATA_DIR, "tournaments.db")
+ADMIN_DB = os.path.join(DATA_DIR, "admin.db")
+POINT_RULES_DB = os.path.join(DATA_DIR, "point_rules.db")
 
 DATABASES = [
     {"name": "players.db", "path": PLAYERS_DB, "description": "Global player registry with Badminton Sweden data"},

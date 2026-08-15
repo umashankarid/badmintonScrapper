@@ -75,12 +75,17 @@ if not run_startup_tests():
 
 
 
-PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
+# Database directory - use DATA_DIR env var for persistent volume storage
+# Coolify config: Source=/data/badminton-scraper, Destination=/app/data
+DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(__file__))
+os.makedirs(DATA_DIR, exist_ok=True)
 
+PLAYERS_DB = os.path.join(DATA_DIR, "players.db")
+POINTS_DB = os.path.join(DATA_DIR, "point_rules.db")
+ADMIN_DB = os.path.join(DATA_DIR, "admin.db")
+TOURNAMENTS_DB = os.path.join(DATA_DIR, "tournaments.db")
 
-POINTS_DB = os.path.join(os.path.dirname(__file__), "point_rules.db")
-ADMIN_DB = os.path.join(os.path.dirname(__file__), "admin.db")
-TOURNAMENTS_DB = os.path.join(os.path.dirname(__file__), "tournaments.db")
+logger.info(f"📂 Database directory: {DATA_DIR}")
 
 def init_tournaments_db():
     """Initialize tournaments.db with tournament and registration tables"""

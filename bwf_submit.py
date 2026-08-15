@@ -24,8 +24,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-TOURNAMENTS_DB = os.path.join(os.path.dirname(__file__), "tournaments.db")
-PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
+TOURNAMENTS_DB = os.path.join(os.environ.get("DATA_DIR", os.path.dirname(__file__)), "tournaments.db")
+PLAYERS_DB = os.path.join(os.environ.get("DATA_DIR", os.path.dirname(__file__)), "players.db")
 
 BASE_URL = "https://badmintonsweden.tournamentsoftware.com"
 
