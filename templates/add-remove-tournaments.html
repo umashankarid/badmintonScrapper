@@ -17,15 +17,41 @@
         <details style="margin:15px 0;padding:12px 15px;background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;">
             <summary style="cursor:pointer;font-weight:bold;color:#2e7d32;">ℹ️ How Groups Work</summary>
             <div style="margin-top:10px;font-size:0.9em;color:#333;line-height:1.6;">
-                <p><strong>No groups selected</strong> = Tournament is visible to <strong>all players</strong>.</p>
-                <p><strong>One or more groups selected</strong> = Tournament is only visible to players who belong to <strong>at least one</strong> of the selected groups.</p>
-                <p style="margin-top:10px;"><strong>Example:</strong></p>
+                <table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:0.95em;">
+                    <thead>
+                        <tr style="background:#c8e6c9;">
+                            <th style="padding:8px;border:1px solid #a5d6a7;text-align:left;">Player</th>
+                            <th style="padding:8px;border:1px solid #a5d6a7;text-align:center;">Tournament WITH groups</th>
+                            <th style="padding:8px;border:1px solid #a5d6a7;text-align:center;">Tournament with NO groups</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding:8px;border:1px solid #c8e6c9;">Player in groups LEVEL_2, JUNIOR</td>
+                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees it if LEVEL_2 or JUNIOR matches</td>
+                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">❌ Hidden</td>
+                        </tr>
+                        <tr style="background:#f1f8e9;">
+                            <td style="padding:8px;border:1px solid #c8e6c9;">Player with no groups</td>
+                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">❌ Hidden</td>
+                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees it</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:8px;border:1px solid #c8e6c9;">Admin</td>
+                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees all</td>
+                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees all</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p style="margin-top:12px;"><strong>Examples:</strong></p>
                 <ul style="margin:5px 0;">
-                    <li><em>Komet Hösttävling</em> with groups <strong>U11, U13</strong> → Only players in group U11 or U13 will see this tournament.</li>
-                    <li><em>Vikingaslaget</em> with <strong>no groups</strong> → All players see it.</li>
-                    <li><em>Spånga Open</em> with groups <strong>Senior, Vuxen</strong> → Only players in Senior or Vuxen group will see it.</li>
+                    <li><em>Komet Hösttävling</em> with groups <strong>LEVEL_2, LEVEL_5</strong> → Only players in LEVEL_2 or LEVEL_5 will see it.</li>
+                    <li><em>Vikingaslaget</em> with groups <strong>SENIOR, LEVEL_6</strong> → Only players in SENIOR or LEVEL_6 will see it.</li>
+                    <li><em>Spånga Open</em> with <strong>no groups</strong> → Only players who have no groups assigned will see it.</li>
+                    <li><em>Träningscup</em> with groups <strong>JUNIOR</strong> → Only players in JUNIOR group will see it.</li>
                 </ul>
-                <p style="margin-top:8px;color:#666;font-size:0.85em;">Tip: Hold Ctrl/Cmd to select multiple groups. To deselect all groups (make visible to everyone), click on a selected group while holding Ctrl/Cmd.</p>
+                <p style="margin-top:8px;color:#666;font-size:0.85em;">Tip: Hold Ctrl/Cmd to select multiple groups. To deselect all groups, hold Ctrl/Cmd and click the selected group(s).</p>
             </div>
         </details>
 
