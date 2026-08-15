@@ -39,9 +39,10 @@
                 </div>
             </div>
 
-            <label>To (email addresses)</label>
-            <textarea id="email-to" rows="3" placeholder="Email addresses will be loaded here..." style="width:100%;font-size:0.9em;"></textarea>
-            <p style="color:#999;font-size:0.8em;margin-top:2px;" id="email-count"></p>
+            <label>To (email addresses — comma or semicolon separated)</label>
+            <textarea id="email-to" rows="3" placeholder="Email addresses will be loaded here..." style="width:100%;font-size:0.9em;" oninput="validateEmails()"></textarea>
+            <div id="email-validation" style="margin-top:4px;font-size:0.8em;"></div>
+            <div id="invalid-emails" style="display:none;margin-top:6px;padding:8px 12px;background:#ffebee;border:1px solid #ef9a9a;border-radius:6px;font-size:0.85em;color:#c62828;"></div>
             
             <label>Subject</label>
             <input type="text" id="email-subject" placeholder="Email subject" required>
@@ -112,7 +113,7 @@
                 if (data.success) {
                     const emails = data.emails.filter(e => e && e.includes("@"));
                     document.getElementById("email-to").value = emails.join(", ");
-                    document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} from "${tournament}" registrations`;
+                    validateEmails();
                 }
             } catch(e) {
                 alert("Error: " + e.message);
@@ -136,7 +137,7 @@
                 }
                 const emails = Array.from(allEmails);
                 document.getElementById("email-to").value = emails.join(", ");
-                document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} from group${selectedGroups.length > 1 ? 's' : ''}: ${selectedGroups.join(", ")}`;
+                validateEmails();
             } catch(e) {
                 alert("Error: " + e.message);
             }
@@ -149,34 +150,78 @@
                 if (data.success) {
                     const emails = data.emails.filter(e => e && e.includes("@"));
                     document.getElementById("email-to").value = emails.join(", ");
-                    document.getElementById("email-count").textContent = `${emails.length} email${emails.length !== 1 ? 's' : ''} (all Komet players)`;
+                    validateEmails();
                 }
             } catch(e) {
                 alert("Error: " + e.message);
             }
         }
 
+        function parseEmails(text) {
+            // Accept comma, semicolon, or newline as separators
+            return text.split(/[,;\n]+/).map(e => e.trim()).filter(e => e.length > 0);
+        }
+
+        function isValidEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        function validateEmails() {
+            const text = document.getElementById("email-to").value;
+            const emails = parseEmails(text);
+            const validationEl = document.getElementById("email-validation");
+            const invalidEl = document.getElementById("invalid-emails");
+            
+            if (!emails.length) {
+                validationEl.innerHTML = "";
+                invalidEl.style.display = "none";
+                return {valid: [], invalid: []};
+            }
+
+            const valid = emails.filter(isValidEmail);
+            const invalid = emails.filter(e => !isValidEmail(e));
+
+            let html = `<span style="color:#2e7d32;">✅ ${valid.length} valid</span>`;
+            if (invalid.length) {
+                html += ` &nbsp; <span style="color:#c62828;">❌ ${invalid.length} invalid</span>`;
+            }
+            validationEl.innerHTML = html;
+
+            if (invalid.length) {
+                invalidEl.style.display = "block";
+                invalidEl.innerHTML = `<strong>Invalid emails:</strong> ${invalid.map(e => `<span style="background:#ffcdd2;padding:2px 6px;border-radius:3px;margin:2px;display:inline-block;">${e}</span>`).join(" ")}`;
+            } else {
+                invalidEl.style.display = "none";
+            }
+
+            return {valid, invalid};
+        }
+
         document.getElementById("email-form").addEventListener("submit", async (e) => {
             e.preventDefault();
-            const emails = document.getElementById("email-to").value.split(",").map(e => e.trim()).filter(e => e.includes("@"));
+            const {valid, invalid} = validateEmails();
+            
+            if (!valid.length) { alert("No valid email addresses"); return; }
+            if (invalid.length) {
+                if (!confirm(`There are ${invalid.length} invalid email(s) that will be skipped:\n\n${invalid.join(", ")}\n\nSend to ${valid.length} valid recipient(s)?`)) return;
+            } else {
+                if (!confirm(`Send email to ${valid.length} recipient${valid.length !== 1 ? 's' : ''}?`)) return;
+            }
+            
             const subject = document.getElementById("email-subject").value;
             const body = document.getElementById("email-body").value;
-            
-            if (!emails.length) { alert("No valid email addresses"); return; }
             if (!subject || !body) { alert("Subject and message required"); return; }
-            
-            if (!confirm(`Send email to ${emails.length} recipient${emails.length !== 1 ? 's' : ''}?`)) return;
             
             const resultEl = document.getElementById("send-result");
             resultEl.style.display = "block";
             resultEl.style.background = "#e3f2fd";
             resultEl.style.color = "#1565c0";
-            resultEl.textContent = `Sending to ${emails.length} recipients...`;
+            resultEl.textContent = `Sending to ${valid.length} recipients...`;
             
             const res = await fetch("/api/send-bulk-email", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({emails, subject, body})
+                body: JSON.stringify({emails: valid, subject, body})
             });
             const data = await res.json();
             
