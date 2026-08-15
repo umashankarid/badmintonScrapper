@@ -93,7 +93,7 @@
     <div style="display:flex;align-items:center;gap:15px;margin-top:20px;">
         <h2 id="players-heading" style="margin:0;">Registered Players</h2>
         <button id="download-csv-btn" onclick="downloadCSV()" style="display:none;width:auto;padding:6px 14px;background:#28a745;font-size:0.85em;">📥 Download CSV</button>
-        <button id="submit-bwf-btn" onclick="submitToBWF()" style="display:none;width:auto;padding:6px 14px;background:#0d47a1;color:white;font-size:0.85em;">🏸 Submit to SBF</button>
+        <button id="submit-bwf-btn" onclick="submitToBWF()" style="display:none;width:auto;padding:6px 14px;background:#0d47a1;color:white;font-size:0.85em;" disabled>🏸 Submit to SBF</button>
     </div>
     <div id="admin-player-search" style="display:none;margin-bottom:10px;margin-top:10px;">
         <input type="text" id="search-registered" placeholder="Search registered player to edit..." autocomplete="off" style="margin-bottom:0;">
@@ -261,6 +261,18 @@
 
                 let players = data.players;
                 console.log("Loaded players:", players);
+
+                // Enable/disable Submit to SBF button based on total registrations
+                const submitBtn = document.getElementById("submit-bwf-btn");
+                if (submitBtn && isAdmin) {
+                    if (data.total > 0) {
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = "1";
+                    } else {
+                        submitBtn.disabled = true;
+                        submitBtn.style.opacity = "0.5";
+                    }
+                }
 
                 // For logged-in players, only show their own entries (match by license_id)
                 if (loggedInPlayer && !isAdmin) {
