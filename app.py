@@ -2358,13 +2358,16 @@ def open_tournaments():
                 except Exception:
                     pass
             
-            # Filter: if player has groups, only show tournaments that match OR have no groups/have "all"
+            # Group visibility filtering (komet players only, not admins)
             if player_groups is not None and not is_admin:
                 if tournament_groups:
-                    # Tournament has groups assigned - check if player's groups overlap
+                    # Tournament has groups - player must belong to at least one
                     if not set(player_groups).intersection(set(tournament_groups)):
-                        continue  # Player's groups don't match this tournament
-                # If tournament has no groups assigned, show to everyone
+                        continue
+                else:
+                    # Tournament has no groups - only visible to players with no groups
+                    if player_groups:
+                        continue
             
             tournaments.append({
                 "url": row[0],
