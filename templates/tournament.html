@@ -189,6 +189,15 @@
                     }
                 }
                 
+                // Check if cancellation deadline has passed
+                const cancellationDeadline = data.tournament.cancellation_deadline || "";
+                if (cancellationDeadline) {
+                    const today = new Date().toISOString().slice(0, 10);
+                    if (today > cancellationDeadline) {
+                        window.cancellationPassed = true;
+                    }
+                }
+                
                 // Load categories from tournament data
                 const container = document.getElementById("levels-container");
                 const cats = data.tournament.categories || {};
@@ -309,8 +318,11 @@
                                 `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
                                  <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Delete</button>` :
                             (loggedInPlayer && loggedInPlayer.license_id === p.license_id ?
-                                `<button onclick="editPlayer(${p.player_id})">Edit</button>
-                                 <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>` :
+                                (window.registrationClosed ?
+                                    `<button disabled style="opacity:0.5;cursor:not-allowed;">Edit</button>
+                                     <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;" ${window.cancellationPassed ? 'disabled style="background:#cc3333;opacity:0.5;cursor:not-allowed;"' : ''}>Withdraw</button>` :
+                                    `<button onclick="editPlayer(${p.player_id})">Edit</button>
+                                     <button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>`) :
                                 "")}
                         </td>
                     </tr>
