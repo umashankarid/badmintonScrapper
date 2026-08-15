@@ -1,7 +1,6 @@
 flask==3.1.0
 requests==2.32.3
 beautifulsoup4==4.12.3
-dropbox==11.36.2
 cryptography==42.0.5
 pytest==7.4.3
 playwright==1.45.0

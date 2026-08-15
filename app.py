@@ -4,8 +4,6 @@ import sqlite3
 import requests as ext_requests
 from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, session, send_from_directory, redirect
-from drive_sync import download_all, upload_all
-import atexit
 import logging
 import threading
 import time
@@ -74,86 +72,8 @@ if not run_startup_tests():
     logger.error("❌ STARTUP ABORTED: Unit tests failed")
     sys.exit(1)
 
-# Sync databases on startup
-logger.info("🔄 Starting Dropbox database sync...")
-try:
-    download_all()
-except Exception as e:
-    logger.error(f"⚠️  Failed to download from Dropbox on startup: {str(e)}")
-    logger.error("⚠️  Continuing with local databases (new data will NOT persist)")
 
 
-
-
-# ==================== DEBOUNCE SYNC SYSTEM ====================
-# Debounce settings
-DEBOUNCE_DELAY = 10  # Wait 10 seconds after last change before syncing
-PERIODIC_SYNC_INTERVAL = 300  # Fallback periodic sync every 5 minutes
-
-# Debounce state
-_sync_timer = None
-_sync_lock = threading.Lock()
-_last_sync_time = time.time()
-
-def _debounced_sync():
-    """Internal function to perform the sync"""
-    global _sync_timer
-    try:
-        logger.info("📤 Debounced sync: Uploading databases to Dropbox...")
-        upload_all()
-        logger.info("✅ Debounced sync completed")
-    except Exception as e:
-        logger.error(f"❌ Error in debounced sync: {str(e)}")
-    finally:
-        _sync_timer = None
-
-def trigger_sync():
-    """
-    Trigger a debounced sync.
-    Call this after any database change.
-    Will upload within DEBOUNCE_DELAY seconds.
-    """
-    global _sync_timer
-    
-    with _sync_lock:
-        # Cancel existing timer if any
-        if _sync_timer is not None:
-            _sync_timer.cancel()
-        
-        # Schedule new sync after delay
-        _sync_timer = threading.Timer(DEBOUNCE_DELAY, _debounced_sync)
-        _sync_timer.daemon = True
-        _sync_timer.start()
-
-def periodic_sync_fallback():
-    """Fallback periodic sync (every 5 minutes) to ensure backup"""
-    while True:
-        try:
-            time.sleep(PERIODIC_SYNC_INTERVAL)
-            logger.info("⏱️  Periodic fallback sync: Uploading databases to Dropbox...")
-            upload_all()
-        except Exception as e:
-            logger.error(f"❌ Error in periodic sync: {str(e)}")
-
-# Register upload on shutdown
-def sync_on_shutdown():
-    """Upload databases to Dropbox on shutdown"""
-    logger.info("💾 Syncing databases to Dropbox on shutdown...")
-    # Cancel pending debounce timer
-    global _sync_timer
-    with _sync_lock:
-        if _sync_timer is not None:
-            _sync_timer.cancel()
-    # Final upload
-    upload_all()
-
-atexit.register(sync_on_shutdown)
-
-# Start background fallback sync thread
-fallback_sync_thread = threading.Thread(target=periodic_sync_fallback, daemon=True)
-fallback_sync_thread.start()
-logger.info("✅ Fallback sync thread started (every 5 minutes)")
-logger.info("✅ Debounce sync ready (10 seconds after changes)")
 
 PLAYERS_DB = os.path.join(os.path.dirname(__file__), "players.db")
 
@@ -334,10 +254,6 @@ def init_point_rules_db():
 
 init_point_rules_db()
 
-# Upload initialized databases to Dropbox immediately on startup
-logger.info("📤 Uploading initialized databases to Dropbox...")
-upload_all()
-logger.info("✅ Databases backed up on startup")
 
 
 
@@ -1436,7 +1352,6 @@ def update_point_rules():
         )
     conn.commit()
     conn.close()
-    trigger_sync()  # Trigger debounced sync after database change
     return jsonify(success=True)
 
 
@@ -1498,7 +1413,6 @@ def save_smtp_settings():
         )
     conn.commit()
     conn.close()
-    trigger_sync()  # Sync SMTP settings to Dropbox
     return jsonify(success=True)
 
 
@@ -1820,7 +1734,6 @@ def edit_tournament():
     )
     conn.commit()
     conn.close()
-    trigger_sync()  # Sync tournament changes to Dropbox
     return jsonify(success=True)
 
 
@@ -1894,7 +1807,6 @@ def toggle_tournament_visibility():
     
     conn.commit()
     conn.close()
-    trigger_sync()
     return jsonify(success=True)
 
 
@@ -2004,7 +1916,6 @@ def save_bwf_tournament_visibility():
     conn.close()
     
     logger.info(f"Successfully saved {len(selected_tournaments)} tournaments")
-    trigger_sync()
     return jsonify(success=True)
 
 
@@ -2331,7 +2242,6 @@ def get_all_bwf_tournaments():
             if not t.get("registration_closes"):
                 t["registration_closes"] = reg_closes_map.get(t["url"], "")
 
-        trigger_sync()
         logger.info(f"✅ get_all_bwf_tournaments completed successfully")
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
@@ -2717,7 +2627,6 @@ def ensure_tournament():
             conn.close()
 
         logger.info(f"✅ Tournament successfully added to unified tournaments.db")
-        trigger_sync()  # Trigger debounced sync after tournament creation
         
         return jsonify(success=True, tournament_id=tournament_name, db=tournament_name, created=True)
     except Exception as e:
@@ -3609,7 +3518,6 @@ def add_player():
                 mixed_partner=player_name
             )
         
-        trigger_sync()  # Sync after registration
         return jsonify(success=True, message="Registration saved successfully")
     
     except Exception as e:
@@ -3711,7 +3619,6 @@ def delete_player():
 
         conn.commit()
         conn.close()
-        trigger_sync()
         return jsonify(success=True)
 
     except Exception as e:

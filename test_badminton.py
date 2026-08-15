@@ -377,51 +377,6 @@ class TestTournamentVisibility(unittest.TestCase):
         conn.close()
 
 
-class TestDropboxSync(unittest.TestCase):
-    """Test Dropbox sync functionality"""
-    
-    def test_file_exists_check(self):
-        """Test checking if file exists in Dropbox"""
-        # This would require mocking Dropbox API
-        # For now, test the file existence check logic
-        
-        files_in_dropbox = {
-            "/BadmintonScrapPython-Databases/tournaments.db",
-            "/BadmintonScrapPython-Databases/players.db"
-        }
-        
-        # Test file existence
-        test_file = "/BadmintonScrapPython-Databases/tournaments.db"
-        self.assertIn(test_file, files_in_dropbox)
-        
-        # Test missing file
-        missing_file = "/BadmintonScrapPython-Databases/missing.db"
-        self.assertNotIn(missing_file, files_in_dropbox)
-    
-    def test_sync_files_list(self):
-        """Test that only correct files are synced"""
-        # Root level files only (no tournaments/*.db)
-        sync_files = [
-            "players.db",
-            "admin.db",
-            "point_rules.db",
-            "tournaments.db"
-        ]
-        
-        # These should NOT be in sync list
-        excluded_files = [
-            "tournaments/bmk_komet.db",
-            "tournaments/other.db"
-        ]
-        
-        for file in sync_files:
-            self.assertNotIn("/", file, f"Sync file should not have path: {file}")
-        
-        for file in excluded_files:
-            self.assertTrue("/" in file, 
-                          f"Excluded file should have path separator: {file}")
-
-
 class TestDataIntegrity(unittest.TestCase):
     """Test data integrity and consistency"""
     
