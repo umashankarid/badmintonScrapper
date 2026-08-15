@@ -4223,8 +4223,7 @@ def send_email(to_email, subject, body):
             },
             json={
                 "sender": {"email": sender_email, "name": "BMK Komet"},
-                "to": [{"email": sender_email}],
-                "bcc": [{"email": to_email}],
+                "to": [{"email": to_email}],
                 "subject": subject,
                 "textContent": body
             },
