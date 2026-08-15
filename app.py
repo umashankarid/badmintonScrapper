@@ -4363,13 +4363,20 @@ def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
         reg_count = cur_t.fetchone()[0]
         conn_t.close()
         
-        subject = f"🏸 Registration closed: {tournament_name}"
-        body = (f"Hi Admin,\n\n"
-                f"The Komet registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
+        subject = f"🏸 Anmälan stängd / Registration closed: {tournament_name}"
+        body = (f"Hej Admin,\n\n"
+                f"Anmälningsdeadlinen för '{tournament_name}' har passerats ({admin_reg_end_date}).\n\n"
+                f"📊 Totalt antal anmälningar: {reg_count} spelare\n\n"
+                f"Vänligen verifiera anmälningarna och se till att allt stämmer.\n\n"
+                f"---\n\n"
+                f"Hi Admin,\n\n"
+                f"The registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
                 f"📊 Total registrations: {reg_count} players\n\n"
                 f"Please verify the registration details and ensure everything is in order.\n\n"
-                f"You can view the registrations at: https://activitylogger.bmkkomet.se/\n\n"
-                f"Best regards,\nBMK Komet System")
+                f"---\n\n"
+                f"Se anmälningar / View registrations: https://activitylogger.bmkkomet.se/\n\n"
+                f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+                f"Med vänliga hälsningar / Best regards,\nBMK Komet")
         
         for email in admin_emails:
             result = send_email(email, subject, body)
@@ -4485,18 +4492,35 @@ def send_reminders():
                 
                 # Build email
                 if days_left == 7:
-                    subject = f"📋 Registration closing in 1 week: {tournament_name}"
-                    body = (f"Hi {player_name},\n\n"
+                    subject = f"📋 Anmälan stänger om 1 vecka / Registration closing in 1 week: {tournament_name}"
+                    body = (f"Hej {player_name},\n\n"
+                            f"Detta är en påminnelse om att anmälan till '{tournament_name}' "
+                            f"stänger om 1 vecka ({admin_reg_end_date}).\n\n"
+                            f"Glöm inte att anmäla dig om du vill delta!\n\n"
+                            f"---\n\n"
+                            f"Hi {player_name},\n\n"
                             f"This is a friendly reminder that registration for '{tournament_name}' "
                             f"closes in 1 week ({admin_reg_end_date}).\n\n"
                             f"Don't forget to register if you want to participate!\n\n"
-                            f"Best regards,\nBMK Komet")
+                            f"---\n\n"
+                            f"Om du inte vill få fler påminnelser för denna tävling kan du stänga av dem genom att logga in på https://activitylogger.bmkkomet.se och klicka på 'Stäng av påminnelser' vid tävlingen.\n\n"
+                            f"If you no longer wish to receive reminders for this tournament, log in at https://activitylogger.bmkkomet.se and click 'Disable reminders' next to the tournament.\n\n"
+                            f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+                            f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 else:
-                    subject = f"⚠️ Last chance to register: {tournament_name} (3 days left!)"
-                    body = (f"Hi {player_name},\n\n"
+                    subject = f"⚠️ Sista chansen att anmäla sig / Last chance to register: {tournament_name}"
+                    body = (f"Hej {player_name},\n\n"
+                            f"⚠️ Anmälan till '{tournament_name}' stänger om 3 dagar ({admin_reg_end_date})!\n\n"
+                            f"Om du inte har anmält dig ännu, vänligen gör det snart.\n\n"
+                            f"---\n\n"
+                            f"Hi {player_name},\n\n"
                             f"⚠️ Registration for '{tournament_name}' closes in 3 days ({admin_reg_end_date})!\n\n"
                             f"If you haven't registered yet, please do so soon.\n\n"
-                            f"Best regards,\nBMK Komet")
+                            f"---\n\n"
+                            f"Om du inte vill få fler påminnelser för denna tävling kan du stänga av dem genom att logga in på https://activitylogger.bmkkomet.se och klicka på 'Stäng av påminnelser' vid tävlingen.\n\n"
+                            f"If you no longer wish to receive reminders for this tournament, log in at https://activitylogger.bmkkomet.se and click 'Disable reminders' next to the tournament.\n\n"
+                            f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+                            f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 
                 # Send
                 result = send_email(email, subject, body)
@@ -4580,18 +4604,31 @@ def send_reminders():
                 
                 # Build email
                 if days_until_comp == 7:
-                    subject = f"🏸 {tournament_name} starts in 1 week!"
-                    body = (f"Hi {name},\n\n"
+                    subject = f"🏸 {tournament_name} startar om 1 vecka / starts in 1 week!"
+                    body = (f"Hej {name},\n\n"
+                            f"Påminnelse om att '{tournament_name}' startar om 1 vecka ({comp_date_str}).\n\n"
+                            f"Se till att du är förberedd och har allt du behöver!\n\n"
+                            f"Lycka till! 🏸\n\n"
+                            f"---\n\n"
+                            f"Hi {name},\n\n"
                             f"Just a reminder that '{tournament_name}' starts in 1 week ({comp_date_str}).\n\n"
                             f"Make sure you're prepared and have everything you need!\n\n"
                             f"Good luck! 🏸\n\n"
-                            f"Best regards,\nBMK Komet")
+                            f"---\n\n"
+                            f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+                            f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 else:
-                    subject = f"🏸 {tournament_name} starts in 3 days!"
-                    body = (f"Hi {name},\n\n"
+                    subject = f"🏸 {tournament_name} startar om 3 dagar / starts in 3 days!"
+                    body = (f"Hej {name},\n\n"
+                            f"'{tournament_name}' är bara 3 dagar bort ({comp_date_str})!\n\n"
+                            f"Sista förberedelserna — lycka till! 🏸\n\n"
+                            f"---\n\n"
+                            f"Hi {name},\n\n"
                             f"'{tournament_name}' is just 3 days away ({comp_date_str})!\n\n"
                             f"Final preparations time — good luck! 🏸\n\n"
-                            f"Best regards,\nBMK Komet")
+                            f"---\n\n"
+                            f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+                            f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 
                 result = send_email(email, subject, body)
                 if result is True:
@@ -5182,33 +5219,56 @@ def test_auto_reminders():
     results = []
     
     # 1. Registration Reminder (7 days before)
-    subject1 = f"📋 Registration closing in 1 week: {tournament_name}"
-    body1 = (f"Hi {player_name},\n\n"
+    subject1 = f"📋 Anmälan stänger om 1 vecka / Registration closing in 1 week: {tournament_name}"
+    body1 = (f"Hej {player_name},\n\n"
+             f"Detta är en påminnelse om att anmälan till '{tournament_name}' "
+             f"stänger om 1 vecka ({admin_reg_end_date}).\n\n"
+             f"Glöm inte att anmäla dig om du vill delta!\n\n"
+             f"---\n\n"
+             f"Hi {player_name},\n\n"
              f"This is a friendly reminder that registration for '{tournament_name}' "
              f"closes in 1 week ({admin_reg_end_date}).\n\n"
              f"Don't forget to register if you want to participate!\n\n"
-             f"Best regards,\nBMK Komet")
+             f"---\n\n"
+             f"Om du inte vill få fler påminnelser för denna tävling kan du stänga av dem genom att logga in på https://activitylogger.bmkkomet.se och klicka på 'Stäng av påminnelser' vid tävlingen.\n\n"
+             f"If you no longer wish to receive reminders for this tournament, log in at https://activitylogger.bmkkomet.se and click 'Disable reminders' next to the tournament.\n\n"
+             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
     r1 = send_email(test_email, f"[TEST] {subject1}", body1)
     results.append({"type": "Registration Reminder", "success": r1 is True, "error": "" if r1 is True else str(r1)})
     
     # 2. Admin Notification (registration closed)
-    subject2 = f"🏸 Registration closed: {tournament_name}"
-    body2 = (f"Hi Admin,\n\n"
-             f"The Komet registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
+    subject2 = f"🏸 Anmälan stängd / Registration closed: {tournament_name}"
+    body2 = (f"Hej Admin,\n\n"
+             f"Anmälningsdeadlinen för '{tournament_name}' har passerats ({admin_reg_end_date}).\n\n"
+             f"📊 Totalt antal anmälningar: {reg_count} spelare\n\n"
+             f"Vänligen verifiera anmälningarna och se till att allt stämmer.\n\n"
+             f"---\n\n"
+             f"Hi Admin,\n\n"
+             f"The registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
              f"📊 Total registrations: {reg_count} players\n\n"
              f"Please verify the registration details and ensure everything is in order.\n\n"
-             f"You can view the registrations at: https://activitylogger.bmkkomet.se/\n\n"
-             f"Best regards,\nBMK Komet System")
+             f"---\n\n"
+             f"Se anmälningar / View registrations: https://activitylogger.bmkkomet.se/\n\n"
+             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
     r2 = send_email(test_email, f"[TEST] {subject2}", body2)
     results.append({"type": "Admin Notification", "success": r2 is True, "error": "" if r2 is True else str(r2)})
     
     # 3. Competition Reminder (7 days before)
-    subject3 = f"🏸 {tournament_name} starts in 1 week!"
-    body3 = (f"Hi {player_name},\n\n"
+    subject3 = f"🏸 {tournament_name} startar om 1 vecka / starts in 1 week!"
+    body3 = (f"Hej {player_name},\n\n"
+             f"Påminnelse om att '{tournament_name}' startar om 1 vecka ({comp_date_str}).\n\n"
+             f"Se till att du är förberedd och har allt du behöver!\n\n"
+             f"Lycka till! 🏸\n\n"
+             f"---\n\n"
+             f"Hi {player_name},\n\n"
              f"Just a reminder that '{tournament_name}' starts in 1 week ({comp_date_str}).\n\n"
              f"Make sure you're prepared and have everything you need!\n\n"
              f"Good luck! 🏸\n\n"
-             f"Best regards,\nBMK Komet")
+             f"---\n\n"
+             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
     r3 = send_email(test_email, f"[TEST] {subject3}", body3)
     results.append({"type": "Competition Reminder", "success": r3 is True, "error": "" if r3 is True else str(r3)})
     
