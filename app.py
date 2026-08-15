@@ -3822,21 +3822,39 @@ def get_player_groups():
 
 @app.route("/api/player-groups", methods=["POST"])
 def create_player_group():
-    """Create a new player group"""
+    """Create one or more player groups (comma-separated)"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     data = request.json
     group_name = data.get("group_name", "").strip()
     if not group_name:
         return jsonify(success=False, error="Group name required")
+    
+    # Split by comma, trim each, filter empty
+    group_names = [g.strip() for g in group_name.split(",") if g.strip()]
+    if not group_names:
+        return jsonify(success=False, error="Group name required")
+    
     try:
         conn = sqlite3.connect(PLAYERS_DB)
-        conn.execute("INSERT INTO player_groups (group_name) VALUES (?)", (group_name,))
+        created = []
+        skipped = []
+        for name in group_names:
+            try:
+                conn.execute("INSERT INTO player_groups (group_name) VALUES (?)", (name,))
+                created.append(name)
+            except sqlite3.IntegrityError:
+                skipped.append(name)
         conn.commit()
         conn.close()
-        return jsonify(success=True)
-    except sqlite3.IntegrityError:
-        return jsonify(success=False, error=f"Group '{group_name}' already exists")
+        
+        if skipped and not created:
+            return jsonify(success=False, error=f"Group(s) already exist: {', '.join(skipped)}")
+        
+        msg = f"Created {len(created)} group(s)"
+        if skipped:
+            msg += f" ({len(skipped)} already existed)"
+        return jsonify(success=True, message=msg, created=created, skipped=skipped)
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
