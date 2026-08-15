@@ -5159,6 +5159,72 @@ def api_export_table(db_name, table_name):
         return jsonify(success=False, error=str(e)), 500
 
 
+@app.route("/api/test-auto-reminders", methods=["POST"])
+def test_auto_reminders():
+    """Send all 3 auto-reminder types to a test email using the same templates as send_reminders().
+    This lets admins verify how the emails look without waiting for the real schedule."""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    test_email = data.get("email", "").strip()
+    
+    if not test_email or "@" not in test_email:
+        return jsonify(success=False, error="Valid email required"), 400
+    
+    # Use a sample tournament name and dates for the test
+    tournament_name = "Test Tournament (Komet Hösttävling)"
+    admin_reg_end_date = "2026-09-01"
+    comp_date_str = "2026-09-05"
+    player_name = "Test Player"
+    reg_count = 12
+    
+    results = []
+    
+    # 1. Registration Reminder (7 days before)
+    subject1 = f"📋 Registration closing in 1 week: {tournament_name}"
+    body1 = (f"Hi {player_name},\n\n"
+             f"This is a friendly reminder that registration for '{tournament_name}' "
+             f"closes in 1 week ({admin_reg_end_date}).\n\n"
+             f"Don't forget to register if you want to participate!\n\n"
+             f"Best regards,\nBMK Komet")
+    r1 = send_email(test_email, f"[TEST] {subject1}", body1)
+    results.append({"type": "Registration Reminder", "success": r1 is True, "error": "" if r1 is True else str(r1)})
+    
+    # 2. Admin Notification (registration closed)
+    subject2 = f"🏸 Registration closed: {tournament_name}"
+    body2 = (f"Hi Admin,\n\n"
+             f"The Komet registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
+             f"📊 Total registrations: {reg_count} players\n\n"
+             f"Please verify the registration details and ensure everything is in order.\n\n"
+             f"You can view the registrations at: https://activitylogger.bmkkomet.se/\n\n"
+             f"Best regards,\nBMK Komet System")
+    r2 = send_email(test_email, f"[TEST] {subject2}", body2)
+    results.append({"type": "Admin Notification", "success": r2 is True, "error": "" if r2 is True else str(r2)})
+    
+    # 3. Competition Reminder (7 days before)
+    subject3 = f"🏸 {tournament_name} starts in 1 week!"
+    body3 = (f"Hi {player_name},\n\n"
+             f"Just a reminder that '{tournament_name}' starts in 1 week ({comp_date_str}).\n\n"
+             f"Make sure you're prepared and have everything you need!\n\n"
+             f"Good luck! 🏸\n\n"
+             f"Best regards,\nBMK Komet")
+    r3 = send_email(test_email, f"[TEST] {subject3}", body3)
+    results.append({"type": "Competition Reminder", "success": r3 is True, "error": "" if r3 is True else str(r3)})
+    
+    sent = sum(1 for r in results if r["success"])
+    failed = sum(1 for r in results if not r["success"])
+    
+    logger.info(f"🧪 Test auto-reminders to {test_email}: {sent} sent, {failed} failed")
+    
+    if sent == 3:
+        return jsonify(success=True, message=f"All 3 test emails sent to {test_email}", results=results)
+    elif sent > 0:
+        return jsonify(success=True, message=f"{sent}/3 emails sent to {test_email}. {failed} failed.", results=results)
+    else:
+        return jsonify(success=False, error=f"All 3 emails failed. Check your Brevo settings.", results=results)
+
+
 def reminder_scheduler():
     """Run reminders check every 6 hours."""
     import time

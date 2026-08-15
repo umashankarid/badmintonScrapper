@@ -122,10 +122,86 @@
                 <li>✅ Group-aware — only sends to players whose groups match the tournament</li>
                 <li>✅ Skips already-registered players for registration reminders</li>
             </ul>
+
+            <h4 style="margin-top:20px;">🧪 Test Auto-Reminders</h4>
+            <p style="font-size:0.85em;color:#555;margin-bottom:10px;">Send all 3 reminder types to a test email to verify how they look. Sets a short timer, then the system sends the emails.</p>
+            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+                <div>
+                    <label style="font-size:0.8em;color:#666;display:block;margin-bottom:4px;">Test Email</label>
+                    <input type="email" id="test-reminder-email" placeholder="your@email.com" style="padding:8px 12px;font-size:0.9em;width:250px;">
+                </div>
+                <div>
+                    <label style="font-size:0.8em;color:#666;display:block;margin-bottom:4px;">Delay (minutes)</label>
+                    <input type="number" id="test-reminder-delay" value="2" min="1" max="10" style="padding:8px 12px;font-size:0.9em;width:80px;">
+                </div>
+                <button onclick="testAutoReminders()" style="padding:8px 16px;background:#1976d2;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9em;">🧪 Start Test</button>
+            </div>
+            <div id="test-reminder-status" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:0.9em;"></div>
         </div>
     </div>
 
     <script>
+
+        // === Test Auto-Reminders ===
+        async function testAutoReminders() {
+            const email = document.getElementById("test-reminder-email").value.trim();
+            const delay = parseInt(document.getElementById("test-reminder-delay").value) || 2;
+            
+            if (!email || !email.includes("@")) {
+                alert("Enter a valid email address");
+                return;
+            }
+            
+            if (!confirm(`This will send 3 test emails to ${email} after ${delay} minute(s):\n\n1. Registration reminder (7 days before)\n2. Admin notification (registration closed)\n3. Competition reminder (7 days before)\n\nProceed?`)) return;
+            
+            const statusEl = document.getElementById("test-reminder-status");
+            statusEl.style.display = "block";
+            statusEl.style.background = "#e3f2fd";
+            statusEl.style.color = "#1565c0";
+            
+            // Start countdown
+            let secondsLeft = delay * 60;
+            statusEl.innerHTML = `⏳ Sending test emails in <strong>${secondsLeft}s</strong>...`;
+            
+            const countdown = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft > 0) {
+                    statusEl.innerHTML = `⏳ Sending test emails in <strong>${secondsLeft}s</strong>...`;
+                } else {
+                    clearInterval(countdown);
+                    statusEl.innerHTML = `📧 Sending test emails now...`;
+                }
+            }, 1000);
+            
+            // Wait for delay then send
+            setTimeout(async () => {
+                clearInterval(countdown);
+                statusEl.innerHTML = `📧 Sending 3 test emails to ${email}...`;
+                
+                try {
+                    const res = await fetch("/api/test-auto-reminders", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({email})
+                    });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        statusEl.style.background = "#e8f5e9";
+                        statusEl.style.color = "#2e7d32";
+                        statusEl.innerHTML = `✅ ${data.message}`;
+                    } else {
+                        statusEl.style.background = "#ffebee";
+                        statusEl.style.color = "#c62828";
+                        statusEl.innerHTML = `❌ ${data.error || 'Failed to send test emails'}`;
+                    }
+                } catch(e) {
+                    statusEl.style.background = "#ffebee";
+                    statusEl.style.color = "#c62828";
+                    statusEl.innerHTML = `❌ Error: ${e.message}`;
+                }
+            }, delay * 60 * 1000);
+        }
 
         // === Email Configuration ===
         async function loadSettings() {
