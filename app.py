@@ -4901,6 +4901,125 @@ def tournament_clubs():
         return jsonify(success=False, error=str(e), players=[]), 500
 
 
+# ==================== DATABASE BACKUP & RESTORE ====================
+
+@app.route("/api/database/backup", methods=["POST"])
+def backup_databases():
+    """Create a backup of all databases to DATA_DIR/backups/"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    import shutil
+    from datetime import datetime
+    
+    backup_dir = os.path.join(DATA_DIR, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_folder = os.path.join(backup_dir, timestamp)
+    os.makedirs(backup_folder, exist_ok=True)
+    
+    db_files = ["players.db", "tournaments.db", "admin.db", "point_rules.db"]
+    backed_up = []
+    
+    for db_file in db_files:
+        src = os.path.join(DATA_DIR, db_file)
+        if os.path.exists(src):
+            dst = os.path.join(backup_folder, db_file)
+            shutil.copy2(src, dst)
+            backed_up.append(db_file)
+            logger.info(f"💾 Backed up {db_file} → {backup_folder}/")
+    
+    logger.info(f"✅ Backup created: {timestamp} ({len(backed_up)} files)")
+    return jsonify(success=True, backup_id=timestamp, files=backed_up, 
+                   message=f"Backup '{timestamp}' created with {len(backed_up)} databases")
+
+
+@app.route("/api/database/backups", methods=["GET"])
+def list_backups():
+    """List all available backups"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    backup_dir = os.path.join(DATA_DIR, "backups")
+    if not os.path.exists(backup_dir):
+        return jsonify(success=True, backups=[])
+    
+    backups = []
+    for folder in sorted(os.listdir(backup_dir), reverse=True):
+        folder_path = os.path.join(backup_dir, folder)
+        if os.path.isdir(folder_path):
+            files = [f for f in os.listdir(folder_path) if f.endswith(".db")]
+            total_size = sum(os.path.getsize(os.path.join(folder_path, f)) for f in files)
+            backups.append({
+                "id": folder,
+                "files": files,
+                "size_kb": round(total_size / 1024, 1),
+                "created": folder  # timestamp is the folder name
+            })
+    
+    return jsonify(success=True, backups=backups)
+
+
+@app.route("/api/database/restore", methods=["POST"])
+def restore_databases():
+    """Restore databases from a backup"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    import shutil
+    
+    data = request.json
+    backup_id = data.get("backup_id", "").strip()
+    
+    if not backup_id:
+        return jsonify(success=False, error="backup_id required"), 400
+    
+    backup_folder = os.path.join(DATA_DIR, "backups", backup_id)
+    if not os.path.exists(backup_folder):
+        return jsonify(success=False, error=f"Backup '{backup_id}' not found"), 404
+    
+    # Safety: create a pre-restore backup first
+    from datetime import datetime
+    pre_restore_dir = os.path.join(DATA_DIR, "backups", f"pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(pre_restore_dir, exist_ok=True)
+    
+    restored = []
+    for db_file in os.listdir(backup_folder):
+        if db_file.endswith(".db"):
+            # Save current state before overwriting
+            current = os.path.join(DATA_DIR, db_file)
+            if os.path.exists(current):
+                shutil.copy2(current, os.path.join(pre_restore_dir, db_file))
+            
+            # Restore from backup
+            src = os.path.join(backup_folder, db_file)
+            shutil.copy2(src, current)
+            restored.append(db_file)
+            logger.info(f"♻️ Restored {db_file} from backup {backup_id}")
+    
+    logger.info(f"✅ Restore complete from {backup_id} ({len(restored)} files)")
+    return jsonify(success=True, restored=restored,
+                   message=f"Restored {len(restored)} databases from backup '{backup_id}'. Pre-restore backup saved.")
+
+
+@app.route("/api/database/backup/<backup_id>", methods=["DELETE"])
+def delete_backup(backup_id):
+    """Delete a backup"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    import shutil
+    
+    backup_folder = os.path.join(DATA_DIR, "backups", backup_id)
+    if not os.path.exists(backup_folder):
+        return jsonify(success=False, error=f"Backup '{backup_id}' not found"), 404
+    
+    shutil.rmtree(backup_folder)
+    logger.info(f"🗑️ Deleted backup: {backup_id}")
+    return jsonify(success=True, message=f"Backup '{backup_id}' deleted")
+
+
 # ==================== DATABASE VIEWER ENDPOINTS ====================
 
 @app.route("/api/databases", methods=["GET"])
