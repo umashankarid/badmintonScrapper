@@ -3064,6 +3064,38 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
     """
     now = __import__('datetime').datetime.now().isoformat()
     
+    # Safeguard: if partner_name looks invalid (too short), fetch real name from search
+    if len(partner_name.strip()) < 3 and partner_license_id:
+        try:
+            logger.warning(f"⚠️  Partner name '{partner_name}' looks invalid, fetching from search...")
+            resp = ext_requests.get(
+                "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+                params={"Page": 1, "SportID": 2, "Query": partner_license_id},
+                headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
+                timeout=5
+            )
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for item in soup.select("li.list__item"):
+                license_el = item.select_one(".media__title-aside")
+                if license_el and partner_license_id in license_el.get_text(strip=True):
+                    name_el = item.select_one("a.media__link span.nav-link__value")
+                    if name_el:
+                        fetched_name = name_el.get_text(strip=True)
+                        if len(fetched_name) > len(partner_name):
+                            logger.info(f"✅ Corrected partner name: '{partner_name}' → '{fetched_name}'")
+                            partner_name = fetched_name
+                    if not partner_profile_url:
+                        link = item.select_one("a.media__link")
+                        if link:
+                            partner_profile_url = link.get("href", "")
+                    if not partner_club:
+                        club_el = item.select_one(".media__subheading span.nav-link__value")
+                        if club_el:
+                            partner_club = club_el.get_text(strip=True).split("|")[0].strip()
+                    break
+        except Exception as e:
+            logger.debug(f"Could not fetch partner name: {e}")
+    
     # Fetch partner's ranking from public profile
     partner_ranking = None
     if partner_profile_url:
