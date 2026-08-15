@@ -56,6 +56,73 @@
                 <strong>✅ Why Brevo API?</strong> Render (and many cloud hosts) block SMTP ports. Brevo's API uses HTTPS (port 443) which is always allowed.
             </div>
         </div>
+
+        <!-- Auto-Reminder System Info -->
+        <div style="margin-top:30px;padding:20px;background:#e3f2fd;border-radius:10px;border:1px solid #bbdefb;">
+            <h3 style="margin-top:0;">⏰ Auto-Reminder System</h3>
+            <p style="color:#333;font-size:0.9em;">The system automatically sends emails based on tournament dates. Runs every 6 hours.</p>
+            
+            <h4 style="margin-top:15px;">1. Registration Reminders (to players NOT yet registered)</h4>
+            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
+                <tr style="background:#bbdefb;">
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">7 days before reg. deadline</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">Eligible players who haven't registered</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">📋 Registration closing in 1 week</td>
+                </tr>
+                <tr style="background:#e3f2fd;">
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">3 days before reg. deadline</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">Eligible players who haven't registered</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">⚠️ Last chance to register (3 days left!)</td>
+                </tr>
+            </table>
+            <p style="font-size:0.8em;color:#555;">Based on the "Reg. deadline" date set on the Add/Remove Tournaments page. Only sends to players matching tournament groups.</p>
+
+            <h4 style="margin-top:15px;">2. Admin Notification (registration closed)</h4>
+            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
+                <tr style="background:#bbdefb;">
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">Day registration deadline is reached</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">All admin emails</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">🏸 Registration closed: {tournament} + total count</td>
+                </tr>
+            </table>
+
+            <h4 style="margin-top:15px;">3. Competition Reminders (to REGISTERED players)</h4>
+            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
+                <tr style="background:#bbdefb;">
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">7 days before competition starts</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">Players who are registered</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">🏸 {tournament} starts in 1 week!</td>
+                </tr>
+                <tr style="background:#e3f2fd;">
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">3 days before competition starts</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">Players who are registered</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">🏸 {tournament} starts in 3 days!</td>
+                </tr>
+            </table>
+
+            <h4 style="margin-top:15px;">Safeguards</h4>
+            <ul style="font-size:0.9em;color:#333;line-height:1.8;">
+                <li>✅ Won't double-send — tracks every sent email in the database</li>
+                <li>✅ Players can opt out per tournament</li>
+                <li>✅ Group-aware — only sends to players whose groups match the tournament</li>
+                <li>✅ Skips already-registered players for registration reminders</li>
+            </ul>
+        </div>
     </div>
 
     <script>
