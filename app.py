@@ -4643,6 +4643,96 @@ def send_reminders():
         conn_t.close()
     except Exception as e:
         logger.error(f"❌ Error in competition reminders: {e}")
+    
+    # CANCELLATION DEADLINE REMINDERS: 1 day before cancellation_deadline
+    # Sent to REGISTERED players only
+    try:
+        conn_t = sqlite3.connect(TOURNAMENTS_DB)
+        conn_t.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
+        cur_t = conn_t.cursor()
+        
+        cur_t.execute("""
+            SELECT tournament_name, cancellation_deadline
+            FROM tournaments 
+            WHERE selected_for_view = 1 
+            AND cancellation_deadline IS NOT NULL AND cancellation_deadline != ''
+        """)
+        
+        for tournament_name, cancellation_deadline in cur_t.fetchall():
+            if not cancellation_deadline:
+                continue
+            
+            try:
+                cancel_date = datetime.strptime(cancellation_deadline, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            
+            days_until_cancel = (cancel_date - today).days
+            
+            if days_until_cancel != 1:
+                continue  # Only send 1 day before
+            
+            reminder_type = "cancel_1day"
+            
+            # Get registered players with emails
+            cur_t.execute("""
+                SELECT p.name, p.email, tr.license_id
+                FROM tournament_registrations tr
+                LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+                WHERE tr.tournament_name = ? AND p.email IS NOT NULL AND p.email != ''
+            """, (tournament_name,))
+            
+            for name, email, license_id in cur_t.fetchall():
+                # Check opt-out
+                cur_t.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
+                             (license_id, tournament_name))
+                if cur_t.fetchone():
+                    continue
+                
+                # Check if already sent
+                conn_admin = sqlite3.connect(ADMIN_DB)
+                cur_admin = conn_admin.cursor()
+                cur_admin.execute(
+                    "SELECT id FROM reminders_sent WHERE tournament_db = ? AND player_email = ? AND sent_at LIKE ?",
+                    (f"{tournament_name}_{reminder_type}", email, f"{today.isoformat()}%")
+                )
+                if cur_admin.fetchone():
+                    conn_admin.close()
+                    continue
+                
+                subject = f"⚠️ Sista dag för ändringar / Last day for changes: {tournament_name}"
+                body = (f"Hej {name},\n\n"
+                        f"Imorgon ({cancellation_deadline}) är sista dagen att göra ändringar i din anmälan "
+                        f"eller avanmäla dig från '{tournament_name}' utan kostnad.\n\n"
+                        f"Observera:\n"
+                        f"• Om du behöver ändra din anmälan (byta klass, partner etc.) — gör det idag.\n"
+                        f"• Om du vill dra dig ur tävlingen — avanmäl dig senast imorgon.\n"
+                        f"• Efter detta datum debiteras startavgiften oavsett om du deltar eller inte.\n\n"
+                        f"---\n\n"
+                        f"Hi {name},\n\n"
+                        f"Tomorrow ({cancellation_deadline}) is the last day to make changes to your registration "
+                        f"or withdraw from '{tournament_name}' free of charge.\n\n"
+                        f"Please note:\n"
+                        f"• If you need to modify your entry (change category, partner, etc.) — do it today.\n"
+                        f"• If you wish to withdraw from the tournament — cancel by tomorrow at the latest.\n"
+                        f"• After this date, the entry fee will be charged regardless of whether you participate or not.\n\n"
+                        f"---\n\n"
+                        f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+                        f"Med vänliga hälsningar / Best regards,\nBMK Komet")
+                
+                result = send_email(email, subject, body)
+                if result is True:
+                    conn_admin.execute(
+                        "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                        (f"{tournament_name}_{reminder_type}", email, datetime.now().isoformat())
+                    )
+                    conn_admin.commit()
+                    logger.info(f"📧 Cancellation reminder sent to {email} for {tournament_name}")
+                conn_admin.close()
+        
+        conn_t.close()
+    except Exception as e:
+        logger.error(f"❌ Error in cancellation reminders: {e}")
 
 
 # --- Results Page ---
@@ -5272,17 +5362,41 @@ def test_auto_reminders():
     r3 = send_email(test_email, f"[TEST] {subject3}", body3)
     results.append({"type": "Competition Reminder", "success": r3 is True, "error": "" if r3 is True else str(r3)})
     
+    # 4. Cancellation Deadline Reminder (1 day before)
+    cancellation_deadline = "2026-09-03"
+    subject4 = f"⚠️ Sista dag för ändringar / Last day for changes: {tournament_name}"
+    body4 = (f"Hej {player_name},\n\n"
+             f"Imorgon ({cancellation_deadline}) är sista dagen att göra ändringar i din anmälan "
+             f"eller avanmäla dig från '{tournament_name}' utan kostnad.\n\n"
+             f"Observera:\n"
+             f"• Om du behöver ändra din anmälan (byta klass, partner etc.) — gör det idag.\n"
+             f"• Om du vill dra dig ur tävlingen — avanmäl dig senast imorgon.\n"
+             f"• Efter detta datum debiteras startavgiften oavsett om du deltar eller inte.\n\n"
+             f"---\n\n"
+             f"Hi {player_name},\n\n"
+             f"Tomorrow ({cancellation_deadline}) is the last day to make changes to your registration "
+             f"or withdraw from '{tournament_name}' free of charge.\n\n"
+             f"Please note:\n"
+             f"• If you need to modify your entry (change category, partner, etc.) — do it today.\n"
+             f"• If you wish to withdraw from the tournament — cancel by tomorrow at the latest.\n"
+             f"• After this date, the entry fee will be charged regardless of whether you participate or not.\n\n"
+             f"---\n\n"
+             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
+             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
+    r4 = send_email(test_email, f"[TEST] {subject4}", body4)
+    results.append({"type": "Cancellation Deadline Reminder", "success": r4 is True, "error": "" if r4 is True else str(r4)})
+    
     sent = sum(1 for r in results if r["success"])
     failed = sum(1 for r in results if not r["success"])
     
     logger.info(f"🧪 Test auto-reminders to {test_email}: {sent} sent, {failed} failed")
     
-    if sent == 3:
-        return jsonify(success=True, message=f"All 3 test emails sent to {test_email}", results=results)
+    if sent == 4:
+        return jsonify(success=True, message=f"All 4 test emails sent to {test_email}", results=results)
     elif sent > 0:
-        return jsonify(success=True, message=f"{sent}/3 emails sent to {test_email}. {failed} failed.", results=results)
+        return jsonify(success=True, message=f"{sent}/4 emails sent to {test_email}. {failed} failed.", results=results)
     else:
-        return jsonify(success=False, error=f"All 3 emails failed. Check your Brevo settings.", results=results)
+        return jsonify(success=False, error=f"All 4 emails failed. Check your Brevo settings.", results=results)
 
 
 def reminder_scheduler():

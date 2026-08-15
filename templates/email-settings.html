@@ -115,6 +115,21 @@
                 </tr>
             </table>
 
+            <h4 style="margin-top:15px;">4. Cancellation Deadline Reminder (to REGISTERED players)</h4>
+            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
+                <tr style="background:#bbdefb;">
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
+                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">1 day before cancellation deadline</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">Players who are registered</td>
+                    <td style="padding:6px 10px;border:1px solid #90caf9;">⚠️ Last day for changes / withdrawal</td>
+                </tr>
+            </table>
+            <p style="font-size:0.8em;color:#555;">Informs players that after the cancellation deadline, the entry fee will be charged regardless of participation.</p>
+
             <h4 style="margin-top:15px;">Safeguards</h4>
             <ul style="font-size:0.9em;color:#333;line-height:1.8;">
                 <li>✅ Won't double-send — tracks every sent email in the database</li>
@@ -152,7 +167,7 @@
                 return;
             }
             
-            if (!confirm(`This will send 3 test emails to ${email} after ${delay} minute(s):\n\n1. Registration reminder (7 days before)\n2. Admin notification (registration closed)\n3. Competition reminder (7 days before)\n\nProceed?`)) return;
+            if (!confirm(`This will send 4 test emails to ${email} after ${delay} minute(s):\n\n1. Registration reminder (7 days before)\n2. Admin notification (registration closed)\n3. Competition reminder (7 days before)\n4. Cancellation deadline reminder (1 day before)\n\nProceed?`)) return;
             
             const statusEl = document.getElementById("test-reminder-status");
             statusEl.style.display = "block";
