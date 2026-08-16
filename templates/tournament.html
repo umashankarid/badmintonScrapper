@@ -1244,15 +1244,17 @@
             // If player is already registered (maybe as partner), switch form to edit mode
             if (!isAdmin && loggedInPlayer && loggedInPlayer.license_id && !window.registrationClosed) {
                 try {
-                    const regRes = await fetch(`/api/tournament-registrations?dbFile=${dbFile}&license_id=${encodeURIComponent(loggedInPlayer.license_id)}`);
+                    console.log("Checking existing registration for:", loggedInPlayer.license_id, "in tournament:", dbFile);
+                    const regRes = await fetch(`/api/tournament-registrations?dbFile=${encodeURIComponent(dbFile)}&license_id=${encodeURIComponent(loggedInPlayer.license_id)}`);
                     const regData = await regRes.json();
+                    console.log("Registration check result:", regData);
                     if (regData.success && regData.registration) {
                         // Player already has a registration - show edit mode
                         const reg = regData.registration;
                         document.getElementById("edit-player-id").value = reg.player_id;
-                        document.querySelector(".singles-level").value = reg.singles_levels || "";
-                        document.querySelector(".doubles-level").value = reg.doubles_levels || "";
-                        document.querySelector(".mixed-level").value = reg.mixed_levels || "";
+                        if (document.querySelector(".singles-level")) document.querySelector(".singles-level").value = reg.singles_levels || "";
+                        if (document.querySelector(".doubles-level")) document.querySelector(".doubles-level").value = reg.doubles_levels || "";
+                        if (document.querySelector(".mixed-level")) document.querySelector(".mixed-level").value = reg.mixed_levels || "";
                         document.getElementById("doubles-partner").value = reg.doubles_partner || "";
                         document.getElementById("mixed-partner").value = reg.mixed_partner || "";
                         document.getElementById("doubles-partner-container").style.display = reg.doubles_levels ? "block" : "none";
@@ -1262,10 +1264,13 @@
                         
                         // Add info message above form
                         const formEl = document.getElementById("register-form");
-                        const infoDiv = document.createElement("div");
-                        infoDiv.style.cssText = "background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:12px 15px;margin-bottom:15px;font-size:0.9em;color:#1565c0;";
-                        infoDiv.innerHTML = "ℹ️ Du är redan anmäld till denna tävling. Använd formuläret nedan för att redigera din anmälan.<br><em>You are already registered for this tournament. Use the form below to edit your registration.</em>";
-                        formEl.insertBefore(infoDiv, formEl.firstChild);
+                        if (!document.getElementById("already-registered-info")) {
+                            const infoDiv = document.createElement("div");
+                            infoDiv.id = "already-registered-info";
+                            infoDiv.style.cssText = "background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:12px 15px;margin-bottom:15px;font-size:0.9em;color:#1565c0;";
+                            infoDiv.innerHTML = "ℹ️ Du är redan anmäld till denna tävling. Använd formuläret nedan för att redigera din anmälan om du vill lägga till fler kategorier.<br><em>You are already registered for this tournament. Use the form below to edit your entry if you want to add more categories.</em>";
+                            formEl.insertBefore(infoDiv, formEl.firstChild);
+                        }
                     }
                 } catch(e) { console.debug("Could not check existing registration:", e); }
             }
