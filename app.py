@@ -814,6 +814,31 @@ def bwf_login():
                     ranking=ranking_json
                 )
                 logger.info(f"✅ Saved full player data for {player_name} ({license_id}) to players.db")
+                
+                # If player belongs to Komet, add/update in kometPlayers table
+                if club and "komet" in club.lower():
+                    try:
+                        conn_k = sqlite3.connect(PLAYERS_DB)
+                        cur_k = conn_k.cursor()
+                        cur_k.execute("SELECT id, groups FROM kometPlayers WHERE license_id = ?", (license_id,))
+                        existing = cur_k.fetchone()
+                        if existing:
+                            # Update name and email, preserve groups
+                            conn_k.execute(
+                                "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
+                                (player_name, email or None, license_id)
+                            )
+                        else:
+                            # Insert new komet player
+                            conn_k.execute(
+                                "INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
+                                (license_id, player_name, email or None)
+                            )
+                            logger.info(f"✅ Added {player_name} to kometPlayers (auto-detected from login)")
+                        conn_k.commit()
+                        conn_k.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️  Could not update kometPlayers: {e}")
         except Exception as e:
             logger.warning(f"⚠️  Could not save player data to DB: {e}")
         
