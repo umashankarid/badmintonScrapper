@@ -4436,8 +4436,8 @@ def send_reminders():
             if days_left == -1:
                 _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date)
             
-            # Only send player reminders at 7 days or 3 days before close
-            if days_left not in (7, 3):
+            # Only send player reminders at 3 days and on the last day (0 days)
+            if days_left not in (3, 0):
                 continue
             
             reminder_type = f"{days_left}days"
@@ -4498,16 +4498,16 @@ def send_reminders():
                     continue  # Already sent today
                 
                 # Build email
-                if days_left == 7:
-                    subject = f"📋 Anmälan stänger om 1 vecka / Registration closing in 1 week: {tournament_name}"
+                if days_left == 3:
+                    subject = f"📋 Anmälan stänger om 3 dagar / Registration closing in 3 days: {tournament_name}"
                     body = (f"Hej {player_name},\n\n"
                             f"Detta är en påminnelse om att anmälan till '{tournament_name}' "
-                            f"stänger om 1 vecka ({admin_reg_end_date}).\n\n"
+                            f"stänger om 3 dagar ({admin_reg_end_date}).\n\n"
                             f"Glöm inte att anmäla dig om du vill delta!\n\n"
                             f"---\n\n"
                             f"Hi {player_name},\n\n"
                             f"This is a friendly reminder that registration for '{tournament_name}' "
-                            f"closes in 1 week ({admin_reg_end_date}).\n\n"
+                            f"closes in 3 days ({admin_reg_end_date}).\n\n"
                             f"Don't forget to register if you want to participate!\n\n"
                             f"---\n\n"
                             f"Om du inte vill få fler påminnelser för denna tävling kan du stänga av dem genom att logga in på https://activitylogger.bmkkomet.se och klicka på 'Stäng av påminnelser' vid tävlingen.\n\n"
@@ -4515,14 +4515,14 @@ def send_reminders():
                             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
                             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 else:
-                    subject = f"⚠️ Sista chansen att anmäla sig / Last chance to register: {tournament_name}"
+                    subject = f"⚠️ Sista dagen att anmäla sig / Last day to register: {tournament_name}"
                     body = (f"Hej {player_name},\n\n"
-                            f"⚠️ Anmälan till '{tournament_name}' stänger om 3 dagar ({admin_reg_end_date})!\n\n"
-                            f"Om du inte har anmält dig ännu, vänligen gör det snart.\n\n"
+                            f"⚠️ Idag ({admin_reg_end_date}) är sista dagen att anmäla dig till '{tournament_name}'!\n\n"
+                            f"Om du inte har anmält dig ännu, gör det idag — imorgon stänger anmälan.\n\n"
                             f"---\n\n"
                             f"Hi {player_name},\n\n"
-                            f"⚠️ Registration for '{tournament_name}' closes in 3 days ({admin_reg_end_date})!\n\n"
-                            f"If you haven't registered yet, please do so soon.\n\n"
+                            f"⚠️ Today ({admin_reg_end_date}) is the last day to register for '{tournament_name}'!\n\n"
+                            f"If you haven't registered yet, please do so today — registration closes tomorrow.\n\n"
                             f"---\n\n"
                             f"Om du inte vill få fler påminnelser för denna tävling kan du stänga av dem genom att logga in på https://activitylogger.bmkkomet.se och klicka på 'Stäng av påminnelser' vid tävlingen.\n\n"
                             f"If you no longer wish to receive reminders for this tournament, log in at https://activitylogger.bmkkomet.se and click 'Disable reminders' next to the tournament.\n\n"
@@ -4578,7 +4578,7 @@ def send_reminders():
             
             days_until_comp = (comp_date - today).days
             
-            if days_until_comp not in (7, 3):
+            if days_until_comp not in (3, 0):
                 continue
             
             reminder_type = f"comp_{days_until_comp}days"
@@ -4610,29 +4610,29 @@ def send_reminders():
                     continue
                 
                 # Build email
-                if days_until_comp == 7:
-                    subject = f"🏸 {tournament_name} startar om 1 vecka / starts in 1 week!"
+                if days_until_comp == 3:
+                    subject = f"🏸 {tournament_name} startar om 3 dagar / starts in 3 days!"
                     body = (f"Hej {name},\n\n"
-                            f"Påminnelse om att '{tournament_name}' startar om 1 vecka ({comp_date_str}).\n\n"
+                            f"Påminnelse om att '{tournament_name}' startar om 3 dagar ({comp_date_str}).\n\n"
                             f"Se till att du är förberedd och har allt du behöver!\n\n"
                             f"Lycka till! 🏸\n\n"
                             f"---\n\n"
                             f"Hi {name},\n\n"
-                            f"Just a reminder that '{tournament_name}' starts in 1 week ({comp_date_str}).\n\n"
+                            f"Just a reminder that '{tournament_name}' starts in 3 days ({comp_date_str}).\n\n"
                             f"Make sure you're prepared and have everything you need!\n\n"
                             f"Good luck! 🏸\n\n"
                             f"---\n\n"
                             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
                             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 else:
-                    subject = f"🏸 {tournament_name} startar om 3 dagar / starts in 3 days!"
+                    subject = f"🏸 {tournament_name} startar idag / starts today!"
                     body = (f"Hej {name},\n\n"
-                            f"'{tournament_name}' är bara 3 dagar bort ({comp_date_str})!\n\n"
-                            f"Sista förberedelserna — lycka till! 🏸\n\n"
+                            f"'{tournament_name}' startar idag ({comp_date_str})!\n\n"
+                            f"Lycka till! 🏸\n\n"
                             f"---\n\n"
                             f"Hi {name},\n\n"
-                            f"'{tournament_name}' is just 3 days away ({comp_date_str})!\n\n"
-                            f"Final preparations time — good luck! 🏸\n\n"
+                            f"'{tournament_name}' starts today ({comp_date_str})!\n\n"
+                            f"Good luck! 🏸\n\n"
                             f"---\n\n"
                             f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
                             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
