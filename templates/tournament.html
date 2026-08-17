@@ -184,9 +184,18 @@
                 if (registrationCloses) {
                     const today = new Date().toISOString().slice(0, 10);
                     if (today > registrationCloses) {
-                        // Registration closed
+                        // Registration closed (after deadline)
                         window.registrationClosed = true;
                         showRegistrationClosed();
+                    } else if (today === registrationCloses) {
+                        // Last day - show warning but keep form open
+                        const registerSection = document.getElementById("register-section");
+                        if (registerSection) {
+                            const warningDiv = document.createElement("div");
+                            warningDiv.style.cssText = "background:#fff3e0;border:2px solid #ff6f00;padding:12px 15px;border-radius:8px;margin-bottom:15px;text-align:center;";
+                            warningDiv.innerHTML = "<strong style='color:#e65100;'>⚠️ Sista dagen för anmälan! / Last day for registration!</strong><br><span style='color:#666;font-size:0.9em;'>Anmälan stänger idag. / Registration closes today.</span>";
+                            registerSection.insertBefore(warningDiv, registerSection.firstChild);
+                        }
                     }
                 }
                 

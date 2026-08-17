@@ -4374,12 +4374,12 @@ def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
         body = (f"Hej Admin,\n\n"
                 f"Anmälningsdeadlinen för '{tournament_name}' har passerats ({admin_reg_end_date}).\n\n"
                 f"📊 Totalt antal anmälningar: {reg_count} spelare\n\n"
-                f"Vänligen verifiera anmälningarna och se till att allt stämmer.\n\n"
+                f"Anmälan är nu stängd. Det är dags att skicka in registreringarna till Svenska Badmintonförbundets hemsida.\n\n"
                 f"---\n\n"
                 f"Hi Admin,\n\n"
-                f"The registration deadline for '{tournament_name}' has been reached ({admin_reg_end_date}).\n\n"
+                f"The registration deadline for '{tournament_name}' has passed ({admin_reg_end_date}).\n\n"
                 f"📊 Total registrations: {reg_count} players\n\n"
-                f"Please verify the registration details and ensure everything is in order.\n\n"
+                f"Registration is now closed. It's time to submit the entries to the Swedish Badminton Federation (SBF) website.\n\n"
                 f"---\n\n"
                 f"Se anmälningar / View registrations: https://activitylogger.bmkkomet.se/\n\n"
                 f"Vid frågor / For questions: tavlingar@bmkkomet.se\n\n"
@@ -4432,8 +4432,8 @@ def send_reminders():
             
             days_left = (reg_close - today).days
             
-            # Send admin notification on the day registration closes
-            if days_left == 0:
+            # Send admin notification the day AFTER registration closes (e.g. deadline=17th, send on 18th)
+            if days_left == -1:
                 _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date)
             
             # Only send player reminders at 7 days or 3 days before close
