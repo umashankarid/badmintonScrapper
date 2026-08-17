@@ -194,16 +194,23 @@ def init_admin_db():
     
     # Insert default admin if it doesn't exist
     try:
-        conn.execute("INSERT INTO admin_users (username) VALUES (?)", ("umashankar1985@gmail.com",))
+        conn.execute("INSERT INTO admin_users (username, email) VALUES (?, ?)", ("umashankar1985@gmail.com", "umashankar1985@gmail.com"))
         conn.commit()
     except sqlite3.IntegrityError:
         pass
     try:
-        conn.execute("INSERT INTO admin_users (username) VALUES (?)", ("sbf04959",))
+        conn.execute("INSERT INTO admin_users (username, email) VALUES (?, ?)", ("sbf04959", "tavlingar@bmkkomet.se"))
         conn.commit()
         logger.info("Created default admin: sbf04959 (club account)")
     except sqlite3.IntegrityError:
         pass
+    
+    # Ensure emails are set for existing admin entries
+    conn.execute("UPDATE admin_users SET email = ? WHERE username = ? AND (email IS NULL OR email = '')", 
+                ("tavlingar@bmkkomet.se", "sbf04959"))
+    conn.execute("UPDATE admin_users SET email = ? WHERE username = ? AND (email IS NULL OR email = '')", 
+                ("umashankar1985@gmail.com", "umashankar1985@gmail.com"))
+    conn.commit()
     
     conn.close()
 
