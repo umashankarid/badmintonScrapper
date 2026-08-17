@@ -3266,12 +3266,18 @@ def add_player():
         row = cur_check.fetchone()
         player_ranking = {}
         if row and row[0]:
-            decoded = json.loads(row[0])
-            # Handle double-encoded JSON (string inside string)
-            if isinstance(decoded, str):
-                decoded = json.loads(decoded)
-            if isinstance(decoded, dict):
-                player_ranking = decoded
+            try:
+                decoded = json.loads(row[0])
+                # Handle double-encoded JSON (string inside string)
+                while isinstance(decoded, str):
+                    decoded = json.loads(decoded)
+                if isinstance(decoded, dict):
+                    player_ranking = decoded
+            except (json.JSONDecodeError, TypeError):
+                pass
+            logger.info(f"🔍 Point validation for {license_id}: ranking keys={list(player_ranking.keys())}")
+        else:
+            logger.warning(f"⚠️  No ranking data for {license_id} — point validation skipped")
         conn_players_check.close()
         
         if player_ranking:
@@ -3306,6 +3312,7 @@ def add_player():
                 
                 cat_ranking = player_ranking.get(category, {})
                 points_str = cat_ranking.get("points", "")
+                logger.info(f"🔍 Checking {entry['event']}: {category} points={points_str}, max={max_pts}")
                 if points_str and max_pts is not None:
                     try:
                         points = int(points_str)
