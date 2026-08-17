@@ -365,33 +365,45 @@
                     });
                     
                     let html = '';
+                    // Color scheme per category type
+                    const catColors = {
+                        'HS': {bg: '#e3f2fd', header: '#bbdefb', border: '#90caf9'},
+                        'DS': {bg: '#fce4ec', header: '#f8bbd0', border: '#f48fb1'},
+                        'HD': {bg: '#e8f5e9', header: '#c8e6c9', border: '#a5d6a7'},
+                        'DD': {bg: '#fff3e0', header: '#ffe0b2', border: '#ffcc80'},
+                        'MD': {bg: '#f3e5f5', header: '#e1bee7', border: '#ce93d8'},
+                    };
+                    const defaultColor = {bg: '#f5f5f5', header: '#e0e0e0', border: '#bdbdbd'};
+                    
                     sortedCategories.forEach(cat => {
                         const catPlayers = categories[cat];
                         const isDoubles = cat.startsWith("HD") || cat.startsWith("DD") || cat.startsWith("MD");
+                        const catType = cat.split(' ')[0];
+                        const colors = catColors[catType] || defaultColor;
                         html += `
-                            <details open style="margin-bottom:10px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
-                                <summary style="padding:10px 15px;background:#f5f5f5;cursor:pointer;font-weight:bold;color:#1a237e;">
-                                    ${cat} <span style="color:#666;font-weight:normal;font-size:0.9em;">(${catPlayers.length} player${catPlayers.length !== 1 ? 's' : ''})</span>
+                            <details open style="margin-bottom:12px;border:1px solid ${colors.border};border-radius:8px;overflow:hidden;">
+                                <summary style="padding:10px 15px;background:${colors.header};cursor:pointer;font-weight:bold;color:#1a237e;">
+                                    ${cat} <span style="color:#555;font-weight:normal;font-size:0.9em;">(${catPlayers.length} player${catPlayers.length !== 1 ? 's' : ''})</span>
                                 </summary>
-                                <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
-                                    <thead><tr style="background:#e8eaf6;">
-                                        <th style="padding:6px 10px;text-align:left;">Name</th>
-                                        <th style="padding:6px 10px;text-align:left;">License ID</th>
-                                        <th style="padding:6px 10px;text-align:left;">Club</th>
-                                        <th style="padding:6px 10px;text-align:left;">Gender</th>
-                                        ${isDoubles ? '<th style="padding:6px 10px;text-align:left;">Partner</th>' : ''}
-                                        <th style="padding:6px 10px;text-align:left;">Actions</th>
+                                <table style="width:100%;border-collapse:collapse;font-size:0.9em;background:${colors.bg};">
+                                    <thead><tr style="background:${colors.header};">
+                                        <th style="padding:8px 10px;text-align:left;">Name</th>
+                                        <th style="padding:8px 10px;text-align:left;">License ID</th>
+                                        <th style="padding:8px 10px;text-align:left;">Club</th>
+                                        <th style="padding:8px 10px;text-align:left;">Gender</th>
+                                        ${isDoubles ? '<th style="padding:8px 10px;text-align:left;">Partner</th>' : ''}
+                                        <th style="padding:8px 10px;text-align:left;width:130px;">Actions</th>
                                     </tr></thead>
                                     <tbody>
                                         ${catPlayers.map(p => `<tr>
-                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.player_name || ""}</td>
-                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.license_id || ""}</td>
-                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.club || ""}</td>
-                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
-                                            ${isDoubles ? `<td style="padding:6px 10px;border-top:1px solid #eee;">${p.partner}</td>` : ''}
-                                            <td style="padding:6px 10px;border-top:1px solid #eee;">
-                                                <button onclick="adminEditPlayer(${p.player_id})" style="padding:4px 8px;font-size:0.85em;">Edit</button>
-                                                <button onclick="deletePlayer(${p.player_id})" style="padding:4px 8px;font-size:0.85em;background:#cc3333;">Delete</button>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.license_id || ""}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.club || ""}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
+                                            ${isDoubles ? `<td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.partner}</td>` : ''}
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};white-space:nowrap;">
+                                                <button onclick="adminEditPlayer(${p.player_id})" style="padding:5px 10px;font-size:0.8em;min-width:50px;border:none;border-radius:4px;cursor:pointer;background:#1976d2;color:white;">Edit</button>
+                                                <button onclick="deletePlayer(${p.player_id})" style="padding:5px 10px;font-size:0.8em;min-width:55px;border:none;border-radius:4px;cursor:pointer;background:#cc3333;color:white;">Delete</button>
                                             </td>
                                         </tr>`).join("")}
                                     </tbody>
