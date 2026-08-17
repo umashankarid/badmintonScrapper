@@ -4075,13 +4075,14 @@ def delete_player_group(group_id):
 
 @app.route("/api/komet-players", methods=["GET"])
 def get_komet_players():
-    """Get paginated list of komet players with optional search"""
+    """Get paginated list of komet players with optional search and group filter"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
     page = int(request.args.get("page", 1))
     page_size = int(request.args.get("pageSize", 30))
     search = request.args.get("search", "").strip()
+    group_filter = request.args.get("group", "").strip()
     
     try:
         conn = sqlite3.connect(PLAYERS_DB)
@@ -4089,22 +4090,47 @@ def get_komet_players():
         cur = conn.cursor()
         offset = (page - 1) * page_size
         
+        # Get all players first (we filter by group in Python since groups is JSON)
         if search:
-            cur.execute("SELECT COUNT(*) FROM kometPlayers WHERE name LIKE ? OR license_id LIKE ? OR email LIKE ?",
-                       (f"%{search}%", f"%{search}%", f"%{search}%"))
-            total = cur.fetchone()[0]
             cur.execute("""
                 SELECT id, license_id, name, email, secondary_email, groups FROM kometPlayers 
                 WHERE name LIKE ? OR license_id LIKE ? OR email LIKE ?
-                ORDER BY name LIMIT ? OFFSET ?
-            """, (f"%{search}%", f"%{search}%", f"%{search}%", page_size, offset))
+                ORDER BY name
+            """, (f"%{search}%", f"%{search}%", f"%{search}%"))
         else:
-            cur.execute("SELECT COUNT(*) FROM kometPlayers")
-            total = cur.fetchone()[0]
-            cur.execute("SELECT id, license_id, name, email, secondary_email, groups FROM kometPlayers ORDER BY name LIMIT ? OFFSET ?",
-                       (page_size, offset))
+            cur.execute("SELECT id, license_id, name, email, secondary_email, groups FROM kometPlayers ORDER BY name")
         
-        players = [dict(row) for row in cur.fetchall()]
+        all_players = [dict(row) for row in cur.fetchall()]
+        
+        # Apply group filter
+        if group_filter:
+            if group_filter == "__none__":
+                # Players with no groups
+                filtered = []
+                for p in all_players:
+                    player_groups = []
+                    try:
+                        player_groups = json.loads(p["groups"]) if p["groups"] else []
+                    except Exception:
+                        pass
+                    if not player_groups:
+                        filtered.append(p)
+                all_players = filtered
+            else:
+                # Players in specific group
+                filtered = []
+                for p in all_players:
+                    player_groups = []
+                    try:
+                        player_groups = json.loads(p["groups"]) if p["groups"] else []
+                    except Exception:
+                        pass
+                    if group_filter in player_groups:
+                        filtered.append(p)
+                all_players = filtered
+        
+        total = len(all_players)
+        players = all_players[offset:offset + page_size]
         conn.close()
         return jsonify(success=True, players=players, total=total)
     except Exception as e:

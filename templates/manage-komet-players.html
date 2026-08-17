@@ -59,9 +59,12 @@
             </div>
         </form>
 
-        <!-- Search and Sync -->
+        <!-- Search, Filter and Sync -->
         <div style="margin-bottom:15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="max-width:400px;flex:1;">
+            <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="max-width:300px;flex:1;">
+            <select id="group-filter" onchange="applyFilter()" style="padding:8px;font-size:0.9em;width:auto;">
+                <option value="">All Groups</option>
+            </select>
             <button onclick="syncFromPlayers()" style="width:auto;padding:8px 14px;background:#f57c00;font-size:0.85em;">🔄 Sync from Players DB</button>
         </div>
         <p id="sync-status" style="display:none;padding:8px 12px;border-radius:6px;font-size:0.9em;margin-bottom:10px;"></p>
@@ -200,9 +203,11 @@
         async function loadPlayers(page = 1, search = "") {
             currentPage = page;
             const container = document.getElementById("players-list");
+            const groupFilter = document.getElementById("group-filter").value;
             
             let url = `/api/komet-players?page=${page}&pageSize=${pageSize}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (groupFilter) url += `&group=${encodeURIComponent(groupFilter)}`;
             
             const res = await fetch(url);
             const data = await res.json();
@@ -367,8 +372,26 @@
             searchTimeout = setTimeout(() => loadPlayers(1, e.target.value.trim()), 300);
         });
 
+        function applyFilter() {
+            const search = document.getElementById("search-input").value.trim();
+            loadPlayers(1, search);
+        }
+
+        async function populateGroupFilter() {
+            const res = await fetch("/api/player-groups");
+            const data = await res.json();
+            const select = document.getElementById("group-filter");
+            select.innerHTML = '<option value="">All Groups</option><option value="__none__">No Group Assigned</option>';
+            if (data.success && data.groups) {
+                data.groups.filter(g => g.group_name !== "All").forEach(g => {
+                    select.innerHTML += `<option value="${g.group_name}">${g.group_name}</option>`;
+                });
+            }
+        }
+
         // Init
         loadGroups();
+        populateGroupFilter();
         loadPlayers();
     </script>
 
