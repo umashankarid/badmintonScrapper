@@ -44,9 +44,13 @@
                     <input type="email" id="player-email" placeholder="email@example.com">
                 </div>
                 <div>
-                    <label>Groups</label>
-                    <div id="groups-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0;"></div>
+                    <label>Secondary Email</label>
+                    <input type="email" id="player-secondary-email" placeholder="secondary@example.com">
                 </div>
+            </div>
+            <div style="margin-top:10px;">
+                <label>Groups</label>
+                <div id="groups-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0;"></div>
             </div>
             <input type="hidden" id="edit-id" value="">
             <div style="display:flex;gap:10px;margin-top:10px;">
@@ -230,7 +234,7 @@
                             <tr>
                                 <td>${p.name}</td>
                                 <td>${p.license_id || ""}</td>
-                                <td>${p.email || ""}</td>
+                                <td>${p.email || ""}${p.secondary_email ? '<br><span style="color:#666;font-size:0.85em;">' + p.secondary_email + '</span>' : ''}</td>
                                 <td>${groupTags}</td>
                                 <td>
                                     <button onclick='editPlayer(${JSON.stringify(p)})' style="width:auto;padding:4px 10px;font-size:0.8em;background:#f57c00;">Edit</button>
@@ -258,6 +262,7 @@
                 license_id: document.getElementById("player-license").value.trim(),
                 name: document.getElementById("player-name").value.trim(),
                 email: document.getElementById("player-email").value.trim(),
+                secondary_email: document.getElementById("player-secondary-email").value.trim(),
                 groups: selectedGroups.join(", ")
             };
             
@@ -294,6 +299,7 @@
             document.getElementById("player-license").style.background = "";
             document.getElementById("player-name").value = p.name || "";
             document.getElementById("player-email").value = p.email || "";
+            document.getElementById("player-secondary-email").value = p.secondary_email || "";
             renderGroupCheckboxes(groups);
             document.getElementById("form-title").textContent = "Edit Player";
             document.getElementById("cancel-btn").style.display = "inline-block";

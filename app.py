@@ -524,6 +524,16 @@ def init_players_db():
         conn.execute("ALTER TABLE kometPlayers ADD COLUMN groups TEXT")
     except Exception:
         pass
+    # Add secondary_email column to kometPlayers if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE kometPlayers ADD COLUMN secondary_email TEXT")
+    except Exception:
+        pass
+    # Add secondary_email column to players if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE players ADD COLUMN secondary_email TEXT")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS player_groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3970,14 +3980,14 @@ def get_komet_players():
                        (f"%{search}%", f"%{search}%", f"%{search}%"))
             total = cur.fetchone()[0]
             cur.execute("""
-                SELECT id, license_id, name, email, groups FROM kometPlayers 
+                SELECT id, license_id, name, email, secondary_email, groups FROM kometPlayers 
                 WHERE name LIKE ? OR license_id LIKE ? OR email LIKE ?
                 ORDER BY name LIMIT ? OFFSET ?
             """, (f"%{search}%", f"%{search}%", f"%{search}%", page_size, offset))
         else:
             cur.execute("SELECT COUNT(*) FROM kometPlayers")
             total = cur.fetchone()[0]
-            cur.execute("SELECT id, license_id, name, email, groups FROM kometPlayers ORDER BY name LIMIT ? OFFSET ?",
+            cur.execute("SELECT id, license_id, name, email, secondary_email, groups FROM kometPlayers ORDER BY name LIMIT ? OFFSET ?",
                        (page_size, offset))
         
         players = [dict(row) for row in cur.fetchall()]
@@ -3996,6 +4006,7 @@ def create_komet_player():
     license_id = data.get("license_id", "").strip()
     name = data.get("name", "").strip()
     email = data.get("email", "").strip()
+    secondary_email = data.get("secondary_email", "").strip()
     groups = data.get("groups", "").strip()
     
     # Store groups as JSON array
@@ -4010,8 +4021,8 @@ def create_komet_player():
     
     try:
         conn = sqlite3.connect(PLAYERS_DB)
-        conn.execute("INSERT INTO kometPlayers (license_id, name, email, groups) VALUES (?, ?, ?, ?)",
-                    (license_id or None, name, email or None, groups_json))
+        conn.execute("INSERT INTO kometPlayers (license_id, name, email, secondary_email, groups) VALUES (?, ?, ?, ?, ?)",
+                    (license_id or None, name, email or None, secondary_email or None, groups_json))
         conn.commit()
         conn.close()
         return jsonify(success=True)
@@ -4030,6 +4041,7 @@ def update_komet_player(player_id):
     license_id = data.get("license_id", "").strip()
     name = data.get("name", "").strip()
     email = data.get("email", "").strip()
+    secondary_email = data.get("secondary_email", "").strip()
     groups = data.get("groups", "").strip()
     
     # Store groups as JSON array
@@ -4044,8 +4056,8 @@ def update_komet_player(player_id):
     
     try:
         conn = sqlite3.connect(PLAYERS_DB)
-        conn.execute("UPDATE kometPlayers SET license_id = ?, name = ?, email = ?, groups = ? WHERE id = ?",
-                    (license_id or None, name, email or None, groups_json, player_id))
+        conn.execute("UPDATE kometPlayers SET license_id = ?, name = ?, email = ?, secondary_email = ?, groups = ? WHERE id = ?",
+                    (license_id or None, name, email or None, secondary_email or None, groups_json, player_id))
         conn.commit()
         conn.close()
         return jsonify(success=True)
@@ -4236,14 +4248,17 @@ def get_group_emails():
     try:
         conn = sqlite3.connect(PLAYERS_DB)
         cur = conn.cursor()
-        cur.execute("SELECT email, groups FROM kometPlayers WHERE email IS NOT NULL AND email != ''")
+        cur.execute("SELECT email, secondary_email, groups FROM kometPlayers WHERE (email IS NOT NULL AND email != '') OR (secondary_email IS NOT NULL AND secondary_email != '')")
         
         emails = []
         for row in cur.fetchall():
-            email, groups_json = row
+            email, secondary_email, groups_json = row
             if not group:
                 # No filter - return all
-                emails.append(email)
+                if email:
+                    emails.append(email)
+                if secondary_email:
+                    emails.append(secondary_email)
             else:
                 # Filter by group
                 player_groups = []
@@ -4252,7 +4267,10 @@ def get_group_emails():
                 except Exception:
                     pass
                 if group in player_groups:
-                    emails.append(email)
+                    if email:
+                        emails.append(email)
+                    if secondary_email:
+                        emails.append(secondary_email)
         
         conn.close()
         return jsonify(success=True, emails=list(set(emails)))
