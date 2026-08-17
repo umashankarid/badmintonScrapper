@@ -3295,6 +3295,8 @@ def add_player():
                             if len(parts) == 2:
                                 all_levels.append({"event": lvl, "category": parts[0], "level": parts[1]})
             
+            logger.info(f"🔍 Levels to validate: {[e['event'] for e in all_levels]} (raw: singles='{player.get('singles_levels', '')}', doubles='{player.get('doubles_levels', '')}', mixed='{player.get('mixed_levels', '')}')")
+            
             for entry in all_levels:
                 category = entry["category"]
                 level = entry["level"]
