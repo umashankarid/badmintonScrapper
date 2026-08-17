@@ -5313,16 +5313,16 @@ def test_auto_reminders():
     
     results = []
     
-    # 1. Registration Reminder (7 days before)
-    subject1 = f"📋 Anmälan stänger om 1 vecka / Registration closing in 1 week: {tournament_name}"
+    # 1. Registration Reminder (3 days before)
+    subject1 = f"📋 Anmälan stänger om 3 dagar / Registration closing in 3 days: {tournament_name}"
     body1 = (f"Hej {player_name},\n\n"
              f"Detta är en påminnelse om att anmälan till '{tournament_name}' "
-             f"stänger om 1 vecka ({admin_reg_end_date}).\n\n"
+             f"stänger om 3 dagar ({admin_reg_end_date}).\n\n"
              f"Glöm inte att anmäla dig om du vill delta!\n\n"
              f"---\n\n"
              f"Hi {player_name},\n\n"
              f"This is a friendly reminder that registration for '{tournament_name}' "
-             f"closes in 1 week ({admin_reg_end_date}).\n\n"
+             f"closes in 3 days ({admin_reg_end_date}).\n\n"
              f"Don't forget to register if you want to participate!\n\n"
              f"---\n\n"
              f"Om du inte vill få fler påminnelser för denna tävling kan du stänga av dem genom att logga in på https://activitylogger.bmkkomet.se och klicka på 'Stäng av påminnelser' vid tävlingen.\n\n"
@@ -5350,15 +5350,15 @@ def test_auto_reminders():
     r2 = send_email(test_email, f"[TEST] {subject2}", body2)
     results.append({"type": "Admin Notification", "success": r2 is True, "error": "" if r2 is True else str(r2)})
     
-    # 3. Competition Reminder (7 days before)
-    subject3 = f"🏸 {tournament_name} startar om 1 vecka / starts in 1 week!"
+    # 3. Competition Reminder (3 days before)
+    subject3 = f"🏸 {tournament_name} startar om 3 dagar / starts in 3 days!"
     body3 = (f"Hej {player_name},\n\n"
-             f"Påminnelse om att '{tournament_name}' startar om 1 vecka ({comp_date_str}).\n\n"
+             f"Påminnelse om att '{tournament_name}' startar om 3 dagar ({comp_date_str}).\n\n"
              f"Se till att du är förberedd och har allt du behöver!\n\n"
              f"Lycka till! 🏸\n\n"
              f"---\n\n"
              f"Hi {player_name},\n\n"
-             f"Just a reminder that '{tournament_name}' starts in 1 week ({comp_date_str}).\n\n"
+             f"Just a reminder that '{tournament_name}' starts in 3 days ({comp_date_str}).\n\n"
              f"Make sure you're prepared and have everything you need!\n\n"
              f"Good luck! 🏸\n\n"
              f"---\n\n"
