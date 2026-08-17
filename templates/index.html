@@ -179,7 +179,11 @@
                     const today = new Date();
                     const daysLeft = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
                     
-                    if (daysLeft > 0) {
+                    if (daysLeft === 0) {
+                        // Last day for registration - orange badge
+                        daysCounter = `<div style="float:right;background:#ff6f00;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;margin-left:10px;"><div style="font-size:0.8em;">Last day</div><div style="font-size:0.65em;">for registration</div></div>`;
+                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
+                    } else if (daysLeft > 0) {
                         const dayWord = daysLeft === 1 ? "day" : "days";
                         daysCounter = `<div style="float:right;background:#0d47a1;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;margin-left:10px;"><div style="font-size:1.2em;">${daysLeft}</div><div style="font-size:0.7em;">${dayWord} left</div></div>`;
                     }
