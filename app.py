@@ -3410,8 +3410,8 @@ def add_player():
         logger.debug(f"Could not validate age on server: {e}")
     
     # SERVER-SIDE VALIDATION: MJT/SJT level restriction
-    # LEVEL_5 players can only register in MJT categories (not SJT/plain)
-    # LEVEL_6 players can register in any category but warned for SJT (needs permission)
+    # LEVEL_5 players can ONLY register in MJT categories (hard block from SJT)
+    # LEVEL_6 players playing above their age group need special permission
     # Only applies to tournaments with "SJT" in their name
     try:
         if "SJT" in tournament_name.upper():
@@ -3440,16 +3440,48 @@ def add_player():
                             if lvl:
                                 all_selected.append(lvl)
                 
-                sjt_events = [e for e in all_selected if "MJT" not in e.upper()]
+                if is_level_5 and not is_level_6:
+                    # LEVEL_5: hard block from any non-MJT category
+                    sjt_events = [e for e in all_selected if "MJT" not in e.upper()]
+                    if sjt_events:
+                        return jsonify(success=False,
+                            error=f"Anmälan nekad: '{sjt_events[0]}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare kan du bara anmäla dig i MJT-kategorier.\n\nRegistration rejected: '{sjt_events[0]}' is an SJT category (Level 6). As a Level 5 player, you can only register in MJT categories.")
                 
-                if is_level_5 and not is_level_6 and sjt_events:
-                    if not confirmed_permission:
-                        # LEVEL_5 needs special permission for SJT categories
-                        return jsonify(success=False, needs_permission=True,
-                            error=f"'{sjt_events[0]}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare behöver du särskilt tillstånd (dispens) för att spela denna kategori.\n\n'{sjt_events[0]}' is an SJT category (Level 6). As a Level 5 player, you need special permission (dispensation) to play this category.\n\nHar du fått dispens? / Do you have permission?")
-                elif is_level_6 and not is_level_5 and sjt_events:
-                    # Level 6 playing SJT is normal - no warning needed
-                    pass
+                elif is_level_6:
+                    # LEVEL_6: check if playing above their age group (needs permission)
+                    # Get player's age group from DOB
+                    import re as _re
+                    conn_p = sqlite3.connect(PLAYERS_DB)
+                    cur_p = conn_p.cursor()
+                    cur_p.execute("SELECT dob FROM players WHERE license_id = ?", (license_id,))
+                    p_row = cur_p.fetchone()
+                    conn_p.close()
+                    
+                    if p_row and p_row[0] and not confirmed_permission:
+                        from datetime import datetime as _dt
+                        try:
+                            birth = _dt.strptime(p_row[0], "%Y-%m-%d")
+                            today_dt = _dt.now()
+                            player_age = today_dt.year - birth.year - ((today_dt.month, today_dt.day) < (birth.month, birth.day))
+                            
+                            # Determine player's correct age group
+                            age_groups = [("U11", 11), ("U13", 13), ("U15", 15), ("U17", 17), ("U19", 19)]
+                            player_age_group = None
+                            for name, max_age in age_groups:
+                                if player_age < max_age:
+                                    player_age_group = max_age
+                                    break
+                            
+                            # Check if any selected event is above player's age group
+                            for event in all_selected:
+                                event_match = _re.search(r'U(\d+)', event)
+                                if event_match:
+                                    event_age = int(event_match.group(1))
+                                    if player_age_group and event_age > player_age_group:
+                                        return jsonify(success=False, needs_permission=True,
+                                            error=f"'{event}' är en högre åldersgrupp (U{event_age}) än din (U{player_age_group}). Du behöver särskilt tillstånd (dispens) för att spela upp.\n\n'{event}' is a higher age group (U{event_age}) than yours (U{player_age_group}). You need special permission (dispensation) to play up.\n\nHar du fått dispens? / Do you have permission?")
+                        except Exception:
+                            pass
     except Exception as e:
         logger.debug(f"Could not validate MJT/SJT level: {e}")
     
