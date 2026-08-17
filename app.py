@@ -3481,8 +3481,13 @@ def add_player():
                                 pass
                 
                 elif is_level_6:
+                    # LEVEL_6: warn if playing MJT (they should play SJT)
+                    mjt_events = [e for e in all_selected if "MJT" in e.upper()]
+                    if mjt_events and not confirmed_permission:
+                        return jsonify(success=False, needs_permission=True,
+                            error=f"Du är Nivå 6-spelare och bör spela SJT-kategorier. Du har valt '{mjt_events[0]}' (MJT/Nivå 5). Vill du ändå anmäla dig i MJT?\n\nYou are a Level 6 player and should play SJT categories. You selected '{mjt_events[0]}' (MJT/Level 5). Do you still want to register in MJT?")
+                    
                     # LEVEL_6: check if playing above their age group (needs permission)
-                    # Get player's age group from DOB
                     import re as _re
                     conn_p = sqlite3.connect(PLAYERS_DB)
                     cur_p = conn_p.cursor()
