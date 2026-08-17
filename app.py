@@ -3409,6 +3409,59 @@ def add_player():
     except Exception as e:
         logger.debug(f"Could not validate age on server: {e}")
     
+    # SERVER-SIDE VALIDATION: MJT/SJT level restriction
+    # LEVEL_5 players can only register in MJT categories (not SJT/plain)
+    # LEVEL_6 players can register in any category
+    # Only applies to tournaments that have MJT categories
+    try:
+        # Check if this tournament has MJT categories
+        conn_t_check = sqlite3.connect(TOURNAMENTS_DB)
+        cur_t_check = conn_t_check.cursor()
+        cur_t_check.execute("SELECT categories FROM tournaments WHERE tournament_name = ?", (tournament_name,))
+        t_row = cur_t_check.fetchone()
+        conn_t_check.close()
+        
+        tournament_has_mjt = False
+        if t_row and t_row[0]:
+            cats = json.loads(t_row[0])
+            all_cats = (cats.get("singles_levels", []) + cats.get("doubles_levels", []) + cats.get("mixed_levels", []))
+            tournament_has_mjt = any("MJT" in c.upper() for c in all_cats)
+        
+        if tournament_has_mjt:
+            conn_k = sqlite3.connect(PLAYERS_DB)
+            cur_k = conn_k.cursor()
+            cur_k.execute("SELECT groups FROM kometPlayers WHERE license_id = ?", (license_id,))
+            k_row = cur_k.fetchone()
+            conn_k.close()
+            
+            if k_row:
+                player_groups = []
+                try:
+                    player_groups = json.loads(k_row[0]) if k_row[0] else []
+                except Exception:
+                    pass
+                
+                is_level_5 = "LEVEL_5" in player_groups
+                is_level_6 = "LEVEL_6" in player_groups
+                
+                if is_level_5 and not is_level_6:
+                    # LEVEL_5 player: can only play MJT categories in this tournament
+                    all_selected = []
+                    for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
+                        if lvl_str:
+                            for lvl in lvl_str.split(","):
+                                lvl = lvl.strip()
+                                if lvl:
+                                    all_selected.append(lvl)
+                    
+                    for event in all_selected:
+                        if "MJT" not in event.upper():
+                            # Not an MJT category = SJT level, blocked for LEVEL_5
+                            return jsonify(success=False,
+                                error=f"Anmälan nekad / Registration rejected: '{event}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare kan du bara anmäla dig i MJT-kategorier. / '{event}' is an SJT category (Level 6). As a Level 5 player, you can only register in MJT categories.")
+    except Exception as e:
+        logger.debug(f"Could not validate MJT/SJT level: {e}")
+    
     # STEP 1: Ensure player exists in players.db
     # From live search we have: name, license_id, club, profile_url
     # From player profile we have: gender, ranking
