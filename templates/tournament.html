@@ -94,7 +94,6 @@
         <h2 id="players-heading" style="margin:0;">Registered Players</h2>
         <button id="download-csv-btn" onclick="downloadCSV()" style="display:none;width:auto;padding:6px 14px;background:#28a745;font-size:0.85em;">📥 Download CSV</button>
         <button id="submit-bwf-btn" onclick="submitToBWF()" style="display:none;width:auto;padding:6px 14px;background:#0d47a1;color:white;font-size:0.85em;" disabled>🏸 Submit to SBF</button>
-        <button id="view-by-category-btn" onclick="toggleCategoryView()" style="display:none;width:auto;padding:6px 14px;background:#6a1b9a;color:white;font-size:0.85em;">📋 View by Category</button>
     </div>
     <div id="category-view" style="display:none;margin-top:15px;"></div>
     <div id="admin-player-search" style="display:none;margin-bottom:10px;margin-top:10px;">
@@ -300,6 +299,100 @@
                     } else {
                         tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">No registrations yet.</td></tr>';
                     }
+                    return;
+                }
+
+                // Admin: show category-grouped view
+                if (isAdmin) {
+                    document.getElementById("players-table").style.display = "none";
+                    const container = document.getElementById("category-view");
+                    container.style.display = "block";
+                    
+                    // Group players by category
+                    const categories = {};
+                    players.forEach(p => {
+                        if (p.singles_levels) {
+                            p.singles_levels.split(",").forEach(lvl => {
+                                lvl = lvl.trim();
+                                if (lvl) {
+                                    if (!categories[lvl]) categories[lvl] = [];
+                                    categories[lvl].push({...p, partner: "", catType: "singles"});
+                                }
+                            });
+                        }
+                        if (p.doubles_levels) {
+                            p.doubles_levels.split(",").forEach(lvl => {
+                                lvl = lvl.trim();
+                                if (lvl) {
+                                    if (!categories[lvl]) categories[lvl] = [];
+                                    categories[lvl].push({...p, partner: p.doubles_partner || "", catType: "doubles"});
+                                }
+                            });
+                        }
+                        if (p.mixed_levels) {
+                            p.mixed_levels.split(",").forEach(lvl => {
+                                lvl = lvl.trim();
+                                if (lvl) {
+                                    if (!categories[lvl]) categories[lvl] = [];
+                                    categories[lvl].push({...p, partner: p.mixed_partner || "", catType: "mixed"});
+                                }
+                            });
+                        }
+                    });
+                    
+                    // Sort categories: U11→U19, then by type
+                    const ageOrder = {'U11': 1, 'U13': 2, 'U15': 3, 'U17': 4, 'U19': 5, 'Elit': 6, 'A': 7, 'B': 8, 'C': 9, 'D': 10};
+                    const typeOrder = {'HS': 1, 'DS': 2, 'HD': 3, 'DD': 4, 'MD': 5};
+                    const sortedCategories = Object.keys(categories).sort((a, b) => {
+                        const aParts = a.split(' ');
+                        const bParts = b.split(' ');
+                        const aType = typeOrder[aParts[0]] || 99;
+                        const bType = typeOrder[bParts[0]] || 99;
+                        const aAge = ageOrder[aParts[1]] || 50;
+                        const bAge = ageOrder[bParts[1]] || 50;
+                        if (aAge !== bAge) return aAge - bAge;
+                        if (aType !== bType) return aType - bType;
+                        return a.localeCompare(b);
+                    });
+                    
+                    let html = '';
+                    sortedCategories.forEach(cat => {
+                        const catPlayers = categories[cat];
+                        const isDoubles = cat.startsWith("HD") || cat.startsWith("DD") || cat.startsWith("MD");
+                        html += `
+                            <details open style="margin-bottom:10px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
+                                <summary style="padding:10px 15px;background:#f5f5f5;cursor:pointer;font-weight:bold;color:#1a237e;">
+                                    ${cat} <span style="color:#666;font-weight:normal;font-size:0.9em;">(${catPlayers.length} player${catPlayers.length !== 1 ? 's' : ''})</span>
+                                </summary>
+                                <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
+                                    <thead><tr style="background:#e8eaf6;">
+                                        <th style="padding:6px 10px;text-align:left;">Name</th>
+                                        <th style="padding:6px 10px;text-align:left;">License ID</th>
+                                        <th style="padding:6px 10px;text-align:left;">Club</th>
+                                        <th style="padding:6px 10px;text-align:left;">Gender</th>
+                                        ${isDoubles ? '<th style="padding:6px 10px;text-align:left;">Partner</th>' : ''}
+                                        <th style="padding:6px 10px;text-align:left;">Actions</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        ${catPlayers.map(p => `<tr>
+                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.player_name || ""}</td>
+                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.license_id || ""}</td>
+                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.club || ""}</td>
+                                            <td style="padding:6px 10px;border-top:1px solid #eee;">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
+                                            ${isDoubles ? `<td style="padding:6px 10px;border-top:1px solid #eee;">${p.partner}</td>` : ''}
+                                            <td style="padding:6px 10px;border-top:1px solid #eee;">
+                                                <button onclick="adminEditPlayer(${p.player_id})" style="padding:4px 8px;font-size:0.85em;">Edit</button>
+                                                <button onclick="deletePlayer(${p.player_id})" style="padding:4px 8px;font-size:0.85em;background:#cc3333;">Delete</button>
+                                            </td>
+                                        </tr>`).join("")}
+                                    </tbody>
+                                </table>
+                            </details>
+                        `;
+                    });
+                    
+                    if (!html) html = '<p style="color:#666;">No registrations yet.</p>';
+                    container.innerHTML = html;
                     return;
                 }
 
@@ -1168,118 +1261,6 @@
             }
         }
 
-        let categoryViewVisible = false;
-        async function toggleCategoryView() {
-            const container = document.getElementById("category-view");
-            const btn = document.getElementById("view-by-category-btn");
-            
-            if (categoryViewVisible) {
-                container.style.display = "none";
-                btn.textContent = "📋 View by Category";
-                categoryViewVisible = false;
-                return;
-            }
-            
-            // Fetch all players
-            const res = await fetch(`/api/tournament-players?dbFile=${encodeURIComponent(dbFile)}&page=1&pageSize=10000`);
-            const data = await res.json();
-            if (!data.success || !data.players.length) {
-                container.innerHTML = "<p style='color:#666;'>No registrations yet.</p>";
-                container.style.display = "block";
-                categoryViewVisible = true;
-                btn.textContent = "📋 Hide Category View";
-                return;
-            }
-            
-            // Group players by category
-            const categories = {};
-            
-            data.players.forEach(p => {
-                // Singles
-                if (p.singles_levels) {
-                    p.singles_levels.split(",").forEach(lvl => {
-                        lvl = lvl.trim();
-                        if (lvl) {
-                            if (!categories[lvl]) categories[lvl] = [];
-                            categories[lvl].push({name: p.player_name, license_id: p.license_id, club: p.club, gender: p.gender, partner: ""});
-                        }
-                    });
-                }
-                // Doubles
-                if (p.doubles_levels) {
-                    p.doubles_levels.split(",").forEach(lvl => {
-                        lvl = lvl.trim();
-                        if (lvl) {
-                            if (!categories[lvl]) categories[lvl] = [];
-                            categories[lvl].push({name: p.player_name, license_id: p.license_id, club: p.club, gender: p.gender, partner: p.doubles_partner || ""});
-                        }
-                    });
-                }
-                // Mixed
-                if (p.mixed_levels) {
-                    p.mixed_levels.split(",").forEach(lvl => {
-                        lvl = lvl.trim();
-                        if (lvl) {
-                            if (!categories[lvl]) categories[lvl] = [];
-                            categories[lvl].push({name: p.player_name, license_id: p.license_id, club: p.club, gender: p.gender, partner: p.mixed_partner || ""});
-                        }
-                    });
-                }
-            });
-            
-            // Sort categories in natural order: U11 → U13 → U15 → U17 → U19, then by type (HS/DS/HD/DD/MD)
-            const ageOrder = {'U11': 1, 'U13': 2, 'U15': 3, 'U17': 4, 'U19': 5, 'Elit': 6, 'A': 7, 'B': 8, 'C': 9, 'D': 10};
-            const typeOrder = {'HS': 1, 'DS': 2, 'HD': 3, 'DD': 4, 'MD': 5};
-            const sortedCategories = Object.keys(categories).sort((a, b) => {
-                const aParts = a.split(' ');
-                const bParts = b.split(' ');
-                const aType = typeOrder[aParts[0]] || 99;
-                const bType = typeOrder[bParts[0]] || 99;
-                const aAge = ageOrder[aParts[1]] || 50;
-                const bAge = ageOrder[bParts[1]] || 50;
-                // Sort by age group first, then by type, then by suffix (nivå 2 etc.)
-                if (aAge !== bAge) return aAge - bAge;
-                if (aType !== bType) return aType - bType;
-                return a.localeCompare(b);
-            });
-            
-            // Build HTML
-            let html = '<h3 style="margin-top:0;">Registrations by Category</h3>';
-            sortedCategories.forEach(cat => {
-                const players = categories[cat];
-                html += `
-                    <details style="margin-bottom:10px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
-                        <summary style="padding:10px 15px;background:#f5f5f5;cursor:pointer;font-weight:bold;color:#1a237e;">
-                            ${cat} <span style="color:#666;font-weight:normal;font-size:0.9em;">(${players.length} player${players.length !== 1 ? 's' : ''})</span>
-                        </summary>
-                        <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
-                            <thead><tr style="background:#e8eaf6;">
-                                <th style="padding:6px 10px;text-align:left;">Name</th>
-                                <th style="padding:6px 10px;text-align:left;">License ID</th>
-                                <th style="padding:6px 10px;text-align:left;">Club</th>
-                                <th style="padding:6px 10px;text-align:left;">Gender</th>
-                                ${cat.startsWith("HD") || cat.startsWith("DD") || cat.startsWith("MD") ? '<th style="padding:6px 10px;text-align:left;">Partner</th>' : ''}
-                            </tr></thead>
-                            <tbody>
-                                ${players.map(p => `<tr>
-                                    <td style="padding:6px 10px;border-top:1px solid #eee;">${p.name}</td>
-                                    <td style="padding:6px 10px;border-top:1px solid #eee;">${p.license_id}</td>
-                                    <td style="padding:6px 10px;border-top:1px solid #eee;">${p.club || ""}</td>
-                                    <td style="padding:6px 10px;border-top:1px solid #eee;">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
-                                    ${cat.startsWith("HD") || cat.startsWith("DD") || cat.startsWith("MD") ? `<td style="padding:6px 10px;border-top:1px solid #eee;">${p.partner}</td>` : ''}
-                                </tr>`).join("")}
-                            </tbody>
-                        </table>
-                    </details>
-                `;
-            });
-            
-            container.innerHTML = html;
-            container.style.display = "block";
-            categoryViewVisible = true;
-            btn.textContent = "📋 Hide Category View";
-        }
-
 
         async function downloadCSV() {
             try {
@@ -1342,7 +1323,6 @@
                 await loadAdminLevels();
                 document.getElementById("download-csv-btn").style.display = "inline-block";
                 document.getElementById("submit-bwf-btn").style.display = "inline-block";
-                document.getElementById("view-by-category-btn").style.display = "inline-block";
                 document.getElementById("admin-player-search").style.display = "block";
                 document.getElementById("search-registered").addEventListener("input", (e) => {
                     const q = e.target.value.trim().toLowerCase();
