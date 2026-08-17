@@ -3291,15 +3291,11 @@ def add_player():
                     for lvl in lvl_str.split(","):
                         lvl = lvl.strip()
                         if lvl:
-                            parts = lvl.split(" ", 1)
-                            if len(parts) == 2:
-                                all_levels.append({"event": lvl, "category": parts[0], "level": parts[1]})
-                            elif len(parts) == 1:
-                                # Handle no-space format like "DSB", "HSA", "MDB"
-                                import re as _re
-                                _m = _re.match(r'^(HS|DS|HD|DD|MD)(.*)', lvl)
-                                if _m and _m.group(2):
-                                    all_levels.append({"event": lvl, "category": _m.group(1), "level": _m.group(2)})
+                            # Handle all formats: "DS B", "DSB", "DS-B", "DS_B"
+                            import re as _re
+                            _m = _re.match(r'^(HS|DS|HD|DD|MD)[\s\-_]*(.*)', lvl)
+                            if _m and _m.group(2):
+                                all_levels.append({"event": lvl, "category": _m.group(1), "level": _m.group(2).strip()})
             
             logger.info(f"🔍 Levels to validate: {[e['event'] for e in all_levels]} (raw: singles='{player.get('singles_levels', '')}', doubles='{player.get('doubles_levels', '')}', mixed='{player.get('mixed_levels', '')}')")
             
@@ -3373,15 +3369,11 @@ def add_player():
                     for lvl in lvl_str.split(","):
                         lvl = lvl.strip()
                         if lvl:
-                            parts = lvl.split(" ", 1)
-                            if len(parts) == 2:
-                                all_levels.append({"event": lvl, "category": parts[0], "level": parts[1]})
-                            elif len(parts) == 1:
-                                # Handle no-space format like "DSB", "HSA", "MDB"
-                                import re as _re
-                                _m = _re.match(r'^(HS|DS|HD|DD|MD)(.*)', lvl)
-                                if _m and _m.group(2):
-                                    all_levels.append({"event": lvl, "category": _m.group(1), "level": _m.group(2)})
+                            # Handle all formats: "DS B", "DSB", "DS-B", "DS_B"
+                            import re as _re
+                            _m = _re.match(r'^(HS|DS|HD|DD|MD)[\s\-_]*(.*)', lvl)
+                            if _m and _m.group(2):
+                                all_levels.append({"event": lvl, "category": _m.group(1), "level": _m.group(2).strip()})
             
             for entry in all_levels:
                 level = entry["level"]
