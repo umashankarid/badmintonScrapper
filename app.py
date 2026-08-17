@@ -3412,22 +3412,9 @@ def add_player():
     # SERVER-SIDE VALIDATION: MJT/SJT level restriction
     # LEVEL_5 players can only register in MJT categories (not SJT/plain)
     # LEVEL_6 players can register in any category
-    # Only applies to tournaments that have MJT categories
+    # Only applies to tournaments with "SJT" in their name
     try:
-        # Check if this tournament has MJT categories
-        conn_t_check = sqlite3.connect(TOURNAMENTS_DB)
-        cur_t_check = conn_t_check.cursor()
-        cur_t_check.execute("SELECT categories FROM tournaments WHERE tournament_name = ?", (tournament_name,))
-        t_row = cur_t_check.fetchone()
-        conn_t_check.close()
-        
-        tournament_has_mjt = False
-        if t_row and t_row[0]:
-            cats = json.loads(t_row[0])
-            all_cats = (cats.get("singles_levels", []) + cats.get("doubles_levels", []) + cats.get("mixed_levels", []))
-            tournament_has_mjt = any("MJT" in c.upper() for c in all_cats)
-        
-        if tournament_has_mjt:
+        if "SJT" in tournament_name.upper():
             conn_k = sqlite3.connect(PLAYERS_DB)
             cur_k = conn_k.cursor()
             cur_k.execute("SELECT groups FROM kometPlayers WHERE license_id = ?", (license_id,))
