@@ -4055,6 +4055,64 @@ def delete_komet_player(player_id):
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/komet-players/sync", methods=["POST"])
+def sync_komet_players():
+    """Sync kometPlayers from players table - add any Komet club members not already in kometPlayers"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        
+        # Find all players from Komet club that are NOT in kometPlayers
+        cur.execute("""
+            SELECT p.license_id, p.name, p.email
+            FROM players p
+            WHERE LOWER(p.club) LIKE '%komet%'
+            AND p.license_id IS NOT NULL
+            AND p.license_id != ''
+            AND p.license_id NOT IN (SELECT license_id FROM kometPlayers WHERE license_id IS NOT NULL)
+        """)
+        new_players = cur.fetchall()
+        
+        added = 0
+        for license_id, name, email in new_players:
+            try:
+                conn.execute(
+                    "INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
+                    (license_id, name, email or None)
+                )
+                added += 1
+            except sqlite3.IntegrityError:
+                pass  # Already exists
+        
+        # Also update existing kometPlayers with latest name/email from players table
+        cur.execute("""
+            SELECT p.license_id, p.name, p.email
+            FROM players p
+            JOIN kometPlayers k ON p.license_id = k.license_id
+            WHERE LOWER(p.club) LIKE '%komet%'
+        """)
+        updated = 0
+        for license_id, name, email in cur.fetchall():
+            cur.execute(
+                "UPDATE kometPlayers SET name = ?, email = COALESCE(?, email) WHERE license_id = ?",
+                (name, email or None, license_id)
+            )
+            if cur.rowcount > 0:
+                updated += 1
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🔄 Komet players sync: {added} added, {updated} updated")
+        return jsonify(success=True, message=f"Sync complete: {added} new players added, {updated} existing updated")
+    except Exception as e:
+        logger.error(f"❌ Error syncing komet players: {e}")
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/allplayers-status", methods=["GET"])
 def allplayers_status():
     """Get status of allplayers table (count + whether scrape is running)"""

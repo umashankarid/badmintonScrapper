@@ -55,10 +55,12 @@
             </div>
         </form>
 
-        <!-- Search -->
-        <div style="margin-bottom:15px;">
-            <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="max-width:400px;">
+        <!-- Search and Sync -->
+        <div style="margin-bottom:15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="max-width:400px;flex:1;">
+            <button onclick="syncFromPlayers()" style="width:auto;padding:8px 14px;background:#f57c00;font-size:0.85em;">🔄 Sync from Players DB</button>
         </div>
+        <p id="sync-status" style="display:none;padding:8px 12px;border-radius:6px;font-size:0.9em;margin-bottom:10px;"></p>
         <p id="player-count" style="color:#666;font-size:0.9em;"></p>
         <div id="players-list"></div>
         <div id="pagination" style="margin-top:15px;display:flex;gap:10px;align-items:center;"></div>
@@ -163,6 +165,34 @@
         }
 
         // === Players Management ===
+        async function syncFromPlayers() {
+            const statusEl = document.getElementById("sync-status");
+            statusEl.style.display = "block";
+            statusEl.style.background = "#e3f2fd";
+            statusEl.style.color = "#1565c0";
+            statusEl.textContent = "🔄 Syncing Komet players from players database...";
+            
+            try {
+                const res = await fetch("/api/komet-players/sync", {method: "POST"});
+                const data = await res.json();
+                if (data.success) {
+                    statusEl.style.background = "#e8f5e9";
+                    statusEl.style.color = "#2e7d32";
+                    statusEl.textContent = `✅ ${data.message}`;
+                    loadPlayers();
+                } else {
+                    statusEl.style.background = "#ffebee";
+                    statusEl.style.color = "#c62828";
+                    statusEl.textContent = `❌ ${data.error}`;
+                }
+            } catch(e) {
+                statusEl.style.background = "#ffebee";
+                statusEl.style.color = "#c62828";
+                statusEl.textContent = `❌ Error: ${e.message}`;
+            }
+            setTimeout(() => { statusEl.style.display = "none"; }, 5000);
+        }
+
         async function loadPlayers(page = 1, search = "") {
             currentPage = page;
             const container = document.getElementById("players-list");
