@@ -3411,7 +3411,7 @@ def add_player():
     
     # SERVER-SIDE VALIDATION: MJT/SJT level restriction
     # LEVEL_5 players can only register in MJT categories (not SJT/plain)
-    # LEVEL_6 players can register in any category
+    # LEVEL_6 players can register in any category but warned for SJT (needs permission)
     # Only applies to tournaments with "SJT" in their name
     try:
         if "SJT" in tournament_name.upper():
@@ -3430,22 +3430,26 @@ def add_player():
                 
                 is_level_5 = "LEVEL_5" in player_groups
                 is_level_6 = "LEVEL_6" in player_groups
+                confirmed_permission = player.get("confirmed_sjt_permission", False)
                 
-                if is_level_5 and not is_level_6:
-                    # LEVEL_5 player: can only play MJT categories in this tournament
-                    all_selected = []
-                    for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
-                        if lvl_str:
-                            for lvl in lvl_str.split(","):
-                                lvl = lvl.strip()
-                                if lvl:
-                                    all_selected.append(lvl)
-                    
-                    for event in all_selected:
-                        if "MJT" not in event.upper():
-                            # Not an MJT category = SJT level, blocked for LEVEL_5
-                            return jsonify(success=False,
-                                error=f"Anmälan nekad / Registration rejected: '{event}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare kan du bara anmäla dig i MJT-kategorier. / '{event}' is an SJT category (Level 6). As a Level 5 player, you can only register in MJT categories.")
+                all_selected = []
+                for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
+                    if lvl_str:
+                        for lvl in lvl_str.split(","):
+                            lvl = lvl.strip()
+                            if lvl:
+                                all_selected.append(lvl)
+                
+                sjt_events = [e for e in all_selected if "MJT" not in e.upper()]
+                
+                if is_level_5 and not is_level_6 and sjt_events:
+                    if not confirmed_permission:
+                        # LEVEL_5 needs special permission for SJT categories
+                        return jsonify(success=False, needs_permission=True,
+                            error=f"'{sjt_events[0]}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare behöver du särskilt tillstånd (dispens) för att spela denna kategori.\n\n'{sjt_events[0]}' is an SJT category (Level 6). As a Level 5 player, you need special permission (dispensation) to play this category.\n\nHar du fått dispens? / Do you have permission?")
+                elif is_level_6 and not is_level_5 and sjt_events:
+                    # Level 6 playing SJT is normal - no warning needed
+                    pass
     except Exception as e:
         logger.debug(f"Could not validate MJT/SJT level: {e}")
     

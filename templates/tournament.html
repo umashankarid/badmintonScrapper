@@ -508,8 +508,28 @@
             });
             const result = await res.json();
             if (!result.success) {
-                alert(result.error || "Registration failed");
-                return;
+                if (result.needs_permission) {
+                    // Show confirmation popup for special permission
+                    if (confirm(result.error)) {
+                        // Retry with confirmation flag
+                        player.confirmed_sjt_permission = true;
+                        const retryRes = await fetch("/api/add-player", {
+                            method: "POST",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({dbFile, player})
+                        });
+                        const retryResult = await retryRes.json();
+                        if (!retryResult.success) {
+                            alert(retryResult.error || "Registration failed");
+                            return;
+                        }
+                    } else {
+                        return;
+                    }
+                } else {
+                    alert(result.error || "Registration failed");
+                    return;
+                }
             }
             cancelEdit();
             loadPlayers();
