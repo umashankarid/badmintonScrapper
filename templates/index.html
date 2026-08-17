@@ -186,10 +186,9 @@
                     } else if (daysLeft > 0) {
                         const dayWord = daysLeft === 1 ? "day" : "days";
                         daysCounter = `<div style="float:right;background:#0d47a1;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;margin-left:10px;"><div style="font-size:1.2em;">${daysLeft}</div><div style="font-size:0.7em;">${dayWord} left</div></div>`;
-                    }
-                    
-                    if (daysLeft > 0 && daysLeft <= 7) {
-                        urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
+                        if (daysLeft <= 7) {
+                            urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
+                        }
                     }
                 }
                 
