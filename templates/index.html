@@ -12,12 +12,18 @@
             <span id="bwf-player-info" style="font-weight:bold;"></span>
             <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
         </div>
-        <div id="admin-info" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-            <span id="admin-player-info" style="font-weight:bold;width:100%;text-align:right;"></span>
-            <a href="/add-remove-tournaments.html"><button style="width:auto;padding:8px 12px;background:#0d47a1;font-size:0.85em;">Add/Remove Tournaments</button></a>
-            <a href="/manage.html"><button style="width:auto;padding:8px 12px;background:#37474f;font-size:0.85em;">Manage</button></a>
-            <a href="/send-email.html"><button style="width:auto;padding:8px 12px;background:#6a1b9a;font-size:0.85em;">Send Email</button></a>
-            <button onclick="bwfLogout()" style="width:auto;padding:8px 12px;background:#666;font-size:0.85em;">Logout</button>
+        <div id="admin-info" style="display:none;flex-direction:column;width:100%;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+                <span id="admin-player-info" style="font-weight:bold;"></span>
+                <button onclick="bwfLogout()" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;">Logout</button>
+            </div>
+            <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;">
+                <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Tournaments</a>
+                <a href="/add-remove-tournaments.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Add/Remove</a>
+                <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Previous Tournaments</a>
+                <a href="/send-email.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Send Email</a>
+                <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Manage</a>
+            </nav>
         </div>
     </div>
 
