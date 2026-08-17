@@ -181,11 +181,11 @@
                     
                     if (daysLeft === 0) {
                         // Last day for registration - orange badge
-                        daysCounter = `<div style="float:right;background:#ff6f00;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;margin-left:10px;"><div style="font-size:0.8em;">Last day</div><div style="font-size:0.65em;">for registration</div></div>`;
+                        daysCounter = `<div style="background:#ff6f00;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;"><div style="font-size:0.8em;">Last day</div><div style="font-size:0.65em;">for registration</div></div>`;
                         urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
                     } else if (daysLeft > 0) {
                         const dayWord = daysLeft === 1 ? "day" : "days";
-                        daysCounter = `<div style="float:right;background:#0d47a1;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;margin-left:10px;"><div style="font-size:1.2em;">${daysLeft}</div><div style="font-size:0.7em;">${dayWord} left</div></div>`;
+                        daysCounter = `<div style="background:#0d47a1;color:white;padding:6px 10px;border-radius:6px;font-weight:bold;font-size:0.85em;text-align:center;"><div style="font-size:1.2em;">${daysLeft}</div><div style="font-size:0.7em;">${dayWord} left</div></div>`;
                         if (daysLeft <= 7) {
                             urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
                         }
@@ -193,10 +193,9 @@
                 }
                 
                 return `
-                <div class="tournament-card" style="${urgentStyle}">
-                    ${daysCounter}
-                    <div>
-                        <h2><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a> ${badge}</h2>
+                <div class="tournament-card" style="${urgentStyle}display:flex;align-items:stretch;gap:0;padding:0;overflow:hidden;">
+                    <div style="flex:1;padding:15px;">
+                        <h2 style="margin:0 0 8px 0;"><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a> ${badge}</h2>
                         <div class="details">
                             <span class="location">${t.location}</span>
                             <span class="date">📅 Competition: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
@@ -210,6 +209,9 @@
                                 ${optedOutTournaments.has(t.name) ? '🔕 Reminders off' : '🔔 Reminders on'}
                             </button>
                         ` : ''}
+                    </div>
+                    <div style="width:90px;display:flex;align-items:center;justify-content:center;padding:10px;flex-shrink:0;">
+                        ${daysCounter}
                     </div>
                 </div>
             `}).join("");
