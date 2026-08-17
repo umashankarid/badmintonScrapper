@@ -1227,8 +1227,21 @@
                 }
             });
             
-            // Sort categories
-            const sortedCategories = Object.keys(categories).sort();
+            // Sort categories in natural order: U11 → U13 → U15 → U17 → U19, then by type (HS/DS/HD/DD/MD)
+            const ageOrder = {'U11': 1, 'U13': 2, 'U15': 3, 'U17': 4, 'U19': 5, 'Elit': 6, 'A': 7, 'B': 8, 'C': 9, 'D': 10};
+            const typeOrder = {'HS': 1, 'DS': 2, 'HD': 3, 'DD': 4, 'MD': 5};
+            const sortedCategories = Object.keys(categories).sort((a, b) => {
+                const aParts = a.split(' ');
+                const bParts = b.split(' ');
+                const aType = typeOrder[aParts[0]] || 99;
+                const bType = typeOrder[bParts[0]] || 99;
+                const aAge = ageOrder[aParts[1]] || 50;
+                const bAge = ageOrder[bParts[1]] || 50;
+                // Sort by age group first, then by type, then by suffix (nivå 2 etc.)
+                if (aAge !== bAge) return aAge - bAge;
+                if (aType !== bType) return aType - bType;
+                return a.localeCompare(b);
+            });
             
             // Build HTML
             let html = '<h3 style="margin-top:0;">Registrations by Category</h3>';
