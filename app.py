@@ -4466,16 +4466,15 @@ def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
             if email:
                 admin_emails.append(email)
         
-        # Check if already notified today
+        # Check if already notified for this tournament (ever, not just today)
         from datetime import datetime
-        today = datetime.now().date().isoformat()
         cur_admin.execute(
-            "SELECT id FROM reminders_sent WHERE tournament_db = ? AND sent_at LIKE ?",
-            (f"{tournament_name}_admin_closed", f"{today}%")
+            "SELECT id FROM reminders_sent WHERE tournament_db = ?",
+            (f"{tournament_name}_admin_closed",)
         )
         if cur_admin.fetchone():
             conn_admin.close()
-            return  # Already notified today
+            return  # Already notified
         
         # Get registration count
         conn_t = sqlite3.connect(TOURNAMENTS_DB)
@@ -4485,17 +4484,15 @@ def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
         conn_t.close()
         
         subject = f"🏸 Anmälan stängd / Registration closed: {tournament_name}"
-        body = (f"Hej Admin,\n\n"
-                f"Anmälningsdeadlinen för '{tournament_name}' har passerats ({admin_reg_end_date}).\n\n"
+        body = (f"Hi Admin,\n\n"
+                f"Anmälningsdeadlinen för '{tournament_name}' har passerats ({admin_reg_end_date}).\n"
+                f"Det är dags att skicka in registreringarna till Svenska Badmintonförbundets hemsida.\n\n"
                 f"📊 Totalt antal anmälningar: {reg_count} spelare\n\n"
-                f"Anmälan är nu stängd. Det är dags att skicka in registreringarna till Svenska Badmintonförbundets hemsida.\n\n"
-                f"---\n\n"
-                f"Hi Admin,\n\n"
-                f"The registration deadline for '{tournament_name}' has passed ({admin_reg_end_date}).\n\n"
+                f"Se anmälningar: https://activitylogger.bmkkomet.se\n\n\n"
+                f"The registration deadline for '{tournament_name}' has passed ({admin_reg_end_date}).\n"
+                f"It's time to submit the entries to the Swedish Badminton Federation (SBF) website.\n\n"
                 f"📊 Total registrations: {reg_count} players\n\n"
-                f"Registration is now closed. It's time to submit the entries to the Swedish Badminton Federation (SBF) website.\n\n"
-                f"---\n\n"
-                f"Se anmälningar / View registrations: https://activitylogger.bmkkomet.se/\n\n"
+                f"View registrations: https://activitylogger.bmkkomet.se\n\n\n"
                 f"Tävlingsfrågor / Tournament questions: tavlingar@bmkkomet.se\n"
                 f"Support / Hjälp: support@bmkkomet.se\n\n"
                 f"Med vänliga hälsningar / Best regards,\nBMK Komet")
