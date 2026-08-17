@@ -3446,6 +3446,39 @@ def add_player():
                     if sjt_events:
                         return jsonify(success=False,
                             error=f"Anmälan nekad: '{sjt_events[0]}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare kan du bara anmäla dig i MJT-kategorier.\n\nRegistration rejected: '{sjt_events[0]}' is an SJT category (Level 6). As a Level 5 player, you can only register in MJT categories.")
+                    
+                    # LEVEL_5: also check age group for MJT — can only play own age group
+                    if not confirmed_permission:
+                        import re as _re
+                        conn_p = sqlite3.connect(PLAYERS_DB)
+                        cur_p = conn_p.cursor()
+                        cur_p.execute("SELECT dob FROM players WHERE license_id = ?", (license_id,))
+                        p_row = cur_p.fetchone()
+                        conn_p.close()
+                        
+                        if p_row and p_row[0]:
+                            from datetime import datetime as _dt
+                            try:
+                                birth = _dt.strptime(p_row[0], "%Y-%m-%d")
+                                today_dt = _dt.now()
+                                player_age = today_dt.year - birth.year - ((today_dt.month, today_dt.day) < (birth.month, birth.day))
+                                
+                                age_groups = [("U11", 11), ("U13", 13), ("U15", 15), ("U17", 17), ("U19", 19)]
+                                player_age_group = None
+                                for name, max_age in age_groups:
+                                    if player_age < max_age:
+                                        player_age_group = max_age
+                                        break
+                                
+                                for event in all_selected:
+                                    event_match = _re.search(r'U(\d+)', event)
+                                    if event_match:
+                                        event_age = int(event_match.group(1))
+                                        if player_age_group and event_age > player_age_group:
+                                            return jsonify(success=False, needs_permission=True,
+                                                error=f"'{event}' är en högre åldersgrupp (U{event_age}) än din (U{player_age_group}). Du behöver särskilt tillstånd (dispens) för att spela upp.\n\n'{event}' is a higher age group (U{event_age}) than yours (U{player_age_group}). You need special permission (dispensation) to play up.\n\nHar du fått dispens? / Do you have permission?")
+                            except Exception:
+                                pass
                 
                 elif is_level_6:
                     # LEVEL_6: check if playing above their age group (needs permission)
