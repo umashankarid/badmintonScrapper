@@ -365,21 +365,38 @@
                     });
                     
                     let html = '';
-                    // Color scheme per category type
-                    const catColors = {
-                        'HS': {bg: '#e3f2fd', header: '#bbdefb', border: '#90caf9'},
-                        'DS': {bg: '#fce4ec', header: '#f8bbd0', border: '#f48fb1'},
-                        'HD': {bg: '#e8f5e9', header: '#c8e6c9', border: '#a5d6a7'},
-                        'DD': {bg: '#fff3e0', header: '#ffe0b2', border: '#ffcc80'},
-                        'MD': {bg: '#f3e5f5', header: '#e1bee7', border: '#ce93d8'},
+                    // Color scheme per age group
+                    const ageColors = {
+                        'U11': {bg: '#e3f2fd', header: '#bbdefb', border: '#90caf9'},
+                        'U13': {bg: '#e8f5e9', header: '#c8e6c9', border: '#a5d6a7'},
+                        'U15': {bg: '#fff3e0', header: '#ffe0b2', border: '#ffcc80'},
+                        'U17': {bg: '#f3e5f5', header: '#e1bee7', border: '#ce93d8'},
+                        'U19': {bg: '#fce4ec', header: '#f8bbd0', border: '#f48fb1'},
+                        'Elit': {bg: '#e0f2f1', header: '#b2dfdb', border: '#80cbc4'},
+                        'A': {bg: '#f1f8e9', header: '#dcedc8', border: '#c5e1a5'},
+                        'B': {bg: '#fff8e1', header: '#ffecb3', border: '#ffe082'},
+                        'C': {bg: '#efebe9', header: '#d7ccc8', border: '#bcaaa4'},
+                        'D': {bg: '#eceff1', header: '#cfd8dc', border: '#b0bec5'},
                     };
                     const defaultColor = {bg: '#f5f5f5', header: '#e0e0e0', border: '#bdbdbd'};
                     
                     sortedCategories.forEach(cat => {
                         const catPlayers = categories[cat];
                         const isDoubles = cat.startsWith("HD") || cat.startsWith("DD") || cat.startsWith("MD");
-                        const catType = cat.split(' ')[0];
-                        const colors = catColors[catType] || defaultColor;
+                        // Get age group from category name (e.g. "HS U13" → "U13", "HD U11 nivå 2" → "U11")
+                        const ageMatch = cat.match(/U\d+|Elit|(?:^[A-Z]{2}\s+)([ABCD])$/);
+                        let ageGroup = '';
+                        if (cat.includes('U11')) ageGroup = 'U11';
+                        else if (cat.includes('U13')) ageGroup = 'U13';
+                        else if (cat.includes('U15')) ageGroup = 'U15';
+                        else if (cat.includes('U17')) ageGroup = 'U17';
+                        else if (cat.includes('U19')) ageGroup = 'U19';
+                        else if (cat.includes('Elit')) ageGroup = 'Elit';
+                        else if (cat.split(' ').pop() === 'A') ageGroup = 'A';
+                        else if (cat.split(' ').pop() === 'B') ageGroup = 'B';
+                        else if (cat.split(' ').pop() === 'C') ageGroup = 'C';
+                        else if (cat.split(' ').pop() === 'D') ageGroup = 'D';
+                        const colors = ageColors[ageGroup] || defaultColor;
                         html += `
                             <details open style="margin-bottom:12px;border:1px solid ${colors.border};border-radius:8px;overflow:hidden;">
                                 <summary style="padding:10px 15px;background:${colors.header};cursor:pointer;font-weight:bold;color:#1a237e;">
