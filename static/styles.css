@@ -3,7 +3,6 @@ body {
     max-width: 100%;
     margin: 0 auto;
     padding: 0;
-    background: #f5f7fa;
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
     min-height: 100vh;
     color: #333;
