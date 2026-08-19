@@ -4711,11 +4711,11 @@ def send_reminders():
             # Get eligible players from kometPlayers
             conn_p = sqlite3.connect(PLAYERS_DB)
             cur_p = conn_p.cursor()
-            cur_p.execute("SELECT name, license_id, email, groups FROM kometPlayers WHERE email IS NOT NULL AND email != ''")
+            cur_p.execute("SELECT name, license_id, email, secondary_email, groups FROM kometPlayers WHERE (email IS NOT NULL AND email != '') OR (secondary_email IS NOT NULL AND secondary_email != '')")
             
             sent_count = 0
             for p_row in cur_p.fetchall():
-                player_name, license_id, email, player_groups_json = p_row
+                player_name, license_id, email, secondary_email, player_groups_json = p_row
                 
                 # Skip if already registered
                 if license_id in registered_ids:
@@ -4781,16 +4781,28 @@ def send_reminders():
                             f"Support / Hjälp: support@bmkkomet.se\n\n"
                             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 
-                # Send
-                result = send_email(email, subject, body)
-                if result is True:
-                    conn_admin.execute(
-                        "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
-                        (f"{tournament_name}_{reminder_type}", email, datetime.now().isoformat())
-                    )
-                    conn_admin.commit()
-                    sent_count += 1
-                    logger.info(f"📧 Reminder sent to {email} for {tournament_name} ({days_left} days left)")
+                # Send to primary email
+                if email:
+                    result = send_email(email, subject, body)
+                    if result is True:
+                        conn_admin.execute(
+                            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                            (f"{tournament_name}_{reminder_type}", email, datetime.now().isoformat())
+                        )
+                        conn_admin.commit()
+                        sent_count += 1
+                        logger.info(f"📧 Reminder sent to {email} for {tournament_name} ({days_left} days left)")
+                
+                # Send to secondary email
+                if secondary_email:
+                    result2 = send_email(secondary_email, subject, body)
+                    if result2 is True:
+                        conn_admin.execute(
+                            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                            (f"{tournament_name}_{reminder_type}", secondary_email, datetime.now().isoformat())
+                        )
+                        conn_admin.commit()
+                        logger.info(f"📧 Reminder sent to {secondary_email} (secondary) for {tournament_name}")
                 
                 conn_admin.close()
             
@@ -4837,13 +4849,13 @@ def send_reminders():
             
             # Get registered players with emails
             cur_t.execute("""
-                SELECT p.name, p.email, tr.license_id
+                SELECT p.name, p.email, p.secondary_email, tr.license_id
                 FROM tournament_registrations tr
                 LEFT JOIN players_db.players p ON tr.license_id = p.license_id
-                WHERE tr.tournament_name = ? AND p.email IS NOT NULL AND p.email != ''
+                WHERE tr.tournament_name = ? AND ((p.email IS NOT NULL AND p.email != '') OR (p.secondary_email IS NOT NULL AND p.secondary_email != ''))
             """, (tournament_name,))
             
-            for name, email, license_id in cur_t.fetchall():
+            for name, email, secondary_email, license_id in cur_t.fetchall():
                 # Check opt-out
                 cur_t.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
                              (license_id, tournament_name))
@@ -4893,6 +4905,15 @@ def send_reminders():
                     )
                     conn_admin.commit()
                     logger.info(f"📧 Competition reminder sent to {email} for {tournament_name} ({days_until_comp} days)")
+                if secondary_email:
+                    result2 = send_email(secondary_email, subject, body)
+                    if result2 is True:
+                        conn_admin.execute(
+                            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                            (f"{tournament_name}_{reminder_type}", secondary_email, datetime.now().isoformat())
+                        )
+                        conn_admin.commit()
+                        logger.info(f"📧 Competition reminder sent to {secondary_email} (secondary) for {tournament_name}")
                 conn_admin.close()
         
         conn_t.close()
@@ -4931,13 +4952,13 @@ def send_reminders():
             
             # Get registered players with emails
             cur_t.execute("""
-                SELECT p.name, p.email, tr.license_id
+                SELECT p.name, p.email, p.secondary_email, tr.license_id
                 FROM tournament_registrations tr
                 LEFT JOIN players_db.players p ON tr.license_id = p.license_id
-                WHERE tr.tournament_name = ? AND p.email IS NOT NULL AND p.email != ''
+                WHERE tr.tournament_name = ? AND ((p.email IS NOT NULL AND p.email != '') OR (p.secondary_email IS NOT NULL AND p.secondary_email != ''))
             """, (tournament_name,))
             
-            for name, email, license_id in cur_t.fetchall():
+            for name, email, secondary_email, license_id in cur_t.fetchall():
                 # Check opt-out
                 cur_t.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
                              (license_id, tournament_name))
@@ -4975,6 +4996,15 @@ def send_reminders():
                     )
                     conn_admin.commit()
                     logger.info(f"📧 Cancellation reminder sent to {email} for {tournament_name}")
+                if secondary_email:
+                    result2 = send_email(secondary_email, subject, body)
+                    if result2 is True:
+                        conn_admin.execute(
+                            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?,?,?)",
+                            (f"{tournament_name}_{reminder_type}", secondary_email, datetime.now().isoformat())
+                        )
+                        conn_admin.commit()
+                        logger.info(f"📧 Cancellation reminder sent to {secondary_email} (secondary) for {tournament_name}")
                 conn_admin.close()
         
         conn_t.close()
