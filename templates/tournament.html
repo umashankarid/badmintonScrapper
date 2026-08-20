@@ -383,43 +383,28 @@
                     
                     if (accommTotal > 0 || transportTotal > 0 || offerTransportTotal > 0) {
                         let summaryHtml = '<div style="margin-bottom:15px;padding:15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;">';
-                        summaryHtml += '<p style="margin:0 0 10px;font-weight:600;color:#1a237e;">🚗 Accommodation & Transport Summary</p>';
-                        summaryHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">';
-                        if (accommTotal > 0) {
-                            summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #1976d2;">
-                                <div style="font-size:0.8em;color:#666;">🏨 Accommodation</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:#1976d2;">${accommTotal} persons</div>
-                            </div>`;
-                        }
-                        if (transportTotal > 0) {
-                            summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #e65100;">
-                                <div style="font-size:0.8em;color:#666;">🚗 Need transport</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:#e65100;">${transportTotal} persons</div>
-                            </div>`;
-                        }
-                        if (offerTransportTotal > 0) {
-                            summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #2e7d32;">
-                                <div style="font-size:0.8em;color:#666;">🚙 Offer transport</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:#2e7d32;">${offerTransportTotal} seats</div>
-                            </div>`;
-                        }
-                        summaryHtml += '</div>';
+                        summaryHtml += '<p style="margin:0 0 10px;font-weight:600;color:#1a237e;">🚗 Accommodation & Transport</p>';
                         
                         // Detail table showing per-player info
                         const detailRows = players.filter(p => p.need_accommodation || p.need_transport || p.offer_transport);
-                        if (detailRows.length) {
-                            summaryHtml += '<table style="width:100%;border-collapse:collapse;font-size:0.85em;margin-top:12px;">';
-                            summaryHtml += '<thead><tr style="background:#bbdefb;"><th style="padding:6px 8px;text-align:left;">Player</th><th style="padding:6px 8px;text-align:left;">🏨 Accommodation</th><th style="padding:6px 8px;text-align:left;">🚗 Need transport</th><th style="padding:6px 8px;text-align:left;">🚙 Offer transport</th></tr></thead><tbody>';
-                            detailRows.forEach(p => {
-                                summaryHtml += `<tr style="border-top:1px solid #e0e0e0;">
-                                    <td style="padding:5px 8px;">${p.player_name}</td>
-                                    <td style="padding:5px 8px;">${p.need_accommodation ? p.accommodation_count + ' pers' + (p.accommodation_ages ? ' (ages: ' + p.accommodation_ages + ')' : '') : '—'}</td>
-                                    <td style="padding:5px 8px;">${p.need_transport ? p.transport_count + ' pers' : '—'}</td>
-                                    <td style="padding:5px 8px;">${p.offer_transport ? p.offer_transport_seats + ' seats' : '—'}</td>
-                                </tr>`;
-                            });
-                            summaryHtml += '</tbody></table>';
-                        }
+                        summaryHtml += '<table style="width:100%;border-collapse:collapse;font-size:0.85em;">';
+                        summaryHtml += '<thead><tr style="background:#bbdefb;"><th style="padding:6px 8px;text-align:left;">Player</th><th style="padding:6px 8px;text-align:left;">🏨 Accommodation</th><th style="padding:6px 8px;text-align:left;">🚗 Need transport</th><th style="padding:6px 8px;text-align:left;">🚙 Offer transport</th></tr></thead><tbody>';
+                        detailRows.forEach(p => {
+                            summaryHtml += `<tr style="border-top:1px solid #e0e0e0;">
+                                <td style="padding:5px 8px;">${p.player_name}</td>
+                                <td style="padding:5px 8px;">${p.need_accommodation ? p.accommodation_count + ' pers' + (p.accommodation_ages ? ' (ages: ' + p.accommodation_ages + ')' : '') : '—'}</td>
+                                <td style="padding:5px 8px;">${p.need_transport ? p.transport_count + ' pers' : '—'}</td>
+                                <td style="padding:5px 8px;">${p.offer_transport ? p.offer_transport_seats + ' seats' : '—'}</td>
+                            </tr>`;
+                        });
+                        summaryHtml += '</tbody></table>';
+                        
+                        // Totals row
+                        summaryHtml += `<div style="margin-top:8px;font-size:0.85em;color:#555;display:flex;gap:15px;">
+                            ${accommTotal > 0 ? '<span>🏨 Total: ' + accommTotal + ' persons</span>' : ''}
+                            ${transportTotal > 0 ? '<span>🚗 Total: ' + transportTotal + ' persons</span>' : ''}
+                            ${offerTransportTotal > 0 ? '<span>🚙 Total: ' + offerTransportTotal + ' seats</span>' : ''}
+                        </div>`;
                         
                         summaryHtml += '</div>';
                         container.dataset.summary = summaryHtml;
