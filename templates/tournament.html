@@ -154,6 +154,7 @@
     <div id="pagination"></div>
 
     <script>
+        console.log("[BOOT] Script starting...");
         const params = new URLSearchParams(window.location.search);
         let dbFile = params.get("db");
         const tournamentUrl = params.get("url");
@@ -176,9 +177,11 @@
 
         // If we have a URL but no db, ensure the tournament exists
         async function ensureTournament() {
-            if (dbFile) return;
+            console.log("[ensureTournament] dbFile=", dbFile, "tournamentUrl=", tournamentUrl);
+            if (dbFile) { console.log("[ensureTournament] Already have dbFile, skipping"); return; }
             if (!tournamentUrl) { alert("No tournament specified"); return; }
             try {
+                console.log("[ensureTournament] Calling /api/ensure-tournament...");
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 30000);
                 const res = await fetch("/api/ensure-tournament", {
@@ -188,10 +191,13 @@
                     signal: controller.signal
                 });
                 clearTimeout(timeout);
+                console.log("[ensureTournament] Got response, status=", res.status);
                 const data = await res.json();
+                console.log("[ensureTournament] Response data:", data.success, data.db);
                 if (data.success) {
                     dbFile = data.db;
                 } else {
+                    console.error("[ensureTournament] Failed:", data.error);
                     alert(data.error || "Failed to load tournament");
                 }
             } catch(e) {
@@ -201,8 +207,10 @@
         }
 
         async function checkLogin() {
+            console.log("[checkLogin] Calling /api/bwf-status...");
             const res = await fetch("/api/bwf-status");
             const data = await res.json();
+            console.log("[checkLogin] Result: is_admin=", data.is_admin, "logged_in=", data.logged_in, "player=", data.player_name);
             if (data.is_admin) {
                 isAdmin = true;
                 document.getElementById("register-section").style.display = "none";
@@ -1732,6 +1740,7 @@
             }
         }
 
+        console.log("[BOOT] All functions defined. Calling init()...");
         init();
     </script>
 
