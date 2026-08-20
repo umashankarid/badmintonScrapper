@@ -44,23 +44,23 @@
             
             <!-- Accommodation & Transport (only shown if enabled for this tournament) -->
             <div id="accomm-transport-section" style="display:none;margin-top:15px;padding:12px;background:#f5f5f5;border-radius:8px;border:1px solid #e0e0e0;">
-                <p style="margin:0 0 10px;font-weight:600;color:#1a237e;font-size:0.95em;">🚗 Boende & Transport</p>
+                <p style="margin:0 0 10px;font-weight:600;color:#1a237e;font-size:0.95em;">🚗 Accommodation & Transport</p>
                 <div style="display:grid;gap:10px;">
                     <div style="display:flex;align-items:center;gap:10px;">
                         <input type="checkbox" id="need-accommodation" onchange="toggleAccommodation()" style="width:18px;height:18px;">
-                        <label for="need-accommodation" style="font-size:0.9em;cursor:pointer;flex:1;">🏨 Behöver boende / Need accommodation</label>
+                        <label for="need-accommodation" style="font-size:0.9em;cursor:pointer;flex:1;">🏨 Need accommodation</label>
                         <div id="accommodation-count-container" style="display:none;">
                             <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Antal personer" onchange="updateAccommodationAges()">
                             <span style="font-size:0.8em;color:#555;">pers</span>
                         </div>
                     </div>
                     <div id="accommodation-ages-container" style="display:none;margin-left:28px;margin-top:4px;">
-                        <label style="font-size:0.8em;color:#555;">Ålder / Ages:</label>
-                        <input type="text" id="accommodation-ages" placeholder="e.g. 12, 40" style="width:150px;padding:4px;font-size:0.85em;" title="Ange ålder för varje person, separerade med komma">
+                        <label style="font-size:0.8em;color:#555;">Ages:</label>
+                        <input type="text" id="accommodation-ages" placeholder="e.g. 12, 40" style="width:150px;padding:4px;font-size:0.85em;" title="Enter age for each person, separated by comma">
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <input type="checkbox" id="need-transport" onchange="toggleTransport()" style="width:18px;height:18px;">
-                        <label for="need-transport" style="font-size:0.9em;cursor:pointer;flex:1;">🚗 Behöver skjuts / Need transport</label>
+                        <label for="need-transport" style="font-size:0.9em;cursor:pointer;flex:1;">🚗 Need transport</label>
                         <div id="transport-count-container" style="display:none;">
                             <input type="number" id="transport-count" min="1" max="10" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Antal personer">
                             <span style="font-size:0.8em;color:#555;">pers</span>
@@ -68,7 +68,7 @@
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <input type="checkbox" id="offer-transport" onchange="toggleOfferTransport()" style="width:18px;height:18px;">
-                        <label for="offer-transport" style="font-size:0.9em;cursor:pointer;flex:1;">🚙 Kan erbjuda skjuts / Can offer rides</label>
+                        <label for="offer-transport" style="font-size:0.9em;cursor:pointer;flex:1;">🚙 Can offer rides</label>
                         <div id="offer-transport-count-container" style="display:none;">
                             <input type="number" id="offer-transport-count" min="1" max="8" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Lediga platser">
                             <span style="font-size:0.8em;color:#555;">platser</span>
