@@ -306,15 +306,17 @@
 
         async function loadPlayers() {
             try {
+                console.log("[loadPlayers] Fetching for dbFile=", dbFile, "page=", currentPage);
                 const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=${currentPage}&pageSize=20`);
                 const data = await res.json();
+                console.log("[loadPlayers] Response:", data.success, "total:", data.total, "players:", data.players?.length);
                 if (!data.success) {
-                    console.error("Error loading players:", data.error);
+                    console.error("[loadPlayers] Error:", data.error);
                     return;
                 }
 
                 let players = data.players;
-                console.log("Loaded players:", players);
+                console.log("[loadPlayers] Players loaded:", players.length);
 
                 // Enable/disable Submit to SBF button based on total registrations
                 const submitBtn = document.getElementById("submit-bwf-btn");
@@ -1555,17 +1557,23 @@
 
         // Initialize
         async function init() {
+        async function init() {
+            console.log("[INIT] Starting... dbFile=", dbFile, "tournamentUrl=", tournamentUrl);
             try {
                 await ensureTournament();
-            } catch(e) { console.error("ensureTournament error:", e); }
+                console.log("[INIT] ensureTournament done, dbFile=", dbFile);
+            } catch(e) { console.error("[INIT] ensureTournament error:", e); }
             await checkLogin();
+            console.log("[INIT] checkLogin done, isAdmin=", isAdmin, "loggedInPlayer=", loggedInPlayer?.player_name);
             if (!dbFile) {
+                console.error("[INIT] No dbFile — cannot load tournament");
                 document.getElementById("tournament-name").textContent = "Error: Could not load tournament";
                 return;
             }
             try {
                 await loadTournamentInfo();
-            } catch(e) { console.error("loadTournamentInfo error:", e); }
+                console.log("[INIT] loadTournamentInfo done");
+            } catch(e) { console.error("[INIT] loadTournamentInfo error:", e); }
             disableRegistrationForm();
             if (isAdmin) {
                 await loadAdminLevels();
@@ -1581,7 +1589,9 @@
                     });
                 });
             }
+            console.log("[INIT] Calling loadPlayers...");
             await loadPlayers();
+            console.log("[INIT] loadPlayers done");
             await loadWarnings();
             if (isAdmin) await loadReminders();
             if (isAdmin) await loadGroupInvite();
