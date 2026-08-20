@@ -4543,6 +4543,32 @@ def get_email_events():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/email-events/clear", methods=["POST"])
+def clear_email_events():
+    """Clear email events for a specific month"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    month = data.get("month", "").strip()  # Format: "2026-08"
+    
+    if not month or len(month) != 7:
+        return jsonify(success=False, error="Valid month required (YYYY-MM)"), 400
+    
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM email_events WHERE created_at LIKE ?", (f"{month}%",))
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🗑️ Cleared {deleted} email events for {month}")
+        return jsonify(success=True, message=f"Deleted {deleted} events from {month}")
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 def send_email(to_email, subject, body):
     """Send an email using Brevo HTTP API (works on platforms that block SMTP ports)."""
     

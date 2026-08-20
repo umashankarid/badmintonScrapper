@@ -155,7 +155,109 @@
         </div>
     </div>
 
+    <!-- Email Events (Bounce Tracking) -->
+    <div style="margin-top:30px;padding:20px;background:#fafafa;border-radius:10px;border:1px solid #e0e0e0;">
+        <h3 style="margin-top:0;">📊 Email Delivery Events</h3>
+        <p style="color:#555;font-size:0.85em;">Events received from Brevo webhook (bounces, blocks, etc.)</p>
+        
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:15px;">
+            <select id="event-type-filter" style="padding:6px 10px;font-size:0.9em;">
+                <option value="">All Events</option>
+                <option value="hard_bounce">Hard Bounce</option>
+                <option value="soft_bounce">Soft Bounce</option>
+                <option value="blocked">Blocked</option>
+                <option value="invalid_email">Invalid Email</option>
+                <option value="deferred">Deferred</option>
+                <option value="error">Error</option>
+                <option value="delivered">Delivered</option>
+            </select>
+            <button onclick="loadEmailEvents()" style="width:auto;padding:6px 14px;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">🔄 Load Events</button>
+            <select id="clear-month" style="padding:6px 10px;font-size:0.9em;">
+                <option value="">Select month to clear...</option>
+            </select>
+            <button onclick="clearEmailEvents()" style="width:auto;padding:6px 14px;background:#cc3333;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">🗑️ Clear Month</button>
+        </div>
+        <div id="email-events-list" style="font-size:0.85em;max-height:300px;overflow-y:auto;"></div>
+    </div>
+
     <script>
+
+        // === Email Events ===
+        async function loadEmailEvents() {
+            const type = document.getElementById("event-type-filter").value;
+            const container = document.getElementById("email-events-list");
+            container.innerHTML = "Loading...";
+            
+            let url = "/api/email-events?limit=100";
+            if (type) url += `&type=${type}`;
+            
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!data.success || !data.events.length) {
+                    container.innerHTML = "<p style='color:#999;'>No events found.</p>";
+                    return;
+                }
+                
+                // Populate clear month dropdown
+                const months = new Set();
+                data.events.forEach(e => {
+                    if (e.created_at) months.add(e.created_at.substring(0, 7));
+                });
+                const monthSelect = document.getElementById("clear-month");
+                monthSelect.innerHTML = '<option value="">Select month to clear...</option>';
+                Array.from(months).sort().reverse().forEach(m => {
+                    monthSelect.innerHTML += `<option value="${m}">${m}</option>`;
+                });
+                
+                container.innerHTML = `
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead><tr style="background:#f5f5f5;">
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Event</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Recipient</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Subject</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Reason</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Time</th>
+                        </tr></thead>
+                        <tbody>
+                            ${data.events.map(e => {
+                                const color = ['hard_bounce','blocked','invalid_email','error'].includes(e.event_type) ? '#c62828' : 
+                                              ['soft_bounce','deferred'].includes(e.event_type) ? '#e65100' : '#333';
+                                return `<tr>
+                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;color:${color};font-weight:500;">${(e.event_type||'').replace('_',' ')}</td>
+                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;">${e.recipient||''}</td>
+                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.subject||''}</td>
+                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${e.reason||''}</td>
+                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;white-space:nowrap;">${(e.created_at||'').substring(0,16)}</td>
+                                </tr>`;
+                            }).join("")}
+                        </tbody>
+                    </table>`;
+            } catch(e) {
+                container.innerHTML = `<p style="color:red;">Error: ${e.message}</p>`;
+            }
+        }
+
+        async function clearEmailEvents() {
+            const month = document.getElementById("clear-month").value;
+            if (!month) { alert("Select a month to clear"); return; }
+            if (!confirm(`Delete all email events from ${month}? This cannot be undone.`)) return;
+            
+            try {
+                const res = await fetch("/api/email-events/clear", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({month})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(data.message);
+                    loadEmailEvents();
+                } else {
+                    alert(data.error || "Failed to clear");
+                }
+            } catch(e) { alert("Error: " + e.message); }
+        }
 
         // === Test Auto-Reminders ===
         async function testAutoReminders() {
