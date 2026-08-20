@@ -42,8 +42,8 @@
             </div>
             <input type="hidden" id="edit-player-id" value="">
             
-            <!-- Accommodation & Transport -->
-            <div style="margin-top:15px;padding:12px;background:#f5f5f5;border-radius:8px;border:1px solid #e0e0e0;">
+            <!-- Accommodation & Transport (only shown if enabled for this tournament) -->
+            <div id="accomm-transport-section" style="display:none;margin-top:15px;padding:12px;background:#f5f5f5;border-radius:8px;border:1px solid #e0e0e0;">
                 <p style="margin:0 0 10px;font-weight:600;color:#1a237e;font-size:0.95em;">🚗 Boende & Transport</p>
                 <div style="display:grid;gap:10px;">
                     <div style="display:flex;align-items:center;gap:10px;">
@@ -239,6 +239,13 @@
             if (data.success) {
                 document.getElementById("tournament-name").textContent = data.tournament.name;
                 window.tournamentCompDate = data.tournament.competition_date || "";
+                window.enableAccommTransport = data.tournament.enable_accommodation_transport || false;
+                
+                // Show/hide accommodation section based on tournament setting
+                const accommSection = document.getElementById("accomm-transport-section");
+                if (accommSection) {
+                    accommSection.style.display = window.enableAccommTransport ? "block" : "none";
+                }
                 
                 // Check if registration is still open
                 // Use admin_reg_end_date if set, otherwise fall back to registration_closes
@@ -381,7 +388,7 @@
                         if (p.offer_transport) { offerTransportPlayers++; offerTransportTotal += (p.offer_transport_seats || 1); }
                     });
                     
-                    if (accommTotal > 0 || transportTotal > 0 || offerTransportTotal > 0) {
+                    if (window.enableAccommTransport && (accommTotal > 0 || transportTotal > 0 || offerTransportTotal > 0)) {
                         let summaryHtml = '<div style="margin-bottom:15px;padding:15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;">';
                         summaryHtml += '<p style="margin:0 0 10px;font-weight:600;color:#1a237e;">🚗 Accommodation & Transport</p>';
                         

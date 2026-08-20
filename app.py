@@ -124,6 +124,12 @@ def init_tournaments_db():
     except Exception:
         pass  # Column already exists
     
+    # Add enable_accommodation_transport column
+    try:
+        conn.execute("ALTER TABLE tournaments ADD COLUMN enable_accommodation_transport INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    
     # Reminder opt-out table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS reminder_opt_out (
@@ -1955,6 +1961,33 @@ def set_tournament_groups():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/tournament-accommodation", methods=["POST"])
+def set_tournament_accommodation():
+    """Enable/disable accommodation & transport for a tournament"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    enabled = data.get("enabled", False)
+    
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required")
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(
+            "UPDATE tournaments SET enable_accommodation_transport = ? WHERE tournament_name = ?",
+            (1 if enabled else 0, tournament_name)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Set enable_accommodation_transport={enabled} for {tournament_name}")
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/bwf-tournament-visibility/save", methods=["POST"])
 def save_bwf_tournament_visibility():
     """Save selected tournaments - toggle selected_for_view in tournaments.db"""
@@ -2029,7 +2062,7 @@ def get_all_bwf_tournaments():
             
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories FROM tournaments ORDER BY date_start")
+                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories, enable_accommodation_transport FROM tournaments ORDER BY date_start")
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
                     tg = []
@@ -2052,7 +2085,8 @@ def get_all_bwf_tournaments():
                         "registration_closes": row[6] or "",
                         "admin_reg_end_date": "",
                         "tournament_groups": tg,
-                        "categories": cats
+                        "categories": cats,
+                        "enable_accommodation_transport": bool(row[9]) if len(row) > 9 and row[9] else False
                     })
                 conn_cache.close()
                 logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
@@ -2776,7 +2810,7 @@ def get_tournament_info():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups
+            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups, enable_accommodation_transport
             FROM tournaments WHERE tournament_name = ?
         """, (tournament_name,))
         
@@ -2805,7 +2839,7 @@ def get_tournament_info():
                 conn.close()
                 return jsonify(success=False, error="Tournament not found"), 404
         
-        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json = row
+        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json, enable_accomm_transport = row
         categories = json.loads(categories_json) if categories_json else {}
         tournament_groups = []
         try:
@@ -2850,6 +2884,7 @@ def get_tournament_info():
             "cancellation_deadline": cancellation_deadline or "",
             "categories": categories,
             "tournament_groups": tournament_groups,
+            "enable_accommodation_transport": bool(enable_accomm_transport),
             "eligible_players": eligible_players
         })
     

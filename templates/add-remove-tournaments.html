@@ -182,6 +182,15 @@
                                         ${allPlayerGroups.map(g => `<option value="${g}" ${(t.tournament_groups || []).includes(g) ? 'selected' : ''}>${g}</option>`).join("")}
                                     </select>
                                 </div>
+                                <div style="margin-top:4px;">
+                                    <label style="font-size:0.75em;color:#666;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                                        <input type="checkbox" class="accomm-toggle"
+                                            data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
+                                            ${t.enable_accommodation_transport ? 'checked' : ''}
+                                            onchange="saveAccommSetting(this)">
+                                        🏨🚗 Accommodation & Transport
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     `).join("") +
@@ -261,6 +270,21 @@
                 setTimeout(() => { select.style.borderColor = ""; }, 1500);
             } else {
                 alert(data.error || "Failed to save groups");
+            }
+        }
+
+        async function saveAccommSetting(checkbox) {
+            const tournamentName = checkbox.dataset.tournamentName;
+            const enabled = checkbox.checked;
+            const res = await fetch("/api/tournament-accommodation", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({tournament_name: tournamentName, enabled})
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.error || "Failed to save");
+                checkbox.checked = !enabled; // revert
             }
         }
 
