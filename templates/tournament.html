@@ -358,7 +358,7 @@
                             summaryHtml += `<div><strong>🚗 Transport:</strong> ${transportPlayers} player${transportPlayers !== 1 ? 's' : ''}, ${transportTotal} person${transportTotal !== 1 ? 's' : ''} total</div>`;
                         }
                         summaryHtml += '</div>';
-                        container.innerHTML = summaryHtml;
+                        container.dataset.summary = summaryHtml;
                     }
                     
                     // Group players by category
@@ -474,7 +474,7 @@
                     });
                     
                     if (!html) html = '<p style="color:#666;">No registrations yet.</p>';
-                    container.innerHTML = html;
+                    container.innerHTML = (container.dataset.summary || '') + html;
                     return;
                 }
 

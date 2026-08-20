@@ -2867,21 +2867,38 @@ def get_tournament_players():
         
         # Get paginated registered players with player details from players.db
         offset = (page - 1) * page_size
-        cur.execute("""
-            SELECT tr.id as player_id, tr.tournament_name, tr.license_id, 
-                   COALESCE(p.name, 'Unknown') as player_name,
-                   COALESCE(p.club, '') as club,
-                   COALESCE(p.gender, '') as gender,
-                   COALESCE(p.email, '') as email,
-                   COALESCE(p.phone, '') as phone,
-                   tr.singles_levels, tr.doubles_levels, 
-                   tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date,
-                   tr.need_accommodation, tr.accommodation_count, tr.need_transport, tr.transport_count
-            FROM tournament_registrations tr
-            LEFT JOIN players_db.players p ON tr.license_id = p.license_id
-            WHERE tr.tournament_name = ? 
-            LIMIT ? OFFSET ?
-        """, (tournament_name, page_size, offset))
+        try:
+            cur.execute("""
+                SELECT tr.id as player_id, tr.tournament_name, tr.license_id, 
+                       COALESCE(p.name, 'Unknown') as player_name,
+                       COALESCE(p.club, '') as club,
+                       COALESCE(p.gender, '') as gender,
+                       COALESCE(p.email, '') as email,
+                       COALESCE(p.phone, '') as phone,
+                       tr.singles_levels, tr.doubles_levels, 
+                       tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date,
+                       tr.need_accommodation, tr.accommodation_count, tr.need_transport, tr.transport_count
+                FROM tournament_registrations tr
+                LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+                WHERE tr.tournament_name = ? 
+                LIMIT ? OFFSET ?
+            """, (tournament_name, page_size, offset))
+        except Exception:
+            # Fallback if accommodation/transport columns don't exist yet
+            cur.execute("""
+                SELECT tr.id as player_id, tr.tournament_name, tr.license_id, 
+                       COALESCE(p.name, 'Unknown') as player_name,
+                       COALESCE(p.club, '') as club,
+                       COALESCE(p.gender, '') as gender,
+                       COALESCE(p.email, '') as email,
+                       COALESCE(p.phone, '') as phone,
+                       tr.singles_levels, tr.doubles_levels, 
+                       tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date
+                FROM tournament_registrations tr
+                LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+                WHERE tr.tournament_name = ? 
+                LIMIT ? OFFSET ?
+            """, (tournament_name, page_size, offset))
         
         players = [dict(row) for row in cur.fetchall()]
         conn.close()
