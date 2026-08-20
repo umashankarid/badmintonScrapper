@@ -379,24 +379,24 @@
                     
                     if (accommTotal > 0 || transportTotal > 0 || offerTransportTotal > 0) {
                         let summaryHtml = '<div style="margin-bottom:15px;padding:15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;">';
-                        summaryHtml += '<p style="margin:0 0 10px;font-weight:600;color:#1a237e;">🚗 Boende & Transport Sammanfattning</p>';
+                        summaryHtml += '<p style="margin:0 0 10px;font-weight:600;color:#1a237e;">🚗 Accommodation & Transport Summary</p>';
                         summaryHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">';
                         if (accommTotal > 0) {
                             summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #1976d2;">
-                                <div style="font-size:0.8em;color:#666;">🏨 Boende</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:#1976d2;">${accommTotal} pers</div>
+                                <div style="font-size:0.8em;color:#666;">🏨 Accommodation</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:#1976d2;">${accommTotal} persons</div>
                             </div>`;
                         }
                         if (transportTotal > 0) {
                             summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #e65100;">
-                                <div style="font-size:0.8em;color:#666;">🚗 Behöver skjuts</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:#e65100;">${transportTotal} pers</div>
+                                <div style="font-size:0.8em;color:#666;">🚗 Need transport</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:#e65100;">${transportTotal} persons</div>
                             </div>`;
                         }
                         if (offerTransportTotal > 0) {
                             summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #2e7d32;">
-                                <div style="font-size:0.8em;color:#666;">🚙 Erbjuder skjuts</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:#2e7d32;">${offerTransportTotal} platser</div>
+                                <div style="font-size:0.8em;color:#666;">🚙 Offer transport</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:#2e7d32;">${offerTransportTotal} seats</div>
                             </div>`;
                         }
                         summaryHtml += '</div></div>';
