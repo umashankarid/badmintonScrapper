@@ -403,15 +403,18 @@
                         container.dataset.summary = summaryHtml;
                     }
                     
-                    // Group players by category
+                    // Group players by category (exclude non-Komet players - they only appear as partners)
                     const categories = {};
-                    players.forEach(p => {
+                    const kometPlayers = players.filter(p => !p.club || p.club.toLowerCase().includes("komet"));
+                    const nonKometIds = new Set(players.filter(p => p.club && !p.club.toLowerCase().includes("komet")).map(p => p.license_id));
+                    
+                    kometPlayers.forEach(p => {
                         if (p.singles_levels) {
                             p.singles_levels.split(",").forEach(lvl => {
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
-                                    categories[lvl].push({...p, partner: "", catType: "singles"});
+                                    categories[lvl].push({...p, partner: "", partnerLicense: "", catType: "singles"});
                                 }
                             });
                         }
@@ -420,7 +423,10 @@
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
-                                    categories[lvl].push({...p, partner: p.doubles_partner || "", catType: "doubles"});
+                                    // Find partner license from players list
+                                    const partnerEntry = players.find(x => x.player_name === p.doubles_partner);
+                                    const partnerLicense = partnerEntry ? partnerEntry.license_id : "";
+                                    categories[lvl].push({...p, partner: p.doubles_partner || "", partnerLicense, catType: "doubles"});
                                 }
                             });
                         }
@@ -429,7 +435,9 @@
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
-                                    categories[lvl].push({...p, partner: p.mixed_partner || "", catType: "mixed"});
+                                    const partnerEntry = players.find(x => x.player_name === p.mixed_partner);
+                                    const partnerLicense = partnerEntry ? partnerEntry.license_id : "";
+                                    categories[lvl].push({...p, partner: p.mixed_partner || "", partnerLicense, catType: "mixed"});
                                 }
                             });
                         }
@@ -503,7 +511,7 @@
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.license_id || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.club || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
-                                            ${isDoubles ? `<td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.partner}</td>` : ''}
+                                            ${isDoubles ? `<td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.partner}${p.partnerLicense ? ' <span style="color:#666;font-size:0.8em;">(' + p.partnerLicense + ')</span>' : ''}</td>` : ''}
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};white-space:nowrap;">
                                                 <button onclick="adminEditPlayer(${p.player_id})" style="padding:5px 10px;font-size:0.8em;min-width:50px;border:none;border-radius:4px;cursor:pointer;background:#1976d2;color:white;">Edit</button>
                                                 <button onclick="deletePlayer(${p.player_id})" style="padding:5px 10px;font-size:0.8em;min-width:55px;border:none;border-radius:4px;cursor:pointer;background:#cc3333;color:white;">Delete</button>
