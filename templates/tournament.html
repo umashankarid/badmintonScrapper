@@ -44,36 +44,33 @@
             
             <!-- Accommodation & Transport -->
             <div style="margin-top:15px;padding:12px;background:#f5f5f5;border-radius:8px;border:1px solid #e0e0e0;">
-                <p style="margin:0 0 8px;font-weight:600;color:#333;font-size:0.9em;">Boende & Transport / Accommodation & Transport</p>
-                <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:center;">
-                    <label style="display:flex;align-items:center;gap:6px;font-size:0.9em;cursor:pointer;">
-                        <input type="checkbox" id="need-accommodation" onchange="toggleAccommodation()">
-                        Behöver boende / Need accommodation
-                    </label>
-                    <div id="accommodation-count-container" style="display:none;">
-                        <label style="font-size:0.85em;color:#555;">Antal personer / Number of people:</label>
-                        <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:60px;padding:4px;font-size:0.9em;">
+                <p style="margin:0 0 10px;font-weight:600;color:#1a237e;font-size:0.95em;">🚗 Boende & Transport</p>
+                <div style="display:grid;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="checkbox" id="need-accommodation" onchange="toggleAccommodation()" style="width:18px;height:18px;">
+                        <label for="need-accommodation" style="font-size:0.9em;cursor:pointer;flex:1;">🏨 Behöver boende / Need accommodation</label>
+                        <div id="accommodation-count-container" style="display:none;">
+                            <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Antal personer">
+                            <span style="font-size:0.8em;color:#555;">pers</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="checkbox" id="need-transport" onchange="toggleTransport()" style="width:18px;height:18px;">
+                        <label for="need-transport" style="font-size:0.9em;cursor:pointer;flex:1;">🚗 Behöver skjuts / Need transport</label>
+                        <div id="transport-count-container" style="display:none;">
+                            <input type="number" id="transport-count" min="1" max="10" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Antal personer">
+                            <span style="font-size:0.8em;color:#555;">pers</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="checkbox" id="offer-transport" onchange="toggleOfferTransport()" style="width:18px;height:18px;">
+                        <label for="offer-transport" style="font-size:0.9em;cursor:pointer;flex:1;">🚙 Kan erbjuda skjuts / Can offer rides</label>
+                        <div id="offer-transport-count-container" style="display:none;">
+                            <input type="number" id="offer-transport-count" min="1" max="8" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Lediga platser">
+                            <span style="font-size:0.8em;color:#555;">platser</span>
+                        </div>
                     </div>
                 </div>
-                <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:center;margin-top:8px;">
-                    <label style="display:flex;align-items:center;gap:6px;font-size:0.9em;cursor:pointer;">
-                        <input type="checkbox" id="need-transport" onchange="toggleTransport()">
-                        Behöver transport / Need transport
-                    </label>
-                    <div id="transport-count-container" style="display:none;">
-                        <label style="font-size:0.85em;color:#555;">Antal personer / Number of people:</label>
-                        <input type="number" id="transport-count" min="1" max="10" value="1" style="width:60px;padding:4px;font-size:0.9em;">
-                    </div>
-                </div>
-                <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:center;margin-top:8px;">
-                    <label style="display:flex;align-items:center;gap:6px;font-size:0.9em;cursor:pointer;">
-                        <input type="checkbox" id="offer-transport" onchange="toggleOfferTransport()">
-                        Kan erbjuda skjuts / Can offer transport
-                    </label>
-                    <div id="offer-transport-count-container" style="display:none;">
-                        <label style="font-size:0.85em;color:#555;">Lediga platser / Available seats:</label>
-                        <input type="number" id="offer-transport-count" min="1" max="8" value="1" style="width:60px;padding:4px;font-size:0.9em;">
-                    </div>
                 </div>
             </div>
 
@@ -381,17 +378,31 @@
                     });
                     
                     if (accommTotal > 0 || transportTotal > 0 || offerTransportTotal > 0) {
-                        let summaryHtml = '<div style="margin-bottom:15px;padding:12px 15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;display:flex;gap:20px;flex-wrap:wrap;">';
+                        let summaryHtml = '<div style="margin-bottom:15px;padding:15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;">';
+                        summaryHtml += '<p style="margin:0 0 10px;font-weight:600;color:#1a237e;">🚗 Boende & Transport Sammanfattning</p>';
+                        summaryHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">';
                         if (accommTotal > 0) {
-                            summaryHtml += `<div><strong>🏨 Boende:</strong> ${accommPlayers} player${accommPlayers !== 1 ? 's' : ''}, ${accommTotal} person${accommTotal !== 1 ? 's' : ''}</div>`;
+                            summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #1976d2;">
+                                <div style="font-size:0.8em;color:#666;">🏨 Boende</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:#1976d2;">${accommTotal} pers</div>
+                                <div style="font-size:0.8em;color:#666;">${accommPlayers} spelare</div>
+                            </div>`;
                         }
                         if (transportTotal > 0) {
-                            summaryHtml += `<div><strong>🚗 Behöver skjuts:</strong> ${transportPlayers} player${transportPlayers !== 1 ? 's' : ''}, ${transportTotal} person${transportTotal !== 1 ? 's' : ''}</div>`;
+                            summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #e65100;">
+                                <div style="font-size:0.8em;color:#666;">🚗 Behöver skjuts</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:#e65100;">${transportTotal} pers</div>
+                                <div style="font-size:0.8em;color:#666;">${transportPlayers} spelare</div>
+                            </div>`;
                         }
                         if (offerTransportTotal > 0) {
-                            summaryHtml += `<div><strong>🚙 Erbjuder skjuts:</strong> ${offerTransportPlayers} player${offerTransportPlayers !== 1 ? 's' : ''}, ${offerTransportTotal} seat${offerTransportTotal !== 1 ? 's' : ''} available</div>`;
+                            summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #2e7d32;">
+                                <div style="font-size:0.8em;color:#666;">🚙 Erbjuder skjuts</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:#2e7d32;">${offerTransportTotal} platser</div>
+                                <div style="font-size:0.8em;color:#666;">${offerTransportPlayers} spelare</div>
+                            </div>`;
                         }
-                        summaryHtml += '</div>';
+                        summaryHtml += '</div></div>';
                         container.dataset.summary = summaryHtml;
                     }
                     
