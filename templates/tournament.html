@@ -178,16 +178,25 @@
         async function ensureTournament() {
             if (dbFile) return;
             if (!tournamentUrl) { alert("No tournament specified"); return; }
-            const res = await fetch("/api/ensure-tournament", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({url: tournamentUrl})
-            });
-            const data = await res.json();
-            if (data.success) {
-                dbFile = data.db;
-            } else {
-                alert(data.error || "Failed to load tournament");
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 30000);
+                const res = await fetch("/api/ensure-tournament", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({url: tournamentUrl}),
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+                const data = await res.json();
+                if (data.success) {
+                    dbFile = data.db;
+                } else {
+                    alert(data.error || "Failed to load tournament");
+                }
+            } catch(e) {
+                console.error("[ensureTournament] Error:", e);
+                alert("Could not load tournament. Please try again.");
             }
         }
 
@@ -1563,7 +1572,7 @@
                 console.log("[INIT] ensureTournament done, dbFile=", dbFile);
             } catch(e) { console.error("[INIT] ensureTournament error:", e); }
             await checkLogin();
-            console.log("[INIT] checkLogin done, isAdmin=", isAdmin, "loggedInPlayer=", loggedInPlayer?.player_name);
+            console.log("[INIT] checkLogin done, isAdmin=", isAdmin, "loggedInPlayer=", loggedInPlayer && loggedInPlayer.player_name);
             if (!dbFile) {
                 console.error("[INIT] No dbFile — cannot load tournament");
                 document.getElementById("tournament-name").textContent = "Error: Could not load tournament";
