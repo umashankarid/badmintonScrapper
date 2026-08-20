@@ -619,6 +619,16 @@
                 return;
             }
 
+            // Validate accommodation ages if accommodation is checked
+            if (document.getElementById("need-accommodation").checked) {
+                const ages = document.getElementById("accommodation-ages").value.trim();
+                if (!ages) {
+                    alert("Please enter the ages of persons needing accommodation.\n\nAnge ålder för personerna som behöver boende.");
+                    document.getElementById("accommodation-ages").focus();
+                    return;
+                }
+            }
+
             const editId = document.getElementById("edit-player-id").value;
             const club = loggedInPlayer.club || document.getElementById("logged-player-club").textContent;
             const doublesPartnerEl = document.getElementById("doubles-partner");
