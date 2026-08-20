@@ -152,6 +152,24 @@ def init_tournaments_db():
         )
     """)
     
+    # Add accommodation/transport columns if they don't exist
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN need_accommodation INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN accommodation_count INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN need_transport INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN transport_count INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    
     conn.commit()
     conn.close()
     logger.info("✅ tournaments.db initialized with tournaments and tournament_registrations tables")
@@ -2896,7 +2914,8 @@ def get_tournament_registration():
         # Get player's registration
         cur.execute("""
             SELECT id, tournament_name, license_id, singles_levels, doubles_levels, 
-                   mixed_levels, doubles_partner, mixed_partner, registration_date
+                   mixed_levels, doubles_partner, mixed_partner, registration_date,
+                   need_accommodation, accommodation_count, need_transport, transport_count
             FROM tournament_registrations 
             WHERE tournament_name = ? AND license_id = ?
         """, (tournament_name, license_id))
@@ -2917,7 +2936,11 @@ def get_tournament_registration():
             "mixed_levels": row[5] or "",
             "doubles_partner": row[6] or "",
             "mixed_partner": row[7] or "",
-            "registration_date": row[8]
+            "registration_date": row[8],
+            "need_accommodation": bool(row[9]) if row[9] is not None else False,
+            "accommodation_count": row[10] or 0,
+            "need_transport": bool(row[11]) if row[11] is not None else False,
+            "transport_count": row[12] or 0
         }
         
         return jsonify(success=True, registration=registration)
@@ -3632,7 +3655,10 @@ def add_player():
             cur_main.execute("""
                 UPDATE tournament_registrations
                 SET singles_levels = ?, doubles_levels = ?, mixed_levels = ?,
-                    doubles_partner = ?, mixed_partner = ?, registration_date = CURRENT_TIMESTAMP
+                    doubles_partner = ?, mixed_partner = ?,
+                    need_accommodation = ?, accommodation_count = ?,
+                    need_transport = ?, transport_count = ?,
+                    registration_date = CURRENT_TIMESTAMP
                 WHERE tournament_name = ? AND license_id = ?
             """, (
                 player.get("singles_levels", ""),
@@ -3640,6 +3666,10 @@ def add_player():
                 new_mixed_levels,
                 new_doubles_partner,
                 new_mixed_partner,
+                1 if player.get("need_accommodation") else 0,
+                player.get("accommodation_count", 0),
+                1 if player.get("need_transport") else 0,
+                player.get("transport_count", 0),
                 tournament_name,
                 license_id
             ))
@@ -3661,8 +3691,8 @@ def add_player():
             # Insert new registration
             cur_main.execute("""
                 INSERT INTO tournament_registrations (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels,
-                 doubles_partner, mixed_partner, registration_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                 doubles_partner, mixed_partner, need_accommodation, accommodation_count, need_transport, transport_count, registration_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 tournament_name,
                 license_id,
@@ -3670,7 +3700,11 @@ def add_player():
                 player.get("doubles_levels", ""),
                 player.get("mixed_levels", ""),
                 player.get("doubles_partner", ""),
-                player.get("mixed_partner", "")
+                player.get("mixed_partner", ""),
+                1 if player.get("need_accommodation") else 0,
+                player.get("accommodation_count", 0),
+                1 if player.get("need_transport") else 0,
+                player.get("transport_count", 0)
             ))
             logger.info(f"✅ Registered {player.get('player_name')} for tournament {tournament_name}")
         
