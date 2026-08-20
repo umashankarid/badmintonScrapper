@@ -590,12 +590,24 @@
             // Optional: could auto-generate age input fields based on count
         }
         function toggleTransport() {
-            document.getElementById("transport-count-container").style.display = 
-                document.getElementById("need-transport").checked ? "inline-block" : "none";
+            const checked = document.getElementById("need-transport").checked;
+            document.getElementById("transport-count-container").style.display = checked ? "inline-block" : "none";
+            // Disable offer transport if need transport is checked
+            document.getElementById("offer-transport").disabled = checked;
+            if (checked) {
+                document.getElementById("offer-transport").checked = false;
+                document.getElementById("offer-transport-count-container").style.display = "none";
+            }
         }
         function toggleOfferTransport() {
-            document.getElementById("offer-transport-count-container").style.display = 
-                document.getElementById("offer-transport").checked ? "inline-block" : "none";
+            const checked = document.getElementById("offer-transport").checked;
+            document.getElementById("offer-transport-count-container").style.display = checked ? "inline-block" : "none";
+            // Disable need transport if offer transport is checked
+            document.getElementById("need-transport").disabled = checked;
+            if (checked) {
+                document.getElementById("need-transport").checked = false;
+                document.getElementById("transport-count-container").style.display = "none";
+            }
         }
 
         document.getElementById("register-form").addEventListener("submit", async (e) => {
