@@ -342,6 +342,25 @@
                     const container = document.getElementById("category-view");
                     container.style.display = "block";
                     
+                    // Show accommodation/transport summary
+                    let accommTotal = 0, accommPlayers = 0, transportTotal = 0, transportPlayers = 0;
+                    players.forEach(p => {
+                        if (p.need_accommodation) { accommPlayers++; accommTotal += (p.accommodation_count || 1); }
+                        if (p.need_transport) { transportPlayers++; transportTotal += (p.transport_count || 1); }
+                    });
+                    
+                    if (accommTotal > 0 || transportTotal > 0) {
+                        let summaryHtml = '<div style="margin-bottom:15px;padding:12px 15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;display:flex;gap:20px;flex-wrap:wrap;">';
+                        if (accommTotal > 0) {
+                            summaryHtml += `<div><strong>🏨 Boende / Accommodation:</strong> ${accommPlayers} player${accommPlayers !== 1 ? 's' : ''}, ${accommTotal} person${accommTotal !== 1 ? 's' : ''} total</div>`;
+                        }
+                        if (transportTotal > 0) {
+                            summaryHtml += `<div><strong>🚗 Transport:</strong> ${transportPlayers} player${transportPlayers !== 1 ? 's' : ''}, ${transportTotal} person${transportTotal !== 1 ? 's' : ''} total</div>`;
+                        }
+                        summaryHtml += '</div>';
+                        container.innerHTML = summaryHtml;
+                    }
+                    
                     // Group players by category
                     const categories = {};
                     players.forEach(p => {
@@ -438,7 +457,7 @@
                                     </tr></thead>
                                     <tbody>
                                         ${catPlayers.map(p => `<tr>
-                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${p.need_accommodation ? ' <span title="Boende: '+p.accommodation_count+' pers">🏨</span>' : ''}${p.need_transport ? ' <span title="Transport: '+p.transport_count+' pers">🚗</span>' : ''}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.license_id || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.club || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>

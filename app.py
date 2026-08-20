@@ -2875,7 +2875,8 @@ def get_tournament_players():
                    COALESCE(p.email, '') as email,
                    COALESCE(p.phone, '') as phone,
                    tr.singles_levels, tr.doubles_levels, 
-                   tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date
+                   tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date,
+                   tr.need_accommodation, tr.accommodation_count, tr.need_transport, tr.transport_count
             FROM tournament_registrations tr
             LEFT JOIN players_db.players p ON tr.license_id = p.license_id
             WHERE tr.tournament_name = ? 
