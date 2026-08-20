@@ -190,6 +190,18 @@ def init_admin_db():
             sent_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS email_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            recipient TEXT NOT NULL,
+            subject TEXT,
+            reason TEXT,
+            timestamp TEXT,
+            raw_data TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     
     # Insert default admin if it doesn't exist
@@ -4447,6 +4459,88 @@ def send_bulk_email():
     
     logger.info(f"📧 Bulk email: sent={sent}, failed={failed}, subject='{subject}'")
     return jsonify(success=True, sent=sent, failed=failed, total=len(emails))
+
+
+@app.route("/api/brevo-webhook", methods=["POST"])
+def brevo_webhook():
+    """
+    Receive email delivery events from Brevo webhook.
+    Records all events in email_events table.
+    Sends alert to support@bmkkomet.se for failures (bounce, blocked, etc.)
+    """
+    data = request.json
+    if not data:
+        return jsonify(success=False), 400
+    
+    # Brevo sends events as a single object or list
+    events = data if isinstance(data, list) else [data]
+    
+    ALERT_EVENTS = {"hard_bounce", "soft_bounce", "invalid_email", "blocked", "deferred", "error"}
+    
+    for event in events:
+        event_type = event.get("event", "").lower()
+        recipient = event.get("email", "")
+        subject_line = event.get("subject", "")
+        reason = event.get("reason", "") or event.get("message", "")
+        timestamp = event.get("date", "") or event.get("ts_event", "")
+        
+        # Store in database
+        try:
+            conn = sqlite3.connect(ADMIN_DB)
+            conn.execute("""
+                INSERT INTO email_events (event_type, recipient, subject, reason, timestamp, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (event_type, recipient, subject_line, reason, str(timestamp), json.dumps(event)))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"❌ Error storing email event: {e}")
+        
+        # Send alert for failure events (but NOT if recipient is support@ to avoid loop)
+        if event_type in ALERT_EVENTS and "support@bmkkomet.se" not in recipient.lower():
+            try:
+                alert_subject = f"⚠️ BMK Komet Email Event – {event_type.replace('_', ' ').title()}"
+                alert_body = (f"Email delivery failure detected:\n\n"
+                              f"Recipient: {recipient}\n"
+                              f"Event: {event_type.replace('_', ' ').title()}\n"
+                              f"Subject: {subject_line}\n"
+                              f"Reason: {reason}\n"
+                              f"Time: {timestamp}\n\n"
+                              f"Check Brevo dashboard for more details:\n"
+                              f"https://app.brevo.com/transactional/email/statistics")
+                send_email("support@bmkkomet.se", alert_subject, alert_body)
+                logger.warning(f"⚠️ Email event alert: {event_type} for {recipient}")
+            except Exception as e:
+                logger.error(f"❌ Error sending email event alert: {e}")
+    
+    return jsonify(success=True)
+
+
+@app.route("/api/email-events", methods=["GET"])
+def get_email_events():
+    """Get recent email events (admin only)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    limit = int(request.args.get("limit", 50))
+    event_type = request.args.get("type", "").strip()
+    
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        if event_type:
+            cur.execute("SELECT * FROM email_events WHERE event_type = ? ORDER BY created_at DESC LIMIT ?",
+                       (event_type, limit))
+        else:
+            cur.execute("SELECT * FROM email_events ORDER BY created_at DESC LIMIT ?", (limit,))
+        
+        events = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return jsonify(success=True, events=events)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
 
 
 def send_email(to_email, subject, body):
