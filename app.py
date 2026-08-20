@@ -3564,7 +3564,7 @@ def add_player():
                 except Exception:
                     pass
                 
-                is_level_5 = "LEVEL_5" in player_groups
+                is_level_3_to_5 = any(g in player_groups for g in ["LEVEL_3", "LEVEL_4", "LEVEL_5"])
                 is_level_6 = "LEVEL_6" in player_groups
                 confirmed_permission = player.get("confirmed_sjt_permission", False)
                 
@@ -3576,12 +3576,12 @@ def add_player():
                             if lvl:
                                 all_selected.append(lvl)
                 
-                if is_level_5 and not is_level_6:
+                if is_level_3_to_5 and not is_level_6:
                     # LEVEL_5: hard block from any non-MJT category
                     sjt_events = [e for e in all_selected if "MJT" not in e.upper()]
                     if sjt_events:
                         return jsonify(success=False,
-                            error=f"Anmälan nekad: '{sjt_events[0]}' är en SJT-kategori (Nivå 6). Som Nivå 5-spelare kan du bara anmäla dig i MJT-kategorier.\n\nRegistration rejected: '{sjt_events[0]}' is an SJT category (Level 6). As a Level 5 player, you can only register in MJT categories.")
+                            error=f"Anmälan nekad: '{sjt_events[0]}' är en SJT-kategori (Nivå 6). Spelare med Nivå 3-5 kan bara anmäla sig i MJT-kategorier.\n\nRegistration rejected: '{sjt_events[0]}' is an SJT category (Level 6). Players with Level 3-5 can only register in MJT categories.")
                     
                     # LEVEL_5: also check age group for MJT — can only play own age group
                     if not confirmed_permission:
