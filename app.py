@@ -4732,8 +4732,12 @@ def send_email(to_email, subject, body, attachments=None):
             "sender": {"email": sender_email, "name": "BMK Komet"},
             "to": [{"email": to_email}],
             "subject": subject,
-            "textContent": body
         }
+        # If body contains HTML tags, send as HTML; otherwise as plain text
+        if "<" in body and ">" in body:
+            payload["htmlContent"] = body
+        else:
+            payload["textContent"] = body
         if attachments:
             payload["attachment"] = attachments
         

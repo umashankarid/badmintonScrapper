@@ -68,7 +68,35 @@
             <input type="text" id="email-subject" placeholder="Email subject" required>
             
             <label>Message</label>
-            <textarea id="email-body" rows="10" placeholder="Write your message here..." required style="width:100%;font-size:0.95em;"></textarea>
+            <div style="border:1px solid #ddd;border-radius:6px;overflow:hidden;">
+                <div id="email-toolbar" style="padding:6px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
+                    <button type="button" onclick="execCmd('bold')" title="Bold" style="width:30px;height:28px;padding:0;font-weight:bold;background:white;border:1px solid #ccc;border-radius:4px;cursor:pointer;">B</button>
+                    <button type="button" onclick="execCmd('italic')" title="Italic" style="width:30px;height:28px;padding:0;font-style:italic;background:white;border:1px solid #ccc;border-radius:4px;cursor:pointer;">I</button>
+                    <button type="button" onclick="execCmd('underline')" title="Underline" style="width:30px;height:28px;padding:0;text-decoration:underline;background:white;border:1px solid #ccc;border-radius:4px;cursor:pointer;">U</button>
+                    <span style="border-left:1px solid #ccc;height:20px;margin:0 5px;"></span>
+                    <select onchange="execCmdVal('fontSize', this.value); this.value='';" style="padding:3px;font-size:0.8em;border:1px solid #ccc;border-radius:4px;">
+                        <option value="">Size</option>
+                        <option value="1">Small</option>
+                        <option value="3">Normal</option>
+                        <option value="5">Large</option>
+                        <option value="7">Huge</option>
+                    </select>
+                    <select onchange="execCmdVal('foreColor', this.value); this.value='';" style="padding:3px;font-size:0.8em;border:1px solid #ccc;border-radius:4px;">
+                        <option value="">Color</option>
+                        <option value="#000000" style="color:#000000;">Black</option>
+                        <option value="#c62828" style="color:#c62828;">Red</option>
+                        <option value="#0d47a1" style="color:#0d47a1;">Blue</option>
+                        <option value="#2e7d32" style="color:#2e7d32;">Green</option>
+                        <option value="#e65100" style="color:#e65100;">Orange</option>
+                        <option value="#6a1b9a" style="color:#6a1b9a;">Purple</option>
+                    </select>
+                    <span style="border-left:1px solid #ccc;height:20px;margin:0 5px;"></span>
+                    <button type="button" onclick="execCmd('insertUnorderedList')" title="Bullet list" style="width:30px;height:28px;padding:0;background:white;border:1px solid #ccc;border-radius:4px;cursor:pointer;">•</button>
+                    <button type="button" onclick="execCmd('insertOrderedList')" title="Numbered list" style="width:30px;height:28px;padding:0;background:white;border:1px solid #ccc;border-radius:4px;cursor:pointer;">1.</button>
+                </div>
+                <div id="email-body" contenteditable="true" style="min-height:200px;padding:12px;font-size:0.95em;outline:none;overflow-y:auto;max-height:400px;" data-placeholder="Write your message here..."></div>
+            </div>
+            <input type="hidden" id="email-body-hidden" name="body">
             
             <label style="margin-top:10px;">Attachments (optional)</label>
             <input type="file" id="email-attachments" multiple style="font-size:0.9em;margin-bottom:5px;">
@@ -84,6 +112,35 @@
     </div>
 
     <script>
+        // Rich text editor functions
+        function execCmd(cmd) {
+            document.execCommand(cmd, false, null);
+            document.getElementById("email-body").focus();
+        }
+        function execCmdVal(cmd, val) {
+            if (val) document.execCommand(cmd, false, val);
+            document.getElementById("email-body").focus();
+        }
+        function getEmailBody() {
+            const el = document.getElementById("email-body");
+            return el.innerHTML.trim();
+        }
+        function getEmailBodyText() {
+            const el = document.getElementById("email-body");
+            return el.innerText.trim();
+        }
+        
+        // Placeholder behavior for contenteditable
+        document.addEventListener("DOMContentLoaded", () => {
+            const editor = document.getElementById("email-body");
+            editor.addEventListener("focus", () => {
+                if (editor.innerHTML === "" || editor.innerHTML === "<br>") editor.innerHTML = "";
+            });
+            editor.addEventListener("blur", () => {
+                if (editor.innerText.trim() === "") editor.innerHTML = "";
+            });
+        });
+
         function showLoadOption() {
             document.getElementById("tournament-option").style.display = "none";
             document.getElementById("group-option").style.display = "none";
@@ -233,8 +290,8 @@
             }
             
             const subject = document.getElementById("email-subject").value;
-            const body = document.getElementById("email-body").value;
-            if (!subject || !body) { alert("Subject and message required"); return; }
+            const body = getEmailBody();
+            if (!subject || !getEmailBodyText()) { alert("Subject and message required"); return; }
             
             const resultEl = document.getElementById("send-result");
             resultEl.style.display = "block";
@@ -281,8 +338,8 @@
 
         async function sendTest() {
             const subject = document.getElementById("email-subject").value;
-            const body = document.getElementById("email-body").value;
-            if (!subject || !body) { alert("Enter subject and message first"); return; }
+            const body = getEmailBody();
+            if (!subject || !getEmailBodyText()) { alert("Enter subject and message first"); return; }
             
             const res = await fetch("/api/bwf-status");
             const status = await res.json();
