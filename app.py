@@ -4766,13 +4766,13 @@ def send_reminders():
                             f"Support / Hjälp: support@bmkkomet.se\n\n"
                             f"Med vänliga hälsningar / Best regards,\nBMK Komet")
                 else:
-                    subject = f"⚠️ Sista dagen att anmäla sig / Last day to register: {tournament_name}"
+                    subject = f"⚠️ Sista dagen att anmäla sig och göra ändringar / Last day to register and make changes: {tournament_name}"
                     body = (f"Hi {player_name},\n\n"
-                            f"⚠️ Idag ({admin_reg_end_date}) är sista dagen att anmäla dig till '{tournament_name}'! "
-                            f"Anmäl dig nu — imorgon stänger anmälan.\n\n"
+                            f"⚠️ Idag ({admin_reg_end_date}) är sista dagen att anmäla dig och göra ändringar för '{tournament_name}'! "
+                            f"Anmäl dig eller ändra din anmälan nu — imorgon stänger anmälan.\n\n"
                             f"Anmäl dig här: https://tournament-registration.bmkkomet.se\n\n\n"
-                            f"⚠️ Today ({admin_reg_end_date}) is the last day to register for '{tournament_name}'! "
-                            f"Register now — registration closes tomorrow.\n\n"
+                            f"⚠️ Today ({admin_reg_end_date}) is the last day to register and make changes for '{tournament_name}'! "
+                            f"Register or update your entry now — registration closes tomorrow.\n\n"
                             f"Register here: https://tournament-registration.bmkkomet.se\n\n\n"
                             f"---\n"
                             f"Vill du inte få påminnelser? Logga in och klicka 'Stäng av påminnelser'.\n"
