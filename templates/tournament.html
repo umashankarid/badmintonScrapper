@@ -403,7 +403,25 @@
                                 <div style="font-size:1.3em;font-weight:bold;color:#2e7d32;">${offerTransportTotal} seats</div>
                             </div>`;
                         }
-                        summaryHtml += '</div></div>';
+                        summaryHtml += '</div>';
+                        
+                        // Detail table showing per-player info
+                        const detailRows = players.filter(p => p.need_accommodation || p.need_transport || p.offer_transport);
+                        if (detailRows.length) {
+                            summaryHtml += '<table style="width:100%;border-collapse:collapse;font-size:0.85em;margin-top:12px;">';
+                            summaryHtml += '<thead><tr style="background:#bbdefb;"><th style="padding:6px 8px;text-align:left;">Player</th><th style="padding:6px 8px;text-align:left;">🏨 Accommodation</th><th style="padding:6px 8px;text-align:left;">🚗 Need transport</th><th style="padding:6px 8px;text-align:left;">🚙 Offer transport</th></tr></thead><tbody>';
+                            detailRows.forEach(p => {
+                                summaryHtml += `<tr style="border-top:1px solid #e0e0e0;">
+                                    <td style="padding:5px 8px;">${p.player_name}</td>
+                                    <td style="padding:5px 8px;">${p.need_accommodation ? p.accommodation_count + ' pers' + (p.accommodation_ages ? ' (ages: ' + p.accommodation_ages + ')' : '') : '—'}</td>
+                                    <td style="padding:5px 8px;">${p.need_transport ? p.transport_count + ' pers' : '—'}</td>
+                                    <td style="padding:5px 8px;">${p.offer_transport ? p.offer_transport_seats + ' seats' : '—'}</td>
+                                </tr>`;
+                            });
+                            summaryHtml += '</tbody></table>';
+                        }
+                        
+                        summaryHtml += '</div>';
                         container.dataset.summary = summaryHtml;
                     }
                     
