@@ -50,9 +50,13 @@
                         <input type="checkbox" id="need-accommodation" onchange="toggleAccommodation()" style="width:18px;height:18px;">
                         <label for="need-accommodation" style="font-size:0.9em;cursor:pointer;flex:1;">🏨 Behöver boende / Need accommodation</label>
                         <div id="accommodation-count-container" style="display:none;">
-                            <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Antal personer">
+                            <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:50px;padding:4px;font-size:0.9em;text-align:center;" title="Antal personer" onchange="updateAccommodationAges()">
                             <span style="font-size:0.8em;color:#555;">pers</span>
                         </div>
+                    </div>
+                    <div id="accommodation-ages-container" style="display:none;margin-left:28px;margin-top:4px;">
+                        <label style="font-size:0.8em;color:#555;">Ålder / Ages:</label>
+                        <input type="text" id="accommodation-ages" placeholder="e.g. 12, 40" style="width:150px;padding:4px;font-size:0.85em;" title="Ange ålder för varje person, separerade med komma">
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <input type="checkbox" id="need-transport" onchange="toggleTransport()" style="width:18px;height:18px;">
@@ -507,7 +511,7 @@
                                     </tr></thead>
                                     <tbody>
                                         ${catPlayers.map(p => `<tr>
-                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${p.need_accommodation ? ' <span title="Boende: '+p.accommodation_count+' pers">🏨</span>' : ''}${p.need_transport ? ' <span title="Transport: '+p.transport_count+' pers">🚗</span>' : ''}${p.offer_transport ? ' <span title="Erbjuder skjuts: '+p.offer_transport_seats+' platser">🚙</span>' : ''}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${p.need_accommodation ? ' <span title="Accommodation: '+p.accommodation_count+' persons, ages: '+(p.accommodation_ages||'N/A')+'">🏨</span>' : ''}${p.need_transport ? ' <span title="Need transport: '+p.transport_count+' persons">🚗</span>' : ''}${p.offer_transport ? ' <span title="Offer transport: '+p.offer_transport_seats+' seats">🚙</span>' : ''}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.license_id || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.club || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
@@ -560,8 +564,12 @@
         }
 
         function toggleAccommodation() {
-            document.getElementById("accommodation-count-container").style.display = 
-                document.getElementById("need-accommodation").checked ? "inline-block" : "none";
+            const checked = document.getElementById("need-accommodation").checked;
+            document.getElementById("accommodation-count-container").style.display = checked ? "inline-block" : "none";
+            document.getElementById("accommodation-ages-container").style.display = checked ? "block" : "none";
+        }
+        function updateAccommodationAges() {
+            // Optional: could auto-generate age input fields based on count
         }
         function toggleTransport() {
             document.getElementById("transport-count-container").style.display = 
@@ -615,6 +623,7 @@
                 mixed_partner_club: mixedPartnerEl.dataset.club || "",
                 need_accommodation: document.getElementById("need-accommodation").checked,
                 accommodation_count: document.getElementById("need-accommodation").checked ? parseInt(document.getElementById("accommodation-count").value) || 1 : 0,
+                accommodation_ages: document.getElementById("need-accommodation").checked ? document.getElementById("accommodation-ages").value.trim() : "",
                 need_transport: document.getElementById("need-transport").checked,
                 transport_count: document.getElementById("need-transport").checked ? parseInt(document.getElementById("transport-count").value) || 1 : 0,
                 offer_transport: document.getElementById("offer-transport").checked,
@@ -1650,7 +1659,9 @@
                         if (reg.need_accommodation) {
                             document.getElementById("need-accommodation").checked = true;
                             document.getElementById("accommodation-count-container").style.display = "inline-block";
+                            document.getElementById("accommodation-ages-container").style.display = "block";
                             document.getElementById("accommodation-count").value = reg.accommodation_count || 1;
+                            document.getElementById("accommodation-ages").value = reg.accommodation_ages || "";
                         }
                         if (reg.need_transport) {
                             document.getElementById("need-transport").checked = true;
