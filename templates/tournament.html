@@ -90,6 +90,14 @@
         </details>
     </div>
 
+    <!-- Send Invitation to Tournament Groups (admin only) -->
+    <div id="group-invite-section" style="display:none;margin:20px 0;padding:15px;border-radius:8px;background:#f0f7ff;border:1px solid #bbdefb;">
+        <details>
+            <summary style="cursor:pointer;font-weight:bold;color:#1565c0;">📨 Send Tournament Invitation to Group Players</summary>
+            <div id="group-invite-details" style="margin-top:10px;"></div>
+        </details>
+    </div>
+
     <div style="display:flex;align-items:center;gap:15px;margin-top:20px;">
         <h2 id="players-heading" style="margin:0;">Registered Players</h2>
         <button id="download-csv-btn" onclick="downloadCSV()" style="display:none;width:auto;padding:6px 14px;background:#28a745;font-size:0.85em;">📥 Download CSV</button>
@@ -1234,6 +1242,119 @@
             }
         }
 
+        async function loadGroupInvite() {
+            if (!dbFile) return;
+            try {
+                // Get tournament info (name, dates, location, groups)
+                const res = await fetch(`/api/tournament?dbFile=${encodeURIComponent(dbFile)}`);
+                const data = await res.json();
+                if (!data.success) return;
+                
+                const t = data.tournament;
+                const groups = t.tournament_groups || [];
+                
+                // Get group emails
+                let allEmails = new Set();
+                if (groups.length) {
+                    for (const group of groups) {
+                        const gRes = await fetch(`/api/group-emails?group=${encodeURIComponent(group)}`);
+                        const gData = await gRes.json();
+                        if (gData.success) gData.emails.forEach(e => allEmails.add(e));
+                    }
+                } else {
+                    // No groups - get all komet player emails
+                    const gRes = await fetch("/api/group-emails");
+                    const gData = await gRes.json();
+                    if (gData.success) gData.emails.forEach(e => allEmails.add(e));
+                }
+                
+                const emails = Array.from(allEmails);
+                const section = document.getElementById("group-invite-section");
+                const details = document.getElementById("group-invite-details");
+                
+                // Build default invitation draft
+                const regCloses = t.admin_reg_end_date || t.registration_closes || "N/A";
+                const compDate = t.competition_start || "N/A";
+                const cancelDate = t.cancellation_deadline || "N/A";
+                
+                const defaultSubject = `🏸 Inbjudan / Invitation: ${dbFile}`;
+                const defaultBody = `Hej,\n\nVi vill bjuda in dig till '${dbFile}'!\n\n📅 Tävlingsdatum: ${compDate}\n📝 Sista anmälningsdag: ${regCloses}\n🔄 Sista dag att avanmäla: ${cancelDate}\n\nAnmäl dig här: https://tournament-registration.bmkkomet.se\n\n\nHi,\n\nWe would like to invite you to '${dbFile}'!\n\n📅 Competition date: ${compDate}\n📝 Registration deadline: ${regCloses}\n🔄 Cancellation deadline: ${cancelDate}\n\nRegister here: https://tournament-registration.bmkkomet.se\n\n\nTävlingsfrågor / Tournament questions: tavlingar@bmkkomet.se\nSupport / Hjälp: support@bmkkomet.se\n\nMed vänliga hälsningar / Best regards,\nBMK Komet`;
+                
+                let html = `<p><strong>Recipients: ${emails.length} players from group${groups.length !== 1 ? 's' : ''}: ${groups.length ? groups.join(', ') : 'All (no groups assigned)'}</strong></p>`;
+                if (emails.length) {
+                    html += `<div style="max-height:100px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px;padding:8px;background:white;font-size:0.8em;margin-bottom:10px;">`;
+                    html += emails.join(", ");
+                    html += `</div>`;
+                    html += `
+                        <label style="font-size:0.9em;font-weight:500;">Subject</label>
+                        <input type="text" id="group-invite-subject" value="${defaultSubject}" style="margin-bottom:8px;">
+                        <label style="font-size:0.9em;font-weight:500;">Message</label>
+                        <textarea id="group-invite-body" rows="12" style="width:100%;font-size:0.9em;margin-bottom:8px;">${defaultBody}</textarea>
+                        <button onclick="sendGroupInvite()" style="width:auto;padding:8px 16px;background:#1565c0;font-size:0.9em;">📨 Send Invitation</button>
+                        <span id="send-group-invite-result" style="margin-left:10px;font-size:0.85em;"></span>
+                    `;
+                } else {
+                    html += `<p style="color:#999;font-size:0.9em;">No players with email addresses in the tournament groups.</p>`;
+                }
+                
+                details.innerHTML = html;
+                section.style.display = "block";
+            } catch(e) {
+                console.error("Error loading group invite:", e);
+            }
+        }
+
+        async function sendGroupInvite() {
+            const subject = document.getElementById("group-invite-subject").value.trim();
+            const body = document.getElementById("group-invite-body").value.trim();
+            if (!subject || !body) { alert("Enter subject and message"); return; }
+            
+            // Get all emails from the group
+            const res = await fetch(`/api/tournament?dbFile=${encodeURIComponent(dbFile)}`);
+            const data = await res.json();
+            const groups = data.tournament.tournament_groups || [];
+            
+            let allEmails = new Set();
+            if (groups.length) {
+                for (const group of groups) {
+                    const gRes = await fetch(`/api/group-emails?group=${encodeURIComponent(group)}`);
+                    const gData = await gRes.json();
+                    if (gData.success) gData.emails.forEach(e => allEmails.add(e));
+                }
+            } else {
+                const gRes = await fetch("/api/group-emails");
+                const gData = await gRes.json();
+                if (gData.success) gData.emails.forEach(e => allEmails.add(e));
+            }
+            
+            const emails = Array.from(allEmails);
+            if (!emails.length) { alert("No recipients found"); return; }
+            if (!confirm(`Send invitation to ${emails.length} player${emails.length !== 1 ? 's' : ''}?`)) return;
+            
+            const resultEl = document.getElementById("send-group-invite-result");
+            resultEl.textContent = "Sending...";
+            resultEl.style.color = "#1565c0";
+            
+            try {
+                const sendRes = await fetch("/api/send-bulk-email", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({emails, subject, body})
+                });
+                const sendData = await sendRes.json();
+                if (sendData.success) {
+                    resultEl.textContent = `✅ Sent to ${sendData.sent} of ${sendData.total} recipients`;
+                    resultEl.style.color = "#2e7d32";
+                } else {
+                    resultEl.textContent = `❌ ${sendData.error || 'Failed'}`;
+                    resultEl.style.color = "#c62828";
+                }
+            } catch(e) {
+                resultEl.textContent = `❌ Error: ${e.message}`;
+                resultEl.style.color = "#c62828";
+            }
+        }
+
         async function submitToBWF() {
             if (!dbFile) { alert("No tournament loaded"); return; }
             if (!confirm("Submit all registered players to Badminton Sweden (SBF)?\n\nThis will use the club account (sbf04959) to register all players.\n\nYou will need the club account password.")) return;
@@ -1385,6 +1506,7 @@
             await loadPlayers();
             await loadWarnings();
             if (isAdmin) await loadReminders();
+            if (isAdmin) await loadGroupInvite();
             
             // If player is already registered (maybe as partner), switch form to edit mode
             if (!isAdmin && loggedInPlayer && loggedInPlayer.license_id && !window.registrationClosed) {
