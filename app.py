@@ -963,39 +963,46 @@ def validate_registration():
                 except Exception:
                     pass
 
-            # Year they turn the age limit
-            year_turn_limit = birth.year + age_limit
+            # Swedish badminton age group rules:
+            # - Born 2015 → turns 11 in 2026
+            # - The year they turn the age limit, AFTER June they move up to next group
+            # - Before June of that year: still in current group
+            # 
+            # To determine player's age group:
+            # year_turn_X = birth.year + X
+            # Player belongs to U{X} if: check_date.year < year_turn_X
+            #   OR (check_date.year == year_turn_X AND check_date.month <= 6)
+            
+            def can_play_category(birth_year, age_limit, check_year, check_month):
+                """Returns True if player can still play in U{age_limit}"""
+                year_turn_limit = birth_year + age_limit
+                if check_year < year_turn_limit:
+                    return True  # Haven't reached the transition year yet
+                elif check_year == year_turn_limit and check_month <= 6:
+                    return True  # In transition year but before July
+                return False  # Too old for this category
+            
+            def get_player_age_group(birth_year, check_year, check_month):
+                """Returns the age group number the player belongs to (11, 13, 15, 17, 19)"""
+                age_groups = [11, 13, 15, 17, 19]
+                for ag in age_groups:
+                    if can_play_category(birth_year, ag, check_year, check_month):
+                        return ag
+                return 19  # Default to U19
 
-            # Age at competition
-            age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
+            birth_year = birth.year
+            check_year = check_date.year
+            check_month = check_date.month
 
-            # Player is too old for this category
-            if age_at_comp >= age_limit:
-                # Exception: can still play until June of the year they age out
-                if check_date.year == year_turn_limit and check_date.month <= 6:
-                    pass  # Allowed - still within grace period
+            # Check if player is too old for this category
+            if not can_play_category(birth_year, age_limit, check_year, check_month):
+                player_group = get_player_age_group(birth_year, check_year, check_month)
+                if player_group > age_limit:
+                    return jsonify(success=True, allowed=False, hard_block=True,
+                        message=f"Player (born {birth_year}) cannot play {level}. Should play U{player_group} or higher.")
                 else:
                     return jsonify(success=True, allowed=False, hard_block=True,
-                        message=f"Player is {age_at_comp} years old. {level} is for players under {age_limit}. NOT ALLOWED.")
-
-            # Player is too young - can't play a lower age group
-            # e.g., a 12-year-old can't play U9 or U11
-            if age_at_comp >= age_limit:
-                pass  # Already handled above
-            elif age_limit - age_at_comp > 2:
-                # Player is way younger than the category - that's fine (playing up)
-                pass
-            # Check if player should be in a higher age group
-            # A 12-year-old should play U13, not U9 or U11
-            age_groups = [9, 11, 13, 15, 17, 19]
-            correct_group = None
-            for ag in age_groups:
-                if age_at_comp < ag:
-                    correct_group = ag
-                    break
-            if correct_group and age_limit < correct_group and age_at_comp >= age_limit:
-                return jsonify(success=True, allowed=False, hard_block=True,
-                    message=f"Player is {age_at_comp} years old. Cannot play {level} (too old). Should play U{correct_group} or higher.")
+                        message=f"Player (born {birth_year}) is too old for {level}. NOT ALLOWED.")
 
         except Exception:
             pass
@@ -3484,6 +3491,27 @@ def add_player():
             
             age_at_comp = check_date.year - birth.year - ((check_date.month, check_date.day) < (birth.month, birth.day))
             
+            # Swedish badminton age rules:
+            # year_turn_X = birth.year + X
+            # Player can play U{X} if: check_year < year_turn_X OR (check_year == year_turn_X AND month <= 6)
+            def can_play_age_group(birth_year, age_limit, check_year, check_month):
+                year_turn_limit = birth_year + age_limit
+                if check_year < year_turn_limit:
+                    return True
+                elif check_year == year_turn_limit and check_month <= 6:
+                    return True
+                return False
+            
+            def get_correct_age_group(birth_year, check_year, check_month):
+                for ag in [11, 13, 15, 17, 19]:
+                    if can_play_age_group(birth_year, ag, check_year, check_month):
+                        return ag
+                return 19
+            
+            birth_year = birth.year
+            check_year = check_date.year
+            check_month = check_date.month
+            
             all_levels = []
             for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
                 if lvl_str:
@@ -3501,22 +3529,19 @@ def add_player():
                 # HARD BLOCK: Under 18 cannot play C or D class (seniors only)
                 if level in {"C", "D"} and age_at_comp < 18:
                     return jsonify(success=False,
-                        error=f"Registration rejected: Player is {age_at_comp} years old. {level} class is for seniors (18+) only. Juniors can only play B, A, or Elit.")
+                        error=f"Registration rejected: Player (born {birth_year}) is under 18. {level} class is for seniors (18+) only.")
                 
                 # Check age-based categories (U9, U11, U13, U15, U17, U19)
                 if level.startswith("U"):
+                    import re as re_mod
                     match = re_mod.search(r'\d+', level)
                     if match:
                         age_limit = int(match.group())
-                        year_turn_limit = birth.year + age_limit
                         
-                        if age_at_comp >= age_limit:
-                            # Grace period: can play until June of the year they age out
-                            if check_date.year == year_turn_limit and check_date.month <= 6:
-                                pass  # Allowed
-                            else:
-                                return jsonify(success=False,
-                                    error=f"Registration rejected: Player is {age_at_comp} years old. {level} is for players under {age_limit}. Not allowed to play {entry['event']}.")
+                        if not can_play_age_group(birth_year, age_limit, check_year, check_month):
+                            correct_group = get_correct_age_group(birth_year, check_year, check_month)
+                            return jsonify(success=False,
+                                error=f"Registration rejected: Player (born {birth_year}) cannot play {entry['event']}. Should play U{correct_group} or higher.")
     except Exception as e:
         logger.debug(f"Could not validate age on server: {e}")
     
@@ -3572,20 +3597,25 @@ def add_player():
                             try:
                                 birth = _dt.strptime(p_row[0], "%Y-%m-%d")
                                 today_dt = _dt.now()
-                                player_age = today_dt.year - birth.year - ((today_dt.month, today_dt.day) < (birth.month, birth.day))
                                 
-                                age_groups = [("U11", 11), ("U13", 13), ("U15", 15), ("U17", 17), ("U19", 19)]
-                                player_age_group = None
-                                for name, max_age in age_groups:
-                                    if player_age < max_age:
-                                        player_age_group = max_age
-                                        break
+                                # Swedish rules: year-based, June transition
+                                def _can_play(birth_yr, limit, chk_yr, chk_mo):
+                                    yr_turn = birth_yr + limit
+                                    return chk_yr < yr_turn or (chk_yr == yr_turn and chk_mo <= 6)
+                                
+                                def _get_group(birth_yr, chk_yr, chk_mo):
+                                    for ag in [11, 13, 15, 17, 19]:
+                                        if _can_play(birth_yr, ag, chk_yr, chk_mo):
+                                            return ag
+                                    return 19
+                                
+                                player_age_group = _get_group(birth.year, today_dt.year, today_dt.month)
                                 
                                 for event in all_selected:
                                     event_match = _re.search(r'U(\d+)', event)
                                     if event_match:
                                         event_age = int(event_match.group(1))
-                                        if player_age_group and event_age > player_age_group:
+                                        if event_age > player_age_group:
                                             return jsonify(success=False, needs_permission=True,
                                                 error=f"'{event}' är en högre åldersgrupp (U{event_age}) än din (U{player_age_group}). Du behöver särskilt tillstånd (dispens) för att spela upp.\n\n'{event}' is a higher age group (U{event_age}) than yours (U{player_age_group}). You need special permission (dispensation) to play up.\n\nHar du fått dispens? / Do you have permission?")
                             except Exception:
@@ -3611,22 +3641,26 @@ def add_player():
                         try:
                             birth = _dt.strptime(p_row[0], "%Y-%m-%d")
                             today_dt = _dt.now()
-                            player_age = today_dt.year - birth.year - ((today_dt.month, today_dt.day) < (birth.month, birth.day))
                             
-                            # Determine player's correct age group
-                            age_groups = [("U11", 11), ("U13", 13), ("U15", 15), ("U17", 17), ("U19", 19)]
-                            player_age_group = None
-                            for name, max_age in age_groups:
-                                if player_age < max_age:
-                                    player_age_group = max_age
-                                    break
+                            # Swedish rules: year-based, June transition
+                            def _can_play_l6(birth_yr, limit, chk_yr, chk_mo):
+                                yr_turn = birth_yr + limit
+                                return chk_yr < yr_turn or (chk_yr == yr_turn and chk_mo <= 6)
+                            
+                            def _get_group_l6(birth_yr, chk_yr, chk_mo):
+                                for ag in [11, 13, 15, 17, 19]:
+                                    if _can_play_l6(birth_yr, ag, chk_yr, chk_mo):
+                                        return ag
+                                return 19
+                            
+                            player_age_group = _get_group_l6(birth.year, today_dt.year, today_dt.month)
                             
                             # Check if any selected event is above player's age group
                             for event in all_selected:
                                 event_match = _re.search(r'U(\d+)', event)
                                 if event_match:
                                     event_age = int(event_match.group(1))
-                                    if player_age_group and event_age > player_age_group:
+                                    if event_age > player_age_group:
                                         return jsonify(success=False, needs_permission=True,
                                             error=f"'{event}' är en högre åldersgrupp (U{event_age}) än din (U{player_age_group}). Du behöver särskilt tillstånd (dispens) för att spela upp.\n\n'{event}' is a higher age group (U{event_age}) than yours (U{player_age_group}). You need special permission (dispensation) to play up.\n\nHar du fått dispens? / Do you have permission?")
                         except Exception:
