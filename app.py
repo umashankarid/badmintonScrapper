@@ -3564,7 +3564,7 @@ def add_player():
                 except Exception:
                     pass
                 
-                is_level_3_to_5 = any(g in player_groups for g in ["LEVEL_3", "LEVEL_4", "LEVEL_5"])
+                is_level_3_to_5 = "LEVEL 3-5" in player_groups
                 is_level_6 = "LEVEL_6" in player_groups
                 confirmed_permission = player.get("confirmed_sjt_permission", False)
                 
