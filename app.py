@@ -3557,6 +3557,8 @@ def add_player():
             k_row = cur_k.fetchone()
             conn_k.close()
             
+            logger.info(f"🔍 SJT check: license={license_id}, k_row={'found' if k_row else 'NOT FOUND'}")
+            
             if k_row:
                 player_groups = []
                 try:
@@ -3566,6 +3568,7 @@ def add_player():
                 
                 is_level_3_to_5 = "LEVEL 3-5" in player_groups
                 is_level_6 = "LEVEL_6" in player_groups
+                logger.info(f"🔍 SJT check: groups={player_groups}, is_level_3_to_5={is_level_3_to_5}, is_level_6={is_level_6}")
                 confirmed_permission = player.get("confirmed_sjt_permission", False)
                 
                 all_selected = []
