@@ -309,7 +309,7 @@
                 console.log("[loadPlayers] Fetching for dbFile=", dbFile, "page=", currentPage);
                 const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=${currentPage}&pageSize=20`);
                 const data = await res.json();
-                console.log("[loadPlayers] Response:", data.success, "total:", data.total, "players:", data.players?.length);
+                console.log("[loadPlayers] Response:", data.success, "total:", data.total, "players:", data.players && data.players.length);
                 if (!data.success) {
                     console.error("[loadPlayers] Error:", data.error);
                     return;
@@ -1556,7 +1556,6 @@
         }
 
         // Initialize
-        async function init() {
         async function init() {
             console.log("[INIT] Starting... dbFile=", dbFile, "tournamentUrl=", tournamentUrl);
             try {
