@@ -1342,6 +1342,7 @@
                         <input type="text" id="tournament-email-subject" value="Info about ${dbFile}" style="margin-bottom:8px;">
                         <label style="font-size:0.9em;font-weight:500;">Message</label>
                         <textarea id="tournament-email-body" rows="5" placeholder="Write your message to all registered players..." style="width:100%;font-size:0.9em;margin-bottom:8px;"></textarea>
+                        <input type="file" id="tournament-email-attachments" multiple style="font-size:0.85em;margin-bottom:8px;">
                         <button onclick="sendToRegistered()" style="width:auto;padding:8px 16px;background:#0d47a1;font-size:0.9em;">📧 Send Email</button>
                         <span id="send-registered-result" style="margin-left:10px;font-size:0.85em;"></span>
                     `;
@@ -1367,18 +1368,46 @@
             resultEl.style.color = "#1565c0";
             
             try {
-                const res = await fetch(`/api/send-tournament-reminder`, {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({tournament_name: dbFile, subject, message: body})
-                });
-                const data = await res.json();
-                if (data.success) {
-                    resultEl.textContent = `✅ Sent to ${data.sent} players`;
-                    resultEl.style.color = "#2e7d32";
+                const fileInput = document.getElementById("tournament-email-attachments");
+                const hasFiles = fileInput && fileInput.files.length > 0;
+                
+                if (hasFiles) {
+                    // Get registered player emails first
+                    const emailRes = await fetch(`/api/registered-emails?tournament=${encodeURIComponent(dbFile)}`);
+                    const emailData = await emailRes.json();
+                    const emails = emailData.emails || [];
+                    if (!emails.length) { resultEl.textContent = "❌ No recipients"; return; }
+                    
+                    const formData = new FormData();
+                    formData.append("emails", emails.join(","));
+                    formData.append("subject", subject);
+                    formData.append("body", body);
+                    for (const file of fileInput.files) {
+                        formData.append("attachments", file);
+                    }
+                    const res = await fetch("/api/send-bulk-email", { method: "POST", body: formData });
+                    const data = await res.json();
+                    if (data.success) {
+                        resultEl.textContent = `✅ Sent to ${data.sent} players`;
+                        resultEl.style.color = "#2e7d32";
+                    } else {
+                        resultEl.textContent = `❌ ${data.error || 'Failed'}`;
+                        resultEl.style.color = "#c62828";
+                    }
                 } else {
-                    resultEl.textContent = `❌ ${data.error || 'Failed'}`;
-                    resultEl.style.color = "#c62828";
+                    const res = await fetch(`/api/send-tournament-reminder`, {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({tournament_name: dbFile, subject, message: body})
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        resultEl.textContent = `✅ Sent to ${data.sent} players`;
+                        resultEl.style.color = "#2e7d32";
+                    } else {
+                        resultEl.textContent = `❌ ${data.error || 'Failed'}`;
+                        resultEl.style.color = "#c62828";
+                    }
                 }
             } catch(e) {
                 resultEl.textContent = `❌ Error: ${e.message}`;
@@ -1434,6 +1463,7 @@
                         <input type="text" id="group-invite-subject" value="${defaultSubject}" style="margin-bottom:8px;">
                         <label style="font-size:0.9em;font-weight:500;">Message</label>
                         <textarea id="group-invite-body" rows="12" style="width:100%;font-size:0.9em;margin-bottom:8px;">${defaultBody}</textarea>
+                        <input type="file" id="group-invite-attachments" multiple style="font-size:0.85em;margin-bottom:8px;">
                         <button onclick="sendGroupInvite()" style="width:auto;padding:8px 16px;background:#1565c0;font-size:0.9em;">📨 Send Invitation</button>
                         <span id="send-group-invite-result" style="margin-left:10px;font-size:0.85em;"></span>
                     `;
@@ -1480,11 +1510,26 @@
             resultEl.style.color = "#1565c0";
             
             try {
-                const sendRes = await fetch("/api/send-bulk-email", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({emails, subject, body})
-                });
+                const fileInput = document.getElementById("group-invite-attachments");
+                const hasFiles = fileInput && fileInput.files.length > 0;
+                
+                let sendRes;
+                if (hasFiles) {
+                    const formData = new FormData();
+                    formData.append("emails", emails.join(","));
+                    formData.append("subject", subject);
+                    formData.append("body", body);
+                    for (const file of fileInput.files) {
+                        formData.append("attachments", file);
+                    }
+                    sendRes = await fetch("/api/send-bulk-email", { method: "POST", body: formData });
+                } else {
+                    sendRes = await fetch("/api/send-bulk-email", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({emails, subject, body})
+                    });
+                }
                 const sendData = await sendRes.json();
                 if (sendData.success) {
                     resultEl.textContent = `✅ Sent to ${sendData.sent} of ${sendData.total} recipients`;

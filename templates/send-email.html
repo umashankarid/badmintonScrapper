@@ -70,6 +70,10 @@
             <label>Message</label>
             <textarea id="email-body" rows="10" placeholder="Write your message here..." required style="width:100%;font-size:0.95em;"></textarea>
             
+            <label style="margin-top:10px;">Attachments (optional)</label>
+            <input type="file" id="email-attachments" multiple style="font-size:0.9em;margin-bottom:5px;">
+            <p style="color:#999;font-size:0.8em;margin:0;">Max 10MB per file. Multiple files allowed.</p>
+            
             <div style="display:flex;gap:10px;margin-top:15px;">
                 <button type="submit" style="background:#28a745;">Send to All</button>
                 <button type="button" onclick="sendTest()" style="background:#f57c00;">Send Test to Me</button>
@@ -238,11 +242,30 @@
             resultEl.style.color = "#1565c0";
             resultEl.textContent = `Sending to ${valid.length} recipients...`;
             
-            const res = await fetch("/api/send-bulk-email", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({emails: valid, subject, body})
-            });
+            // Use FormData if there are attachments
+            const fileInput = document.getElementById("email-attachments");
+            const hasFiles = fileInput.files.length > 0;
+            
+            let res;
+            if (hasFiles) {
+                const formData = new FormData();
+                formData.append("emails", valid.join(","));
+                formData.append("subject", subject);
+                formData.append("body", body);
+                for (const file of fileInput.files) {
+                    formData.append("attachments", file);
+                }
+                res = await fetch("/api/send-bulk-email", {
+                    method: "POST",
+                    body: formData
+                });
+            } else {
+                res = await fetch("/api/send-bulk-email", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({emails: valid, subject, body})
+                });
+            }
             const data = await res.json();
             
             if (data.success) {

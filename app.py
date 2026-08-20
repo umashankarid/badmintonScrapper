@@ -4549,14 +4549,30 @@ def get_group_emails():
 
 @app.route("/api/send-bulk-email", methods=["POST"])
 def send_bulk_email():
-    """Send email to multiple recipients"""
+    """Send email to multiple recipients, with optional attachments"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
-    data = request.json
-    emails = data.get("emails", [])
-    subject = data.get("subject", "").strip()
-    body = data.get("body", "").strip()
+    # Support both JSON and multipart/form-data (for file uploads)
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        emails = request.form.get("emails", "").split(",")
+        subject = request.form.get("subject", "").strip()
+        body = request.form.get("body", "").strip()
+        
+        # Process file attachments
+        import base64
+        attachments = []
+        files = request.files.getlist("attachments")
+        for f in files:
+            if f.filename:
+                file_content = base64.b64encode(f.read()).decode("utf-8")
+                attachments.append({"name": f.filename, "content": file_content})
+    else:
+        data = request.json
+        emails = data.get("emails", [])
+        subject = data.get("subject", "").strip()
+        body = data.get("body", "").strip()
+        attachments = data.get("attachments", None)
     
     if not emails:
         return jsonify(success=False, error="No email addresses provided")
@@ -4569,12 +4585,12 @@ def send_bulk_email():
         email = email.strip()
         if not email or "@" not in email:
             continue
-        if send_email(email, subject, body) is True:
+        if send_email(email, subject, body, attachments=attachments or None) is True:
             sent += 1
         else:
             failed += 1
     
-    logger.info(f"📧 Bulk email: sent={sent}, failed={failed}, subject='{subject}'")
+    logger.info(f"📧 Bulk email: sent={sent}, failed={failed}, subject='{subject}', attachments={len(attachments) if attachments else 0}")
     return jsonify(success=True, sent=sent, failed=failed, total=len(emails))
 
 
@@ -4686,8 +4702,8 @@ def clear_email_events():
         return jsonify(success=False, error=str(e))
 
 
-def send_email(to_email, subject, body):
-    """Send an email using Brevo HTTP API (works on platforms that block SMTP ports)."""
+def send_email(to_email, subject, body, attachments=None):
+    """Send an email using Brevo HTTP API. Attachments is a list of {"name": filename, "content": base64_content}."""
     
     conn = sqlite3.connect(ADMIN_DB)
     conn.row_factory = sqlite3.Row
@@ -4707,11 +4723,20 @@ def send_email(to_email, subject, body):
         return "API key not configured."
 
     sender_email = settings["smtp_email"]
-    api_key = settings["smtp_password"]  # We reuse the password field for Brevo API key
+    api_key = settings["smtp_password"]
     
-    logger.info(f"📧 Sending email to: {to_email} (via Brevo API)")
+    logger.info(f"📧 Sending email to: {to_email} (via Brevo API){' with ' + str(len(attachments)) + ' attachment(s)' if attachments else ''}")
 
     try:
+        payload = {
+            "sender": {"email": sender_email, "name": "BMK Komet"},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "textContent": body
+        }
+        if attachments:
+            payload["attachment"] = attachments
+        
         response = ext_requests.post(
             "https://api.brevo.com/v3/smtp/email",
             headers={
@@ -4719,13 +4744,8 @@ def send_email(to_email, subject, body):
                 "Content-Type": "application/json",
                 "accept": "application/json"
             },
-            json={
-                "sender": {"email": sender_email, "name": "BMK Komet"},
-                "to": [{"email": to_email}],
-                "subject": subject,
-                "textContent": body
-            },
-            timeout=15
+            json=payload,
+            timeout=30
         )
         
         if response.status_code in (200, 201):
