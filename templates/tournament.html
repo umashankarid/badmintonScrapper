@@ -385,21 +385,18 @@
                             summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #1976d2;">
                                 <div style="font-size:0.8em;color:#666;">🏨 Boende</div>
                                 <div style="font-size:1.3em;font-weight:bold;color:#1976d2;">${accommTotal} pers</div>
-                                <div style="font-size:0.8em;color:#666;">${accommPlayers} spelare</div>
                             </div>`;
                         }
                         if (transportTotal > 0) {
                             summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #e65100;">
                                 <div style="font-size:0.8em;color:#666;">🚗 Behöver skjuts</div>
                                 <div style="font-size:1.3em;font-weight:bold;color:#e65100;">${transportTotal} pers</div>
-                                <div style="font-size:0.8em;color:#666;">${transportPlayers} spelare</div>
                             </div>`;
                         }
                         if (offerTransportTotal > 0) {
                             summaryHtml += `<div style="background:white;padding:10px;border-radius:6px;border-left:4px solid #2e7d32;">
                                 <div style="font-size:0.8em;color:#666;">🚙 Erbjuder skjuts</div>
                                 <div style="font-size:1.3em;font-weight:bold;color:#2e7d32;">${offerTransportTotal} platser</div>
-                                <div style="font-size:0.8em;color:#666;">${offerTransportPlayers} spelare</div>
                             </div>`;
                         }
                         summaryHtml += '</div></div>';
