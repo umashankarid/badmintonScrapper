@@ -169,6 +169,14 @@ def init_tournaments_db():
         conn.execute("ALTER TABLE tournament_registrations ADD COLUMN transport_count INTEGER DEFAULT 0")
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN offer_transport INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN offer_transport_seats INTEGER DEFAULT 0")
+    except Exception:
+        pass
     
     conn.commit()
     conn.close()
@@ -2933,7 +2941,8 @@ def get_tournament_registration():
         cur.execute("""
             SELECT id, tournament_name, license_id, singles_levels, doubles_levels, 
                    mixed_levels, doubles_partner, mixed_partner, registration_date,
-                   need_accommodation, accommodation_count, need_transport, transport_count
+                   need_accommodation, accommodation_count, need_transport, transport_count,
+                   offer_transport, offer_transport_seats
             FROM tournament_registrations 
             WHERE tournament_name = ? AND license_id = ?
         """, (tournament_name, license_id))
@@ -2958,7 +2967,9 @@ def get_tournament_registration():
             "need_accommodation": bool(row[9]) if row[9] is not None else False,
             "accommodation_count": row[10] or 0,
             "need_transport": bool(row[11]) if row[11] is not None else False,
-            "transport_count": row[12] or 0
+            "transport_count": row[12] or 0,
+            "offer_transport": bool(row[13]) if len(row) > 13 and row[13] is not None else False,
+            "offer_transport_seats": row[14] if len(row) > 14 else 0
         }
         
         return jsonify(success=True, registration=registration)
@@ -3676,6 +3687,7 @@ def add_player():
                     doubles_partner = ?, mixed_partner = ?,
                     need_accommodation = ?, accommodation_count = ?,
                     need_transport = ?, transport_count = ?,
+                    offer_transport = ?, offer_transport_seats = ?,
                     registration_date = CURRENT_TIMESTAMP
                 WHERE tournament_name = ? AND license_id = ?
             """, (
@@ -3688,6 +3700,8 @@ def add_player():
                 player.get("accommodation_count", 0),
                 1 if player.get("need_transport") else 0,
                 player.get("transport_count", 0),
+                1 if player.get("offer_transport") else 0,
+                player.get("offer_transport_seats", 0),
                 tournament_name,
                 license_id
             ))
@@ -3709,8 +3723,8 @@ def add_player():
             # Insert new registration
             cur_main.execute("""
                 INSERT INTO tournament_registrations (tournament_name, license_id, singles_levels, doubles_levels, mixed_levels,
-                 doubles_partner, mixed_partner, need_accommodation, accommodation_count, need_transport, transport_count, registration_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                 doubles_partner, mixed_partner, need_accommodation, accommodation_count, need_transport, transport_count, offer_transport, offer_transport_seats, registration_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 tournament_name,
                 license_id,
@@ -3722,7 +3736,9 @@ def add_player():
                 1 if player.get("need_accommodation") else 0,
                 player.get("accommodation_count", 0),
                 1 if player.get("need_transport") else 0,
-                player.get("transport_count", 0)
+                player.get("transport_count", 0),
+                1 if player.get("offer_transport") else 0,
+                player.get("offer_transport_seats", 0)
             ))
             logger.info(f"✅ Registered {player.get('player_name')} for tournament {tournament_name}")
         

@@ -65,6 +65,16 @@
                         <input type="number" id="transport-count" min="1" max="10" value="1" style="width:60px;padding:4px;font-size:0.9em;">
                     </div>
                 </div>
+                <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:0.9em;cursor:pointer;">
+                        <input type="checkbox" id="offer-transport" onchange="toggleOfferTransport()">
+                        Kan erbjuda skjuts / Can offer transport
+                    </label>
+                    <div id="offer-transport-count-container" style="display:none;">
+                        <label style="font-size:0.85em;color:#555;">Lediga platser / Available seats:</label>
+                        <input type="number" id="offer-transport-count" min="1" max="8" value="1" style="width:60px;padding:4px;font-size:0.9em;">
+                    </div>
+                </div>
             </div>
 
             <button type="submit" id="submit-btn">Register</button>
@@ -344,18 +354,23 @@
                     
                     // Show accommodation/transport summary
                     let accommTotal = 0, accommPlayers = 0, transportTotal = 0, transportPlayers = 0;
+                    let offerTransportTotal = 0, offerTransportPlayers = 0;
                     players.forEach(p => {
                         if (p.need_accommodation) { accommPlayers++; accommTotal += (p.accommodation_count || 1); }
                         if (p.need_transport) { transportPlayers++; transportTotal += (p.transport_count || 1); }
+                        if (p.offer_transport) { offerTransportPlayers++; offerTransportTotal += (p.offer_transport_seats || 1); }
                     });
                     
-                    if (accommTotal > 0 || transportTotal > 0) {
+                    if (accommTotal > 0 || transportTotal > 0 || offerTransportTotal > 0) {
                         let summaryHtml = '<div style="margin-bottom:15px;padding:12px 15px;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;display:flex;gap:20px;flex-wrap:wrap;">';
                         if (accommTotal > 0) {
-                            summaryHtml += `<div><strong>🏨 Boende / Accommodation:</strong> ${accommPlayers} player${accommPlayers !== 1 ? 's' : ''}, ${accommTotal} person${accommTotal !== 1 ? 's' : ''} total</div>`;
+                            summaryHtml += `<div><strong>🏨 Boende:</strong> ${accommPlayers} player${accommPlayers !== 1 ? 's' : ''}, ${accommTotal} person${accommTotal !== 1 ? 's' : ''}</div>`;
                         }
                         if (transportTotal > 0) {
-                            summaryHtml += `<div><strong>🚗 Transport:</strong> ${transportPlayers} player${transportPlayers !== 1 ? 's' : ''}, ${transportTotal} person${transportTotal !== 1 ? 's' : ''} total</div>`;
+                            summaryHtml += `<div><strong>🚗 Behöver skjuts:</strong> ${transportPlayers} player${transportPlayers !== 1 ? 's' : ''}, ${transportTotal} person${transportTotal !== 1 ? 's' : ''}</div>`;
+                        }
+                        if (offerTransportTotal > 0) {
+                            summaryHtml += `<div><strong>🚙 Erbjuder skjuts:</strong> ${offerTransportPlayers} player${offerTransportPlayers !== 1 ? 's' : ''}, ${offerTransportTotal} seat${offerTransportTotal !== 1 ? 's' : ''} available</div>`;
                         }
                         summaryHtml += '</div>';
                         container.dataset.summary = summaryHtml;
@@ -457,7 +472,7 @@
                                     </tr></thead>
                                     <tbody>
                                         ${catPlayers.map(p => `<tr>
-                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${p.need_accommodation ? ' <span title="Boende: '+p.accommodation_count+' pers">🏨</span>' : ''}${p.need_transport ? ' <span title="Transport: '+p.transport_count+' pers">🚗</span>' : ''}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${p.need_accommodation ? ' <span title="Boende: '+p.accommodation_count+' pers">🏨</span>' : ''}${p.need_transport ? ' <span title="Transport: '+p.transport_count+' pers">🚗</span>' : ''}${p.offer_transport ? ' <span title="Erbjuder skjuts: '+p.offer_transport_seats+' platser">🚙</span>' : ''}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.license_id || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.club || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
@@ -517,6 +532,10 @@
             document.getElementById("transport-count-container").style.display = 
                 document.getElementById("need-transport").checked ? "inline-block" : "none";
         }
+        function toggleOfferTransport() {
+            document.getElementById("offer-transport-count-container").style.display = 
+                document.getElementById("offer-transport").checked ? "inline-block" : "none";
+        }
 
         document.getElementById("register-form").addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -563,7 +582,8 @@
                 accommodation_count: document.getElementById("need-accommodation").checked ? parseInt(document.getElementById("accommodation-count").value) || 1 : 0,
                 need_transport: document.getElementById("need-transport").checked,
                 transport_count: document.getElementById("need-transport").checked ? parseInt(document.getElementById("transport-count").value) || 1 : 0,
-            };
+                offer_transport: document.getElementById("offer-transport").checked,
+                offer_transport_seats: document.getElementById("offer-transport").checked ? parseInt(document.getElementById("offer-transport-count").value) || 1 : 0,
             };
             if (editId) player.player_id = parseInt(editId);
 
@@ -1594,6 +1614,11 @@
                             document.getElementById("need-transport").checked = true;
                             document.getElementById("transport-count-container").style.display = "inline-block";
                             document.getElementById("transport-count").value = reg.transport_count || 1;
+                        }
+                        if (reg.offer_transport) {
+                            document.getElementById("offer-transport").checked = true;
+                            document.getElementById("offer-transport-count-container").style.display = "inline-block";
+                            document.getElementById("offer-transport-count").value = reg.offer_transport_seats || 1;
                         }
                         document.getElementById("submit-btn").textContent = "Update";
                         document.getElementById("cancel-edit-btn").style.display = "none";
