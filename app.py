@@ -4734,15 +4734,19 @@ def clear_email_events():
         return jsonify(success=False, error=str(e))
 
 
-@app.route("/api/reset-reminder", methods=["POST"])
+@app.route("/api/reset-reminder", methods=["POST", "GET"])
 def reset_reminder():
     """Reset a sent reminder so it can be resent (admin only)"""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
-    data = request.json
-    tournament_name = data.get("tournament_name", "").strip()
-    reminder_type = data.get("type", "admin_closed").strip()
+    if request.method == "GET":
+        tournament_name = request.args.get("tournament", "").strip()
+        reminder_type = request.args.get("type", "admin_closed").strip()
+    else:
+        data = request.json
+        tournament_name = data.get("tournament_name", "").strip()
+        reminder_type = data.get("type", "admin_closed").strip()
     
     if not tournament_name:
         return jsonify(success=False, error="Tournament name required"), 400
