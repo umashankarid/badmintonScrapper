@@ -4734,6 +4734,34 @@ def clear_email_events():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/reset-reminder", methods=["POST"])
+def reset_reminder():
+    """Reset a sent reminder so it can be resent (admin only)"""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    reminder_type = data.get("type", "admin_closed").strip()
+    
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required"), 400
+    
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        cur = conn.cursor()
+        key = f"{tournament_name}_{reminder_type}"
+        cur.execute("DELETE FROM reminders_sent WHERE tournament_db = ?", (key,))
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🔄 Reset reminder '{key}': deleted {deleted} record(s)")
+        return jsonify(success=True, message=f"Reset '{reminder_type}' for '{tournament_name}'. Deleted {deleted} record(s). Will be resent on next scheduler run.")
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 def send_email(to_email, subject, body, attachments=None):
     """Send an email using Brevo HTTP API. Attachments is a list of {"name": filename, "content": base64_content}."""
     
