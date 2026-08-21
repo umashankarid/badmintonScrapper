@@ -714,7 +714,8 @@ def bwf_login():
         # Check if login failed - still on login page
         login_input = soup.find("input", {"name": "Login"})
         if login_input:
-            return jsonify(success=False, error="Invalid login credentials"), 401
+            logger.warning(f"⚠️ Login failed for username: {login}")
+            return jsonify(success=False, error="Inloggning misslyckades. Kontrollera att användarnamn och lösenord stämmer med ditt Badminton Sweden-konto.\n\nLogin failed. Please check that your username and password match your Badminton Sweden account."), 401
 
         # After login, find the profile link in the nav ("Min profil" -> /player-profile/<UUID>)
         profile_url = ""
