@@ -255,7 +255,7 @@
                     if (today > registrationCloses) {
                         // Registration closed (after deadline)
                         window.registrationClosed = true;
-                        showRegistrationClosed();
+                        if (!isAdmin) showRegistrationClosed();
                     }
                 }
                 
@@ -323,9 +323,10 @@
         }
 
         function disableRegistrationForm() {
-            if (window.registrationClosed) {
+            if (window.registrationClosed && !isAdmin) {
                 showRegistrationClosed();
-                document.getElementById("register-form").style.display = "none";
+                const form = document.getElementById("register-form");
+                if (form) form.style.display = "none";
             }
         }
 
