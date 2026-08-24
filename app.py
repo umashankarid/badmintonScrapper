@@ -6034,7 +6034,7 @@ def reminder_scheduler():
             send_reminders()
         except Exception as e:
             print(f"[Scheduler Error] {e}")
-        time.sleep(6 * 3600)  # Check every 6 hours
+        time.sleep(30 * 60)  # Check every 30 minutes
 
 
 if __name__ == "__main__":
