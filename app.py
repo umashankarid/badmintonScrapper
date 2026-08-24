@@ -3369,6 +3369,42 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
         logger.info(f"✅ Partner {partner_name} registered for tournament {tournament_name}")
     except Exception as e:
         logger.error(f"⚠️  Error registering partner for tournament: {e}")
+    
+    # Notify partner via email that they've been added
+    try:
+        # Get partner's email from players.db
+        conn_notify = sqlite3.connect(PLAYERS_DB)
+        cur_notify = conn_notify.cursor()
+        cur_notify.execute("SELECT email, secondary_email FROM players WHERE license_id = ?", (partner_license_id,))
+        notify_row = cur_notify.fetchone()
+        conn_notify.close()
+        
+        if notify_row and (notify_row[0] or notify_row[1]):
+            category = doubles_levels or mixed_levels or ""
+            paired_with = doubles_partner or mixed_partner or ""
+            
+            notify_subject = f"🏸 Du är anmäld som partner / You've been added as a partner: {tournament_name}"
+            notify_body = (f"Hi {partner_name},\n\n"
+                          f"Du har lagts till som partner i '{tournament_name}'.\n"
+                          f"Kategori: {category}\n"
+                          f"Partner: {paired_with}\n\n"
+                          f"You have been added as a partner in '{tournament_name}'.\n"
+                          f"Category: {category}\n"
+                          f"Partner: {paired_with}\n\n"
+                          f"Logga in för att se din anmälan / Log in to see your registration:\n"
+                          f"https://tournament-registration.bmkkomet.se\n\n"
+                          f"Tävlingsfrågor / Tournament questions: tavlingar@bmkkomet.se\n"
+                          f"Support / Hjälp: support@bmkkomet.se\n\n"
+                          f"Med vänliga hälsningar / Best regards,\nBMK Komet")
+            
+            if notify_row[0]:
+                send_email(notify_row[0], notify_subject, notify_body)
+                logger.info(f"📧 Partner notification sent to {notify_row[0]} for {tournament_name}")
+            if notify_row[1]:
+                send_email(notify_row[1], notify_subject, notify_body)
+                logger.info(f"📧 Partner notification sent to {notify_row[1]} (secondary) for {tournament_name}")
+    except Exception as e:
+        logger.debug(f"Could not notify partner: {e}")
 
 
 @app.route("/api/add-player", methods=["POST"])
