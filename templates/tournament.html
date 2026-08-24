@@ -1643,7 +1643,17 @@
                     });
                     
                     html += '</tbody></table>';
-                    container.innerHTML = html;
+                    // Add scheduler next run info
+                    fetch("/api/scheduler-status").then(r => r.json()).then(s => {
+                        if (s.next_run) {
+                            const nextRun = new Date(s.next_run);
+                            const diffMs = nextRun - new Date();
+                            const mins = Math.max(0, Math.round(diffMs / 60000));
+                            html += `<p style="margin-top:10px;font-size:0.85em;color:#555;">⏱️ Next scheduler run: <strong>${mins > 0 ? mins + ' min' : 'now'}</strong> (${s.next_run.substring(11,16)})</p>`;
+                        }
+                        container.innerHTML = html;
+                    }).catch(() => { container.innerHTML = html; });
+                    
                     document.getElementById("auto-email-countdown-section").style.display = "block";
                 })
                 .catch(e => console.debug("Auto-email countdown error:", e));

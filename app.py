@@ -6027,14 +6027,33 @@ def test_auto_reminders():
 
 
 def reminder_scheduler():
-    """Run reminders check every 6 hours."""
+    """Run reminders check every 30 minutes."""
     import time
+    from datetime import datetime, timedelta
+    
+    global scheduler_next_run, scheduler_last_run
+    
     while True:
         try:
+            scheduler_last_run = datetime.now().isoformat()
+            logger.info(f"📧 Scheduler running... (last run: {scheduler_last_run})")
             send_reminders()
         except Exception as e:
-            print(f"[Scheduler Error] {e}")
+            logger.error(f"[Scheduler Error] {e}")
+        scheduler_next_run = (datetime.now() + timedelta(minutes=30)).isoformat()
+        logger.info(f"📧 Next scheduler run at: {scheduler_next_run}")
         time.sleep(30 * 60)  # Check every 30 minutes
+
+
+# Global scheduler tracking
+scheduler_next_run = None
+scheduler_last_run = None
+
+
+@app.route("/api/scheduler-status", methods=["GET"])
+def get_scheduler_status():
+    """Get the scheduler next run time"""
+    return jsonify(success=True, next_run=scheduler_next_run, last_run=scheduler_last_run)
 
 
 if __name__ == "__main__":
