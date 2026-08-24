@@ -1568,7 +1568,7 @@
             
             fetch(`/api/tournament?dbFile=${encodeURIComponent(dbFile)}`)
                 .then(r => r.json())
-                .then(data => {
+                .then(async (data) => {
                     if (!data.success) return;
                     const t = data.tournament;
                     const regCloses = t.admin_reg_end_date || t.registration_closes || "";
@@ -1604,9 +1604,9 @@
                         const dayAfter = new Date(regDate);
                         dayAfter.setDate(regDate.getDate() + 1);
                         
-                        emails.push({ name: "Registration reminder (3 days before)", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Unregistered players" });
-                        emails.push({ name: "Last day to register", date: regCloses, countdown: getCountdown(regCloses), to: "Unregistered players" });
-                        emails.push({ name: "Admin: Registration closed", date: dayAfter.toISOString().slice(0,10), countdown: getCountdown(dayAfter.toISOString().slice(0,10)), to: "Admins" });
+                        emails.push({ name: "Registration reminder (3 days before)", type: "3days", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Unregistered players" });
+                        emails.push({ name: "Last day to register", type: "0days", date: regCloses, countdown: getCountdown(regCloses), to: "Unregistered players" });
+                        emails.push({ name: "Admin: Registration closed", type: "admin_closed", date: dayAfter.toISOString().slice(0,10), countdown: getCountdown(dayAfter.toISOString().slice(0,10)), to: "Admins" });
                     }
                     
                     if (cancelDeadline) {
@@ -1614,7 +1614,7 @@
                         const oneDayBefore = new Date(cancelDate);
                         oneDayBefore.setDate(cancelDate.getDate() - 1);
                         
-                        emails.push({ name: "Cancellation deadline reminder", date: oneDayBefore.toISOString().slice(0,10), countdown: getCountdown(oneDayBefore.toISOString().slice(0,10)), to: "Registered players" });
+                        emails.push({ name: "Cancellation deadline reminder", type: "cancel_1day", date: oneDayBefore.toISOString().slice(0,10), countdown: getCountdown(oneDayBefore.toISOString().slice(0,10)), to: "Registered players" });
                     }
                     
                     if (compStart) {
@@ -1622,14 +1622,26 @@
                         const threeDaysBefore = new Date(compDate);
                         threeDaysBefore.setDate(compDate.getDate() - 3);
                         
-                        emails.push({ name: "Competition in 3 days", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Registered players" });
-                        emails.push({ name: "Competition starts today", date: compStart, countdown: getCountdown(compStart), to: "Registered players" });
+                        emails.push({ name: "Competition in 3 days", type: "comp_3days", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Registered players" });
+                        emails.push({ name: "Competition starts today", type: "comp_0days", date: compStart, countdown: getCountdown(compStart), to: "Registered players" });
                     }
+                    
+                    // Check which reminders have already been sent
+                    const sentRes = await fetch(`/api/reminders-sent-status?tournament=${encodeURIComponent(dbFile)}`);
+                    const sentData = await sentRes.json();
+                    const sentTypes = sentData.sent_types || [];
+                    
+                    // Override countdown for sent emails
+                    emails.forEach(e => {
+                        if (sentTypes.includes(e.type)) {
+                            e.countdown = { text: "✅ Sent", color: "#2e7d32", passed: true };
+                        }
+                    });
                     
                     // Build HTML
                     const container = document.getElementById("auto-email-countdown");
                     let html = '<table style="width:100%;border-collapse:collapse;font-size:0.9em;">';
-                    html += '<thead><tr style="background:#fff3e0;"><th style="padding:6px 8px;text-align:left;">Auto-Email</th><th style="padding:6px 8px;text-align:left;">Date</th><th style="padding:6px 8px;text-align:left;">Countdown</th><th style="padding:6px 8px;text-align:left;">Recipients</th></tr></thead><tbody>';
+                    html += '<thead><tr style="background:#fff3e0;"><th style="padding:6px 8px;text-align:left;">Auto-Email</th><th style="padding:6px 8px;text-align:left;">Date</th><th style="padding:6px 8px;text-align:left;">Status</th><th style="padding:6px 8px;text-align:left;">Recipients</th></tr></thead><tbody>';
                     
                     emails.forEach(e => {
                         if (!e.countdown) return;

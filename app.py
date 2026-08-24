@@ -6080,6 +6080,34 @@ def get_scheduler_status():
     return jsonify(success=True, next_run=scheduler_next_run, last_run=scheduler_last_run)
 
 
+@app.route("/api/reminders-sent-status", methods=["GET"])
+def get_reminders_sent_status():
+    """Check which reminder types have been sent for a tournament"""
+    tournament_name = request.args.get("tournament", "").strip()
+    if not tournament_name:
+        return jsonify(success=True, sent_types=[])
+    
+    try:
+        conn = sqlite3.connect(ADMIN_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT tournament_db FROM reminders_sent WHERE tournament_db LIKE ?",
+                   (f"{tournament_name}_%",))
+        rows = cur.fetchall()
+        conn.close()
+        
+        sent_types = []
+        for row in rows:
+            # Extract type from "tournament_name_TYPE"
+            key = row[0]
+            if key.startswith(tournament_name + "_"):
+                reminder_type = key[len(tournament_name) + 1:]
+                sent_types.append(reminder_type)
+        
+        return jsonify(success=True, sent_types=sent_types)
+    except Exception as e:
+        return jsonify(success=True, sent_types=[])
+
+
 if __name__ == "__main__":
     import threading
     threading.Thread(target=reminder_scheduler, daemon=True).start()
