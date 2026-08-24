@@ -119,6 +119,14 @@
         </form>
     </div>
 
+    <!-- Auto-Email Countdown (admin only) -->
+    <div id="auto-email-countdown-section" style="display:none;margin:20px 0;padding:15px;border-radius:8px;background:#fff8e1;border:1px solid #ffe082;">
+        <details>
+            <summary style="cursor:pointer;font-weight:bold;color:#f57c00;">⏰ Auto-Email Schedule</summary>
+            <div id="auto-email-countdown" style="margin-top:10px;font-size:0.9em;"></div>
+        </details>
+    </div>
+
     <!-- Send Email to Registered Players (admin only) -->
     <div id="auto-reminder-section" style="display:none;margin:20px 0;padding:15px;border-radius:8px;background:#f5f5f5;border:1px solid #e0e0e0;">
         <details>
@@ -1555,6 +1563,92 @@
             }
         }
 
+        function loadAutoEmailCountdown() {
+            if (!dbFile) return;
+            
+            fetch(`/api/tournament?dbFile=${encodeURIComponent(dbFile)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const t = data.tournament;
+                    const regCloses = t.admin_reg_end_date || t.registration_closes || "";
+                    const cancelDeadline = t.cancellation_deadline || "";
+                    const compStart = t.competition_start || "";
+                    
+                    if (!regCloses && !cancelDeadline && !compStart) return;
+                    
+                    const now = new Date();
+                    const today = now.toISOString().slice(0, 10);
+                    
+                    function getCountdown(targetDate) {
+                        if (!targetDate) return null;
+                        const target = new Date(targetDate + "T00:00:00");
+                        const diffMs = target - now;
+                        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                        if (diffDays < 0) return { text: "Sent", color: "#999", passed: true };
+                        if (diffDays === 0) return { text: "Today!", color: "#c62828", passed: false };
+                        if (diffDays === 1) {
+                            const hours = Math.round(diffMs / (1000 * 60 * 60));
+                            return { text: `${hours}h`, color: "#e65100", passed: false };
+                        }
+                        return { text: `${diffDays} days`, color: "#1565c0", passed: false };
+                    }
+                    
+                    // Calculate countdown for each auto-email
+                    const emails = [];
+                    
+                    if (regCloses) {
+                        const regDate = new Date(regCloses);
+                        const threeDaysBefore = new Date(regDate);
+                        threeDaysBefore.setDate(regDate.getDate() - 3);
+                        const dayAfter = new Date(regDate);
+                        dayAfter.setDate(regDate.getDate() + 1);
+                        
+                        emails.push({ name: "Registration reminder (3 days before)", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Unregistered players" });
+                        emails.push({ name: "Last day to register", date: regCloses, countdown: getCountdown(regCloses), to: "Unregistered players" });
+                        emails.push({ name: "Admin: Registration closed", date: dayAfter.toISOString().slice(0,10), countdown: getCountdown(dayAfter.toISOString().slice(0,10)), to: "Admins" });
+                    }
+                    
+                    if (cancelDeadline) {
+                        const cancelDate = new Date(cancelDeadline);
+                        const oneDayBefore = new Date(cancelDate);
+                        oneDayBefore.setDate(cancelDate.getDate() - 1);
+                        
+                        emails.push({ name: "Cancellation deadline reminder", date: oneDayBefore.toISOString().slice(0,10), countdown: getCountdown(oneDayBefore.toISOString().slice(0,10)), to: "Registered players" });
+                    }
+                    
+                    if (compStart) {
+                        const compDate = new Date(compStart);
+                        const threeDaysBefore = new Date(compDate);
+                        threeDaysBefore.setDate(compDate.getDate() - 3);
+                        
+                        emails.push({ name: "Competition in 3 days", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Registered players" });
+                        emails.push({ name: "Competition starts today", date: compStart, countdown: getCountdown(compStart), to: "Registered players" });
+                    }
+                    
+                    // Build HTML
+                    const container = document.getElementById("auto-email-countdown");
+                    let html = '<table style="width:100%;border-collapse:collapse;font-size:0.9em;">';
+                    html += '<thead><tr style="background:#fff3e0;"><th style="padding:6px 8px;text-align:left;">Auto-Email</th><th style="padding:6px 8px;text-align:left;">Date</th><th style="padding:6px 8px;text-align:left;">Countdown</th><th style="padding:6px 8px;text-align:left;">Recipients</th></tr></thead><tbody>';
+                    
+                    emails.forEach(e => {
+                        if (!e.countdown) return;
+                        const style = e.countdown.passed ? 'color:#999;text-decoration:line-through;' : '';
+                        html += `<tr style="border-top:1px solid #ffe082;">
+                            <td style="padding:5px 8px;${style}">${e.name}</td>
+                            <td style="padding:5px 8px;${style}">${e.date}</td>
+                            <td style="padding:5px 8px;"><span style="font-weight:bold;color:${e.countdown.color};">${e.countdown.text}</span></td>
+                            <td style="padding:5px 8px;color:#666;">${e.to}</td>
+                        </tr>`;
+                    });
+                    
+                    html += '</tbody></table>';
+                    container.innerHTML = html;
+                    document.getElementById("auto-email-countdown-section").style.display = "block";
+                })
+                .catch(e => console.debug("Auto-email countdown error:", e));
+        }
+
         async function submitToBWF() {
             if (!dbFile) { alert("No tournament loaded"); return; }
             if (!confirm("Submit all registered players to Badminton Sweden (SBF)?\n\nThis will use the club account (sbf04959) to register all players.\n\nYou will need the club account password.")) return;
@@ -1714,6 +1808,7 @@
             await loadWarnings();
             if (isAdmin) await loadReminders();
             if (isAdmin) await loadGroupInvite();
+            if (isAdmin) loadAutoEmailCountdown();
             
             // If player is already registered (maybe as partner), switch form to edit mode
             if (!isAdmin && loggedInPlayer && loggedInPlayer.license_id && !window.registrationClosed) {
