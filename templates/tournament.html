@@ -1623,7 +1623,6 @@
                         threeDaysBefore.setDate(compDate.getDate() - 3);
                         
                         emails.push({ name: "Competition in 3 days", type: "comp_3days", date: threeDaysBefore.toISOString().slice(0,10), countdown: getCountdown(threeDaysBefore.toISOString().slice(0,10)), to: "Registered players" });
-                        emails.push({ name: "Competition starts today", type: "comp_0days", date: compStart, countdown: getCountdown(compStart), to: "Registered players" });
                     }
                     
                     // Check which reminders have already been sent
