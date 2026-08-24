@@ -5068,29 +5068,36 @@ def send_reminders():
             except Exception:
                 pass
             
+            logger.info(f"📧   → Tournament groups: {tournament_groups}")
+            
             # Get registered player license_ids for this tournament (to skip them)
             cur_t.execute(
                 "SELECT license_id FROM tournament_registrations WHERE tournament_name = ?",
                 (tournament_name,)
             )
             registered_ids = {row[0] for row in cur_t.fetchall()}
+            logger.info(f"📧   → Already registered: {len(registered_ids)} players")
             
             # Get eligible players from kometPlayers
             conn_p = sqlite3.connect(PLAYERS_DB)
             cur_p = conn_p.cursor()
             cur_p.execute("SELECT name, license_id, email, secondary_email, groups FROM kometPlayers WHERE (email IS NOT NULL AND email != '') OR (secondary_email IS NOT NULL AND secondary_email != '')")
             
+            all_komet = cur_p.fetchall()
+            logger.info(f"📧   → Total komet players with email: {len(all_komet)}")
+            
             sent_count = 0
             skipped_registered = 0
             skipped_groups = 0
             skipped_opted_out = 0
             skipped_already_sent = 0
-            for p_row in cur_p.fetchall():
+            for p_row in all_komet:
                 player_name, license_id, email, secondary_email, player_groups_json = p_row
                 
                 # Skip if already registered
                 if license_id in registered_ids:
                     skipped_registered += 1
+                    logger.debug(f"📧     Skip {player_name} ({license_id}): already registered")
                     continue
                 
                 # Check group eligibility
@@ -5103,6 +5110,7 @@ def send_reminders():
                 if tournament_groups:
                     if not set(player_groups).intersection(set(tournament_groups)):
                         skipped_groups += 1
+                        logger.debug(f"📧     Skip {player_name} ({license_id}): groups {player_groups} don't match {tournament_groups}")
                         continue  # Player's groups don't match
                 
                 # Check if player opted out of reminders for this tournament
@@ -5110,6 +5118,7 @@ def send_reminders():
                              (license_id, tournament_name))
                 if cur_t.fetchone():
                     skipped_opted_out += 1
+                    logger.debug(f"📧     Skip {player_name} ({license_id}): opted out")
                     continue  # Player opted out
                 
                 # Check if reminder already sent for this type
@@ -5122,6 +5131,7 @@ def send_reminders():
                 if cur_admin.fetchone():
                     conn_admin.close()
                     skipped_already_sent += 1
+                    logger.debug(f"📧     Skip {player_name} ({email}): already sent {reminder_type} today")
                     continue  # Already sent today
                 
                 # Build email
@@ -5184,6 +5194,8 @@ def send_reminders():
             conn_p.close()
             
             logger.info(f"📧   → Summary for '{tournament_name}' ({reminder_type}): sent={sent_count}, skipped_registered={skipped_registered}, skipped_groups={skipped_groups}, skipped_opted_out={skipped_opted_out}, skipped_already_sent={skipped_already_sent}")
+            if sent_count == 0 and skipped_already_sent == 0:
+                logger.warning(f"📧   ⚠️ No emails sent and none previously sent! Check: tournament_groups={tournament_groups}, registered={len(registered_ids)}, total_komet={len(all_komet)}")
         
         conn_t.close()
     except Exception as e:
