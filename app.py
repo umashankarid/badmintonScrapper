@@ -2818,7 +2818,7 @@ def get_tournament_info():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups, enable_accommodation_transport
+            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups, enable_accommodation_transport, competition_start
             FROM tournaments WHERE tournament_name = ?
         """, (tournament_name,))
         
@@ -2847,7 +2847,7 @@ def get_tournament_info():
                 conn.close()
                 return jsonify(success=False, error="Tournament not found"), 404
         
-        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json, enable_accomm_transport = row
+        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json, enable_accomm_transport, competition_start = row
         categories = json.loads(categories_json) if categories_json else {}
         tournament_groups = []
         try:
@@ -2890,6 +2890,7 @@ def get_tournament_info():
             "registration_closes": registration_closes or "",
             "admin_reg_end_date": admin_reg_end_date or "",
             "cancellation_deadline": cancellation_deadline or "",
+            "competition_start": competition_start or "",
             "categories": categories,
             "tournament_groups": tournament_groups,
             "enable_accommodation_transport": bool(enable_accomm_transport),
