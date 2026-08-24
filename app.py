@@ -5038,6 +5038,8 @@ def send_reminders():
         """)
         tournaments = cur_t.fetchall()
         
+        logger.info(f"📧 Found {len(tournaments)} tournaments with registration deadlines")
+        
         for tournament_name, admin_reg_end_date, tournament_groups_json in tournaments:
             try:
                 reg_close = datetime.strptime(admin_reg_end_date, "%Y-%m-%d").date()
@@ -5045,6 +5047,7 @@ def send_reminders():
                 continue
             
             days_left = (reg_close - today).days
+            logger.info(f"📧 Tournament: '{tournament_name}', deadline={admin_reg_end_date}, days_left={days_left}")
             
             # Send admin notification the day AFTER registration closes (e.g. deadline=17th, send on 18th)
             if days_left == -1:
@@ -5052,9 +5055,11 @@ def send_reminders():
             
             # Only send player reminders at 3 days and on the last day (0 days)
             if days_left not in (3, 0):
+                logger.info(f"📧   → Skipping (days_left={days_left}, need 3 or 0)")
                 continue
             
             reminder_type = f"{days_left}days"
+            logger.info(f"📧   → Processing reminder type: {reminder_type}")
             
             # Get tournament groups
             tournament_groups = []
@@ -5076,11 +5081,16 @@ def send_reminders():
             cur_p.execute("SELECT name, license_id, email, secondary_email, groups FROM kometPlayers WHERE (email IS NOT NULL AND email != '') OR (secondary_email IS NOT NULL AND secondary_email != '')")
             
             sent_count = 0
+            skipped_registered = 0
+            skipped_groups = 0
+            skipped_opted_out = 0
+            skipped_already_sent = 0
             for p_row in cur_p.fetchall():
                 player_name, license_id, email, secondary_email, player_groups_json = p_row
                 
                 # Skip if already registered
                 if license_id in registered_ids:
+                    skipped_registered += 1
                     continue
                 
                 # Check group eligibility
@@ -5092,12 +5102,14 @@ def send_reminders():
                 
                 if tournament_groups:
                     if not set(player_groups).intersection(set(tournament_groups)):
+                        skipped_groups += 1
                         continue  # Player's groups don't match
                 
                 # Check if player opted out of reminders for this tournament
                 cur_t.execute("SELECT id FROM reminder_opt_out WHERE license_id = ? AND tournament_name = ?",
                              (license_id, tournament_name))
                 if cur_t.fetchone():
+                    skipped_opted_out += 1
                     continue  # Player opted out
                 
                 # Check if reminder already sent for this type
@@ -5109,6 +5121,7 @@ def send_reminders():
                 )
                 if cur_admin.fetchone():
                     conn_admin.close()
+                    skipped_already_sent += 1
                     continue  # Already sent today
                 
                 # Build email
@@ -5170,8 +5183,7 @@ def send_reminders():
             
             conn_p.close()
             
-            if sent_count > 0:
-                logger.info(f"📧 Sent {sent_count} reminders for {tournament_name} ({days_left} days before close)")
+            logger.info(f"📧   → Summary for '{tournament_name}' ({reminder_type}): sent={sent_count}, skipped_registered={skipped_registered}, skipped_groups={skipped_groups}, skipped_opted_out={skipped_opted_out}, skipped_already_sent={skipped_already_sent}")
         
         conn_t.close()
     except Exception as e:
