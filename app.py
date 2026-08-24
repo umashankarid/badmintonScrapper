@@ -5032,9 +5032,9 @@ def send_reminders():
         conn_t = sqlite3.connect(TOURNAMENTS_DB)
         cur_t = conn_t.cursor()
         cur_t.execute("""
-            SELECT tournament_name, admin_reg_end_date, tournament_groups
+            SELECT tournament_name, COALESCE(admin_reg_end_date, registration_closes) as reg_end_date, tournament_groups
             FROM tournaments 
-            WHERE selected_for_view = 1 AND admin_reg_end_date IS NOT NULL AND admin_reg_end_date != ''
+            WHERE selected_for_view = 1 AND (admin_reg_end_date IS NOT NULL AND admin_reg_end_date != '' OR registration_closes IS NOT NULL AND registration_closes != '')
         """)
         tournaments = cur_t.fetchall()
         
