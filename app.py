@@ -3562,12 +3562,19 @@ def add_player():
                             if _m and _m.group(2):
                                 all_levels.append({"event": lvl, "category": _m.group(1), "level": _m.group(2).strip()})
             
+            confirmed_age_permission = player.get("confirmed_age_permission", False)
+            
             for entry in all_levels:
                 level = entry["level"]
                 # HARD BLOCK: Under 18 cannot play C or D class (seniors only)
                 if level in {"C", "D"} and age_at_comp < 18:
                     return jsonify(success=False,
                         error=f"Registration rejected: Player (born {birth_year}) is under 18. {level} class is for seniors (18+) only.")
+                
+                # Under 13 needs special permission (dispensation) for senior classes B, A, Elit
+                if level in {"B", "A", "Elit"} and age_at_comp < 13 and not confirmed_age_permission:
+                    return jsonify(success=False, needs_permission=True,
+                        error=f"Spelaren är {age_at_comp} år (född {birth_year}). Spelare under 13 år behöver särskilt tillstånd (dispens) för att spela {level}-klass.\n\nPlayer is {age_at_comp} years old (born {birth_year}). Players under 13 need special permission (dispensation) to play {level} class.\n\nHar spelaren fått dispens? / Does the player have permission?")
                 
                 # Check age-based categories (U9, U11, U13, U15, U17, U19)
                 if level.startswith("U"):

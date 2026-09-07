@@ -682,8 +682,9 @@
                 if (result.needs_permission) {
                     // Show confirmation popup for special permission
                     if (confirm(result.error)) {
-                        // Retry with confirmation flag
+                        // Retry with confirmation flags
                         player.confirmed_sjt_permission = true;
+                        player.confirmed_age_permission = true;
                         const retryRes = await fetch("/api/add-player", {
                             method: "POST",
                             headers: {"Content-Type": "application/json"},
@@ -1338,8 +1339,27 @@
             });
             const result = await res.json();
             if (!result.success) {
-                alert(result.error || "Operation failed");
-                return;
+                if (result.needs_permission) {
+                    if (confirm(result.error)) {
+                        player.confirmed_sjt_permission = true;
+                        player.confirmed_age_permission = true;
+                        const retryRes = await fetch("/api/add-player", {
+                            method: "POST",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({dbFile, player})
+                        });
+                        const retryResult = await retryRes.json();
+                        if (!retryResult.success) {
+                            alert(retryResult.error || "Operation failed");
+                            return;
+                        }
+                    } else {
+                        return;
+                    }
+                } else {
+                    alert(result.error || "Operation failed");
+                    return;
+                }
             }
             cancelAdminEdit();
             loadPlayers();
