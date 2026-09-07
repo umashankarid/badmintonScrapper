@@ -749,6 +749,12 @@
         }
 
         async function deletePlayer(id) {
+            // Confirm withdrawal upfront
+            const confirmMsg = isAdmin 
+                ? "Remove this player from the tournament?" 
+                : "Är du säker på att du vill avanmäla dig från denna tävling?\n\nAre you sure you want to withdraw from this tournament?";
+            if (!confirm(confirmMsg)) return;
+            
             const res = await fetch("/api/delete-player", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
