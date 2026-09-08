@@ -4813,7 +4813,12 @@ def reset_reminder():
 
 def send_email(to_email, subject, body, attachments=None):
     """Send an email using Brevo HTTP API. Attachments is a list of {"name": filename, "content": base64_content}."""
-    
+
+    # Local-dev kill switch so testing never mails real players. Unset (production) = send.
+    if os.environ.get("EMAIL_ENABLED", "1").lower() in ("0", "false", "no"):
+        logger.info(f"📧 🚫 EMAIL_ENABLED=0 — not sending. Would have sent to {to_email}: {subject}")
+        return True
+
     conn = sqlite3.connect(ADMIN_DB)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -6119,4 +6124,9 @@ def get_reminders_sent_status():
 if __name__ == "__main__":
     import threading
     threading.Thread(target=reminder_scheduler, daemon=True).start()
-    app.run(host="0.0.0.0", port=3000, debug=True, use_reloader=False)
+    # PORT/HOST/DEBUG are overridable for local dev; defaults match production (3000, all interfaces, debug on)
+    port = int(os.environ.get("PORT", 3000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    debug = os.environ.get("DEBUG", "1").lower() not in ("0", "false", "no")
+    logger.info(f"🚀 Starting server on http://{host}:{port} (debug={debug})")
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
