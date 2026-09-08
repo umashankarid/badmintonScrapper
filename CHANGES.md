@@ -34,8 +34,12 @@
 - **AGENTS.md** (new) — architecture and conventions reference for AI coding agents: commands,
   the four-database layout, the in-place `ALTER TABLE` schema pattern, static-not-Jinja templates,
   BWF-proxied session auth, reminder dedupe keys, and the age-group/level/MJT-SJT domain rules.
-  Agent-agnostic and the single source of truth; **CLAUDE.md** is a one-line pointer to it so
-  Claude Code, Codex, Cursor, Gemini CLI and others all read the same document.
+  Agent-agnostic and the single source of truth. **CLAUDE.md** and
+  **.github/copilot-instructions.md** are one-line pointers to it, so Claude Code, GitHub Copilot,
+  Codex, Cursor, Gemini CLI and others all read the same document. Pointers rather than symlinks:
+  symlink creation needs Administrator rights on Windows and `core.symlinks` is false, so a
+  symlink would be checked out as a plain text file. The pointers duplicate no content, so there
+  is nothing to keep in sync.
 
 - **.gitignore** — added `.venv/`, `*.log`, `data-local/`, `backups/`.
 
