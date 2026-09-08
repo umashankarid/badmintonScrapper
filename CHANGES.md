@@ -31,9 +31,11 @@
 - **run-local.ps1** (new) — local launcher setting `PORT=3002`, `DEBUG=0`,
   `DATA_DIR=<repo>\data-local`, `EMAIL_ENABLED=0`. Local-only; nothing reads it in production.
 
-- **CLAUDE.md** (new) — architecture and conventions reference for AI coding agents: commands,
+- **AGENTS.md** (new) — architecture and conventions reference for AI coding agents: commands,
   the four-database layout, the in-place `ALTER TABLE` schema pattern, static-not-Jinja templates,
   BWF-proxied session auth, reminder dedupe keys, and the age-group/level/MJT-SJT domain rules.
+  Agent-agnostic and the single source of truth; **CLAUDE.md** is a one-line pointer to it so
+  Claude Code, Codex, Cursor, Gemini CLI and others all read the same document.
 
 - **.gitignore** — added `.venv/`, `*.log`, `data-local/`, `backups/`.
 
