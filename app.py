@@ -4815,8 +4815,9 @@ def send_email(to_email, subject, body, attachments=None):
     """Send an email using Brevo HTTP API. Attachments is a list of {"name": filename, "content": base64_content}."""
 
     # Local-dev kill switch so testing never mails real players. Unset (production) = send.
-    if os.environ.get("EMAIL_ENABLED", "1").lower() in ("0", "false", "no"):
-        logger.info(f"📧 🚫 EMAIL_ENABLED=0 — not sending. Would have sent to {to_email}: {subject}")
+    email_enabled = os.environ.get("EMAIL_ENABLED", "1")
+    if email_enabled.lower() in ("0", "false", "no"):
+        logger.info(f"📧 🚫 EMAIL_ENABLED={email_enabled} — not sending. Would have sent to {to_email}: {subject}")
         return True
 
     conn = sqlite3.connect(ADMIN_DB)

@@ -14,7 +14,7 @@ import json
 import os
 from datetime import datetime
 
-TOURNAMENTS_DB = "tournaments.db"
+TOURNAMENTS_DB = os.path.join(os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__))), "tournaments.db")
 BASE = f"http://localhost:{os.environ.get('PORT', '3000')}"
 URL = "https://badmintonsweden.tournamentsoftware.com/tournament/77FEC02B-4489-4D4C-A71F-C6844BAEB2BA"
 
