@@ -8,6 +8,14 @@ import sqlite3
 import os
 import tempfile
 
+# Needed only for its real init_players_db(), to build this test's fixture
+# against the application's actual schema instead of a hand-written copy
+# (see setUp). Every other test_*.py in this repo already imports app the
+# same plain way, sharing whatever DATA_DIR/PLAYERS_DB it resolved to on
+# first import in this process -- setUp never writes there; it always
+# points app.PLAYERS_DB at its own throwaway file first (see below).
+import app
+
 
 class TestPlayersData(unittest.TestCase):
     """Test player data integrity against a throwaway players.db this test
@@ -22,31 +30,31 @@ class TestPlayersData(unittest.TestCase):
     """
 
     def setUp(self):
+        # Built with the application's own init_players_db(), not a
+        # hand-written CREATE TABLE: a hand-written copy silently drifts from
+        # app.py's actual schema (app.py:466-513 -- 13 columns, name TEXT
+        # NOT NULL, profile_url UNIQUE, plus an ALTER-added secondary_email),
+        # which stops this test from ever catching real schema drift again.
+        # init_players_db() always writes to the module-level PLAYERS_DB, so
+        # swap it to our throwaway file for the call and put it back after.
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
+        original_players_db = app.PLAYERS_DB
+        app.PLAYERS_DB = self.db_path
+        try:
+            app.init_players_db()
+        finally:
+            app.PLAYERS_DB = original_players_db
+
         conn = sqlite3.connect(self.db_path)
-        conn.execute("""
-            CREATE TABLE players (
-                license_id TEXT PRIMARY KEY,
-                name TEXT,
-                club TEXT,
-                gender TEXT,
-                email TEXT,
-                phone TEXT
-            )
-        """)
-        conn.executemany(
+        # name is NOT NULL in the real schema, so unlike the old hand-written
+        # copy this fixture can't include a NULL-name placeholder row -- that
+        # state is impossible in production. One complete row is enough for
+        # every assertion below (temp_* rows are never in it either way).
+        conn.execute(
             "INSERT INTO players (license_id, name, club, gender, email, phone) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            [
-                ("DEV-9001", "Complete Player", "BMK Komet", "M", "player@example.com", "0701234567"),
-                # A placeholder row with a NULL name -- the shape
-                # test_no_temp_entries_with_null_name exists to catch a
-                # regression on (a *non-null* "temp_*" name), so a NULL one
-                # here exercises the boundary instead of leaving the check
-                # vacuously true on an all-clean fixture.
-                ("temp_0001", None, None, None, None, None),
-            ],
+            ("DEV-9001", "Complete Player", "BMK Komet", "M", "player@example.com", "0701234567"),
         )
         conn.commit()
         conn.close()

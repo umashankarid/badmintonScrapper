@@ -150,14 +150,6 @@ def player(data_dir, license_id, name, club="BMK Komet"):
         (license_id, name, f"/player-profile/{license_id}", club))
 
 
-def komet_player(data_dir, license_id, name, groups):
-    _execute(
-        data_dir, "players.db",
-        "INSERT OR REPLACE INTO kometPlayers (license_id, name, groups) "
-        "VALUES (?,?,?)",
-        (license_id, name, json.dumps(groups)))
-
-
 def tournaments(data_dir):
     conn = _connect(data_dir)
     rows = [dict(r) for r in conn.execute("SELECT * FROM tournaments")]

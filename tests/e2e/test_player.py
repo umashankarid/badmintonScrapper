@@ -135,16 +135,17 @@ def test_under_13_sees_the_dispens_confirmation(app_server, page, data_dir):
 def test_level_3_5_player_is_blocked_from_an_sjt_event(app_server, page, data_dir):
     """Jonas is LEVEL 3-5: MJT only. The block is server-side; the UI must show it.
 
-    Deliberately does not use seed.sjt_tournament()'s categories: "HS U15" is
-    also rejected by the unrelated U-age-group check (Jonas is a currently
-    15-year-old past the June cutoff, so the server tells him to play U17
-    regardless of his group), and "MJT HS U13" skips that check's regex
-    entirely and actually registers. Neither exercises the SJT/MJT split
-    this test is for -- confirmed against the running server: selecting
-    "HS U15" blocks with "Should play U17 or higher" and the SJT check never
-    runs; "MJT HS U13" returns success. An SJT-named open_tournament() with
-    an adult class (HS B, no U-prefix, no age relevance) isolates the actual
-    rule under test: the SJT check log line and its message both fire.
+    Deliberately does not register him into an SJT tournament's age-based
+    categories ("HS U15", "MJT HS U13"): "HS U15" is also rejected by the
+    unrelated U-age-group check (Jonas is a currently 15-year-old past the
+    June cutoff, so the server tells him to play U17 regardless of his
+    group), and "MJT HS U13" skips that check's regex entirely and actually
+    registers. Neither exercises the SJT/MJT split this test is for --
+    confirmed against the running server: selecting "HS U15" blocks with
+    "Should play U17 or higher" and the SJT check never runs; "MJT HS U13"
+    returns success. An SJT-named open_tournament() with an adult class
+    (HS B, no U-prefix, no age relevance) isolates the actual rule under
+    test: the SJT check log line and its message both fire.
     """
     name = seed.open_tournament(data_dir, name="Blocked SJT Cup")
     # No seed.komet_player() call here: sign_in_as's login overwrites
