@@ -36,3 +36,7 @@ def get_player_details(profile_url):
 
 def get_player_ranking_by_profile(profile_url):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def get_tournament_events(tournament_id):
+    raise NotImplementedError("Stub added in Task 12")

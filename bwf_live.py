@@ -7,6 +7,7 @@ the project that names tournamentsoftware.com.
 
 import json
 import logging
+import re
 
 import requests as ext_requests
 from bs4 import BeautifulSoup
@@ -14,6 +15,9 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://badmintonsweden.tournamentsoftware.com"
+
+# The event-class prefixes app.py has always looked for on the events page.
+EVENT_CATEGORIES = ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]
 
 
 class LoginPageUnavailable(Exception):
@@ -428,3 +432,53 @@ def get_player_ranking_by_profile(profile_url):
                 if category:
                     ranking_data[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
     return ranking_data
+
+
+def get_tournament_events(tournament_id, session=None):
+    """Event classes for one tournament, in the two shapes app.py derives from them.
+
+    "levels" is the bare level of each class ("HS A" -> "A"), which
+    /admin/fetch-tournament-info shows; the three *_levels lists are the full
+    class names, which the registration form stores as categories.
+
+    session is an already-cookiewalled session to reuse. fetch_tournament_info
+    passes its own so that scraping a tournament costs the same three requests
+    the inline code in app.py made, instead of a second cookiewall and a second
+    events page.
+    """
+    if session is None:
+        session = ext_requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0"})
+        session.post(f"{BASE_URL}/cookiewall/Save", data={
+            "ReturnUrl": "/",
+            "SettingsOpen": "false",
+            "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=5)
+
+    events_resp = session.get(f"{BASE_URL}/sport/events.aspx?id={tournament_id}", timeout=10)
+    events_soup = BeautifulSoup(events_resp.text, "html.parser")
+
+    all_events = set()
+    level_set = set()
+    for a in events_soup.select("a"):
+        text = a.get_text(strip=True)
+        if text and len(text) < 50 and any(cat in text for cat in EVENT_CATEGORIES):
+            all_events.add(text.strip())
+            parts = text.split()
+            if len(parts) >= 2:
+                level_set.add(parts[1])
+
+    events = {
+        "singles_levels": [],
+        "doubles_levels": [],
+        "mixed_levels": [],
+        "levels": sorted(level_set),
+    }
+    for event in sorted(all_events):
+        if event.startswith(("HS", "DS")):
+            events["singles_levels"].append(event)
+        elif event.startswith(("HD", "DD")):
+            events["doubles_levels"].append(event)
+        elif event.startswith("MD"):
+            events["mixed_levels"].append(event)
+    return events

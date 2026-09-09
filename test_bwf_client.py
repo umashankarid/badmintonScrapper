@@ -848,5 +848,100 @@ class TestPlayerDetailsEndpoint(unittest.TestCase):
         mocked.assert_called_once_with("/player-profile/ABC-123")
 
 
+TOURNAMENT_HTML = """
+<div class="media__title"><a href="/tournament/T-1">Vikingaslaget</a></div>
+<div class="media__subheading">Sollentuna</div>
+<div class="tournament-meta__timeline">
+  <ul>
+    <li><span class="list__value">Anmälan öppnar</span><time datetime="2026-01-01T00:00:00"></time></li>
+    <li><span class="list__value">Anmälan stänger</span><time datetime="2026-02-01T00:00:00"></time></li>
+    <li><span class="list__value">Sista återbud</span><time datetime="2026-02-10T00:00:00"></time></li>
+    <li><span class="list__value">Tävlingen startar</span><time datetime="2026-03-01T00:00:00"></time></li>
+    <li><span class="list__value">Tävlingen slutar</span><time datetime="2026-03-02T00:00:00"></time></li>
+  </ul>
+</div>
+"""
+
+EVENTS_HTML = """
+<div>
+  <a>HS A</a><a>DS B</a><a>HD A</a><a>DD B</a><a>MD C</a>
+</div>
+"""
+
+EVENTS_URL = "https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id=T-1"
+COOKIEWALL_URL = "https://badmintonsweden.tournamentsoftware.com/cookiewall/Save"
+COOKIEWALL_DATA = {
+    "ReturnUrl": "/",
+    "SettingsOpen": "false",
+    "CookieWallCategoryPreferences": "1,2,3",
+}
+
+
+class TestGetTournamentEvents(unittest.TestCase):
+    """The events page, in the two shapes app.py has always derived from it."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_sorts_events_into_singles_doubles_and_mixed(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(EVENTS_HTML)]
+        mock_session_cls.return_value = session
+
+        result = bwf_client.get_tournament_events("T-1")
+
+        self.assertEqual(sorted(result["singles_levels"]), ["DS B", "HS A"])
+        self.assertEqual(sorted(result["doubles_levels"]), ["DD B", "HD A"])
+        self.assertEqual(result["mixed_levels"], ["MD C"])
+        # The other shape: the bare level of each class, as /admin/fetch-tournament-info shows.
+        self.assertEqual(result["levels"], ["A", "B", "C"])
+
+        # Pin request construction for every outgoing call.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5)
+        session.get.assert_called_once_with(EVENTS_URL, timeout=10)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_ignores_links_that_are_not_event_classes(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(
+            "<div><a>Hem</a><a></a>"
+            "<a>PS A</a>"
+            "<a>HS A very long class name padded out past the fifty character limit</a>"
+            "<a>HD</a></div>")]
+        mock_session_cls.return_value = session
+
+        result = bwf_client.get_tournament_events("T-1")
+
+        # "PS A" matches a category code but no *_levels prefix; the long one and
+        # the bare "HD" contribute no level.
+        self.assertEqual(result["singles_levels"], [])
+        self.assertEqual(result["doubles_levels"], ["HD"])
+        self.assertEqual(result["mixed_levels"], [])
+        self.assertEqual(result["levels"], ["A"])
+
+    def test_reuses_a_supplied_session_without_a_second_cookiewall(self):
+        """fetch_tournament_info passes its own session; that must cost no extra request."""
+        import bwf_live
+        session = MagicMock()
+        session.get.side_effect = [_resp(EVENTS_HTML)]
+
+        with patch("bwf_live.ext_requests.Session") as mock_session_cls:
+            result = bwf_live.get_tournament_events("T-1", session=session)
+
+        self.assertEqual(result["mixed_levels"], ["MD C"])
+        mock_session_cls.assert_not_called()
+        session.post.assert_not_called()
+        session.headers.update.assert_not_called()
+        session.get.assert_called_once_with(EVENTS_URL, timeout=10)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.get_tournament_events("T-1")
+
+
 if __name__ == "__main__":
     unittest.main()
