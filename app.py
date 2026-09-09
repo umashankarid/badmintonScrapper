@@ -2084,7 +2084,10 @@ def open_tournaments():
                 "competition_start": row[8],
                 "competition_end": row[9],
                 "admin_reg_end_date": row[10] or "",
-                "_fake": bwf_client.get_mode() == "dev"
+                # Provenance, not current mode: a dev.local fixture stays tagged
+                # after flipping back to live, and a real row synced while dev
+                # mode happened to be on is never mistaken for a fixture.
+                "_fake": row[0].startswith("https://dev.local/")
             })
         
         return jsonify(tournaments=tournaments)

@@ -112,12 +112,15 @@ class TestModeEndpoints(unittest.TestCase):
 
 
 class TestOpenTournamentsFakeFlag(unittest.TestCase):
-    """/api/open-tournaments reads local SQLite rows, not bwf_client -- the
-    table has no _fake column and gets none (a schema change is out of
-    scope), so the honest signal is the mode in effect at request time:
-    everything visible locally in dev mode is dev data."""
+    """/api/open-tournaments tags a row "_fake" by provenance (the dev.local
+    host bwf_dev's fixtures always use -- see bwf_dev.py:109,122,135,148), not
+    by whichever mode happens to be active at request time. Keying it off the
+    live mode instead would invert the marker: a real tournament synced while
+    dev mode was on would get a FAKE badge, and a dev fixture would lose its
+    badge the moment someone flips the toggle back to live."""
 
-    TEST_URL = "https://dev.local/test-fake-flag-tournament"
+    DEV_URL = "https://dev.local/test-fake-flag-tournament"
+    REAL_URL = "https://badmintonsweden.tournamentsoftware.com/tournament/test-fake-flag-real"
 
     def setUp(self):
         import app
@@ -125,45 +128,46 @@ class TestOpenTournamentsFakeFlag(unittest.TestCase):
         self.client = app.app.test_client()
         self.app = app
         bwf_client.set_mode("live")
-
-        conn = sqlite3.connect(app.TOURNAMENTS_DB)
-        conn.execute("DELETE FROM tournaments WHERE tournament_url = ?", (self.TEST_URL,))
-        conn.execute(
-            "INSERT INTO tournaments "
-            "(tournament_url, tournament_name, location, date_start, date_end, selected_for_view) "
-            "VALUES (?, ?, ?, ?, ?, 1)",
-            (self.TEST_URL, "Fake Flag Test Tournament", "Testville", "2099-01-01", "2099-01-02"),
-        )
-        conn.commit()
-        conn.close()
+        self._insert(self.DEV_URL, "Fake Flag Test Tournament (dev.local)")
+        self._insert(self.REAL_URL, "Fake Flag Test Tournament (real host)")
 
     def tearDown(self):
         bwf_client.set_mode("live")
         conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
-        conn.execute("DELETE FROM tournaments WHERE tournament_url = ?", (self.TEST_URL,))
+        conn.execute("DELETE FROM tournaments WHERE tournament_url IN (?, ?)",
+                     (self.DEV_URL, self.REAL_URL))
         conn.commit()
         conn.close()
 
-    def _fetch_row(self):
+    def _insert(self, url, name):
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute("DELETE FROM tournaments WHERE tournament_url = ?", (url,))
+        conn.execute(
+            "INSERT INTO tournaments "
+            "(tournament_url, tournament_name, location, date_start, date_end, selected_for_view) "
+            "VALUES (?, ?, ?, ?, ?, 1)",
+            (url, name, "Testville", "2099-01-01", "2099-01-02"),
+        )
+        conn.commit()
+        conn.close()
+
+    def _fetch_row(self, url):
         resp = self.client.get("/api/open-tournaments")
         self.assertEqual(resp.status_code, 200)
         rows = resp.get_json()["tournaments"]
-        return next(t for t in rows if t["url"] == self.TEST_URL)
+        return next(t for t in rows if t["url"] == url)
 
-    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
-    def test_dev_mode_rows_carry_fake_true(self):
+    def test_dev_local_row_is_tagged_fake_in_either_mode(self):
+        bwf_client.set_mode("live")
+        self.assertTrue(self._fetch_row(self.DEV_URL)["_fake"])
         bwf_client.set_mode("dev")
-        self.assertTrue(self._fetch_row()["_fake"])
+        self.assertTrue(self._fetch_row(self.DEV_URL)["_fake"])
 
-    @patch.dict(os.environ, {}, clear=True)
-    def test_production_rows_carry_fake_false(self):
-        """Even if something left the internal mode at 'dev', DEV_TOOLS unset
-        forces get_mode() -- and therefore this flag -- back to false."""
-        bwf_client._mode = "dev"
-        try:
-            self.assertFalse(self._fetch_row()["_fake"])
-        finally:
-            bwf_client._mode = "live"
+    def test_real_row_is_never_tagged_fake(self):
+        bwf_client.set_mode("live")
+        self.assertFalse(self._fetch_row(self.REAL_URL)["_fake"])
+        bwf_client.set_mode("dev")
+        self.assertFalse(self._fetch_row(self.REAL_URL)["_fake"])
 
 
 class TestFakeData(unittest.TestCase):
