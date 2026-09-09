@@ -376,10 +376,18 @@ class TestGuards(unittest.TestCase):
             f"(found at lines {[i + 1 for i in occurrence_lines]}, inside {counts})")
 
     @patch.dict(os.environ, {"DEV_TOOLS": "1"})
-    def test_dev_mode_makes_no_network_calls(self):
-        """The real proof: with every HTTP entry point armed to explode,
-        every one of bwf_live's 18 public functions still completes,
-        end to end, through bwf_client in dev mode."""
+    def test_bwf_client_functions_complete_without_network_in_dev_mode(self):
+        """With every HTTP entry point armed to explode, every one of
+        bwf_live's 18 public functions still completes, end to end, through
+        bwf_client in dev mode.
+
+        This calls bwf_client's functions directly -- it never goes through a
+        Flask route. That is a real gap, not an oversight: two lookups inside
+        app.py routes (player_details' `if not profile_url:` branch and
+        _register_partner's short-name safeguard) call the live site directly
+        and are reachable in dev mode. See
+        test_player_details_name_lookup_leaks_to_the_live_site_in_dev_mode
+        below, which proves that gap rather than assuming it away."""
         bwf_client.set_mode("dev")
         try:
             def explode(*args, **kwargs):
@@ -405,6 +413,34 @@ class TestGuards(unittest.TestCase):
                 self.assertTrue(bwf_client.get_tournament_player_results("DEV-T1", "DEV-0001"))
                 self.assertTrue(bwf_client.get_tournament_clubs("DEV-T1"))
                 self.assertTrue(bwf_client.submit_registrations("Dev Open (FAKE)", "sbf04959", "pw")["success"])
+        finally:
+            bwf_client.set_mode("live")
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_player_details_name_lookup_leaks_to_the_live_site_in_dev_mode(self):
+        """Pins a known, accepted gap rather than assuming it away.
+
+        player_details' `if not profile_url:` branch (app.py, around line
+        3550) calls ext_requests directly, bypassing bwf_client entirely, so
+        a name-only lookup reaches Badminton Sweden even in dev mode. This is
+        reachable in practice: /api/search-players merges local-DB rows that
+        carry no profile_url, and templates/tournament.html falls back to
+        `name=` whenever profile_url is falsy. With requests.Session armed to
+        raise, the route-level call proves the leak actually happens instead
+        of trusting that the two-lookup exemption documented elsewhere stays
+        confined to what it claims."""
+        import app
+        app.app.config["TESTING"] = True
+        client = app.app.test_client()
+        bwf_client.set_mode("dev")
+        try:
+            def explode(*args, **kwargs):
+                raise AssertionError("dev mode attempted a network call")
+
+            with patch("requests.Session", explode):
+                resp = client.get("/api/player-details?name=Adam+Adult")
+                self.assertEqual(resp.status_code, 500)
+                self.assertIn("dev mode attempted a network call", resp.get_json()["error"])
         finally:
             bwf_client.set_mode("live")
 
