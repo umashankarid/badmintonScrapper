@@ -642,6 +642,15 @@
             const club = loggedInPlayer.club || document.getElementById("logged-player-club").textContent;
             const doublesPartnerEl = document.getElementById("doubles-partner");
             const mixedPartnerEl = document.getElementById("mixed-partner");
+            
+            // Warn if doubles/mixed selected but no partner given (open registration)
+            const openCategories = [];
+            if (doublesLevels && !doublesPartnerEl.value.trim()) openCategories.push(doublesLevels);
+            if (mixedLevels && !mixedPartnerEl.value.trim()) openCategories.push(mixedLevels);
+            if (openCategories.length) {
+                if (!confirm(`Du har inte angett en partner för: ${openCategories.join(", ")}.\nDu läggs till i öppen anmälan (letar partner).\n\nYou haven't entered a partner for: ${openCategories.join(", ")}.\nYou will be added to open registration (looking for a partner).\n\nContinue?`)) return;
+            }
+            
             const player = {
                 player_name: loggedInPlayer.player_name,
                 club: club,
