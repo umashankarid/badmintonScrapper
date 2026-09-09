@@ -374,13 +374,13 @@ def get_player_registrations_for_tournament(tournament_name):
         conn.execute(f"ATTACH DATABASE 'players.db' AS players_db")
         cur = conn.cursor()
         
-        # NORMALIZED QUERY: JOIN with players table to get player data
+        # NORMALIZED QUERY: LEFT JOIN so registrations show even if player record is missing
         cur.execute("""
-            SELECT p.name, r.license_id, p.club, p.gender, p.email, p.phone,
+            SELECT COALESCE(p.name, r.license_id), r.license_id, p.club, p.gender, p.email, p.phone,
                    r.singles_levels, r.doubles_levels, r.mixed_levels,
                    r.doubles_partner, r.mixed_partner, r.registration_date
             FROM tournament_registrations r
-            JOIN players_db.players p ON r.license_id = p.license_id
+            LEFT JOIN players_db.players p ON r.license_id = p.license_id
             WHERE r.tournament_name=?
             ORDER BY r.registration_date DESC
         """, (tournament_name,))
@@ -691,6 +691,29 @@ def bwf_login():
     if not profile:
         logger.warning(f"⚠️ Login failed for username: {login}")
         return jsonify(success=False, error="Inloggning misslyckades. Kontrollera att användarnamn och lösenord stämmer med ditt Badminton Sweden-konto.\n\nLogin failed. Please check that your username and password match your Badminton Sweden account."), 401
+
+    # RESTRICT: Only Badmintonklubben Komet members can use the internal registration system.
+    # Non-Komet players must ask their Komet partner to register the pair.
+    # Ported from main (2dd92d3). Main relied on club accounts returning earlier;
+    # after the extraction they reach here, so exempt them explicitly.
+    if (not profile["is_club_account"] and not is_admin_user(login)
+            and (not profile["club"] or "komet" not in profile["club"].lower())):
+        logger.warning(f"⛔ Non-Komet login blocked: {profile['player_name']} "
+                       f"({profile['license_id']}) club='{profile['club']}'")
+        return jsonify(
+            success=False,
+            error=(
+                "Detta registreringssystem är endast för medlemmar i Badmintonklubben Komet.\n\n"
+                "Om du ska spela dubbel/mixed med en Komet-spelare, be din Komet-partner att "
+                "registrera paret – du läggs då till automatiskt som partner.\n\n"
+                "Frågor? Kontakta Tavlingar@bmkkomet.se\n\n"
+                "─────────────────────\n\n"
+                "This registration system is only for members of Badmintonklubben Komet.\n\n"
+                "If you're playing doubles/mixed with a Komet player, please ask your Komet "
+                "partner to register the pair — you'll be added automatically as their partner.\n\n"
+                "Questions? Contact Tavlingar@bmkkomet.se"
+            )
+        ), 403
 
     session["bwf_player"] = profile["player_name"]
     session["bwf_login"] = login
@@ -2531,11 +2554,24 @@ def get_tournament_registration():
         """, (tournament_name, license_id))
         
         row = cur.fetchone()
-        conn.close()
         
         if not row:
             # No existing registration
+            conn.close()
             return jsonify(success=True, registration=None)
+        
+        # If the registration has NO categories (orphaned/empty), treat as not registered and clean it up
+        if not (row[3] or "").strip() and not (row[4] or "").strip() and not (row[5] or "").strip():
+            try:
+                conn.execute("DELETE FROM tournament_registrations WHERE id = ?", (row[0],))
+                conn.commit()
+                logger.info(f"🗑️ Removed orphaned empty registration id={row[0]} for {license_id} in {tournament_name}")
+            except Exception as e:
+                logger.error(f"Error cleaning orphaned registration: {e}")
+            conn.close()
+            return jsonify(success=True, registration=None)
+        
+        conn.close()
         
         registration = {
             "player_id": row[0],
@@ -4233,6 +4269,70 @@ def reset_reminder():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/cleanup-orphaned-registrations", methods=["GET", "POST"])
+def cleanup_orphaned_registrations():
+    """Remove orphaned registrations: empty records AND records whose player doesn't exist. Admin only."""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
+        cur = conn.cursor()
+        
+        removed = []
+        
+        # 1. Empty registrations (no categories)
+        cur.execute("""
+            SELECT id, tournament_name, license_id FROM tournament_registrations
+            WHERE (singles_levels IS NULL OR singles_levels = '')
+              AND (doubles_levels IS NULL OR doubles_levels = '')
+              AND (mixed_levels IS NULL OR mixed_levels = '')
+        """)
+        for row in cur.fetchall():
+            removed.append(f"{row[1]} / {row[2]} (empty)")
+            cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (row[0],))
+        
+        # 2. Ghost-player registrations (license_id not in players table)
+        cur.execute("""
+            SELECT tr.id, tr.tournament_name, tr.license_id, tr.doubles_partner, tr.mixed_partner
+            FROM tournament_registrations tr
+            LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+            WHERE p.license_id IS NULL
+        """)
+        for row in cur.fetchall():
+            reg_id, t_name, lic, dpartner, mpartner = row
+            removed.append(f"{t_name} / {lic} (ghost player, partner: {dpartner or mpartner or '-'})")
+            # Clear partner references pointing to this ghost's partners
+            cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (reg_id,))
+        
+        # 3. Non-Komet MAIN registrations. Non-Komet players should only ever exist as
+        #    partner references, never as their own main registration row. A non-Komet
+        #    main row is the "inversion" bug (e.g. a non-Komet player registered the pair).
+        #    Delete these rows; the Komet partner's own row is preserved (they keep their slot).
+        cur.execute("""
+            SELECT tr.id, tr.tournament_name, tr.license_id, p.name, p.club,
+                   tr.doubles_partner, tr.mixed_partner
+            FROM tournament_registrations tr
+            JOIN players_db.players p ON tr.license_id = p.license_id
+            WHERE p.club IS NOT NULL
+              AND p.club != ''
+              AND LOWER(p.club) NOT LIKE '%komet%'
+        """)
+        for row in cur.fetchall():
+            reg_id, t_name, lic, pname, pclub, dpartner, mpartner = row
+            removed.append(f"{t_name} / {pname or lic} (non-Komet main: '{pclub}', partner: {dpartner or mpartner or '-'})")
+            cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (reg_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🗑️ Cleaned up {len(removed)} orphaned/ghost/non-Komet registrations: {removed}")
+        return jsonify(success=True, message=f"Removed {len(removed)} orphaned records (empty, ghost players, or non-Komet main registrations).", details=removed)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 def send_email(to_email, subject, body, attachments=None):
     """Send an email using Brevo HTTP API. Attachments is a list of {"name": filename, "content": base64_content}."""
 
@@ -4922,13 +5022,20 @@ def backup_databases():
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
+    backed_up, timestamp = _do_backup()
+    return jsonify(success=True, backup_id=timestamp, files=backed_up, 
+                   message=f"Backup '{timestamp}' created with {len(backed_up)} databases")
+
+
+def _do_backup(prefix=""):
+    """Create a backup of all databases. Returns (backed_up_files, timestamp)."""
     import shutil
     from datetime import datetime
     
     backup_dir = os.path.join(DATA_DIR, "backups")
     os.makedirs(backup_dir, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = (prefix + datetime.now().strftime("%Y%m%d_%H%M%S"))
     backup_folder = os.path.join(backup_dir, timestamp)
     os.makedirs(backup_folder, exist_ok=True)
     
@@ -4941,11 +5048,53 @@ def backup_databases():
             dst = os.path.join(backup_folder, db_file)
             shutil.copy2(src, dst)
             backed_up.append(db_file)
-            logger.info(f"💾 Backed up {db_file} → {backup_folder}/")
     
     logger.info(f"✅ Backup created: {timestamp} ({len(backed_up)} files)")
-    return jsonify(success=True, backup_id=timestamp, files=backed_up, 
-                   message=f"Backup '{timestamp}' created with {len(backed_up)} databases")
+    return backed_up, timestamp
+
+
+def _cleanup_old_backups(keep_days=10):
+    """Keep only the most recent auto-backups (last keep_days). Manual backups are kept."""
+    import shutil
+    from datetime import datetime
+    
+    backup_dir = os.path.join(DATA_DIR, "backups")
+    if not os.path.exists(backup_dir):
+        return
+    
+    # Only auto-backups have the 'auto_' prefix
+    auto_backups = sorted([d for d in os.listdir(backup_dir) 
+                           if os.path.isdir(os.path.join(backup_dir, d)) and d.startswith("auto_")], reverse=True)
+    
+    # Keep the newest keep_days, delete the rest
+    for old in auto_backups[keep_days:]:
+        try:
+            shutil.rmtree(os.path.join(backup_dir, old))
+            logger.info(f"🗑️ Deleted old auto-backup: {old}")
+        except Exception as e:
+            logger.error(f"Error deleting old backup {old}: {e}")
+
+
+def daily_backup_scheduler():
+    """Run a daily auto-backup, keeping only the last 10 days."""
+    import time
+    from datetime import datetime
+    while True:
+        try:
+            # Check if we already made an auto-backup today
+            backup_dir = os.path.join(DATA_DIR, "backups")
+            today = datetime.now().strftime("%Y%m%d")
+            already_today = False
+            if os.path.exists(backup_dir):
+                already_today = any(d.startswith(f"auto_{today}") for d in os.listdir(backup_dir))
+            
+            if not already_today:
+                _do_backup(prefix="auto_")
+                _cleanup_old_backups(keep_days=10)
+        except Exception as e:
+            logger.error(f"❌ Error in daily backup: {e}")
+        time.sleep(6 * 3600)  # Check every 6 hours (makes 1 backup per day)
+
 
 
 @app.route("/api/database/backups", methods=["GET"])
@@ -5442,6 +5591,7 @@ def set_dev_mode():
 if __name__ == "__main__":
     import threading
     threading.Thread(target=reminder_scheduler, daemon=True).start()
+    threading.Thread(target=daily_backup_scheduler, daemon=True).start()
     # PORT/HOST/DEBUG are overridable for local dev; defaults match production (3000, all interfaces, debug on)
     port = int(os.environ.get("PORT", 3000))
     host = os.environ.get("HOST", "0.0.0.0")
