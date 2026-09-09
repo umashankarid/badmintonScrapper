@@ -48,3 +48,7 @@ def fetch_tournament_info(url):
 
 def fetch_tournament_details(url):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def search_tournaments(start, end, status):
+    raise NotImplementedError("Stub added in Task 12")

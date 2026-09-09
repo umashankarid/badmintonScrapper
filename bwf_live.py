@@ -582,3 +582,73 @@ def fetch_tournament_details(url):
     that difference is cheaper than changing when they fail.
     """
     return _fetch_tournament(url, tolerate_missing_events=True)
+
+
+def search_tournaments(start, end, status):
+    """Tournaments in a date range, for the results page.
+
+    start and end are "YYYY-MM-DD" or ""; status is the site's StatusFilterID
+    ("2" registration open, "3" upcoming, "4" finished) or "" for no filter.
+    Each result is {"id", "name", "location", "date_start", "date_end", "status"}.
+    """
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/",
+        "SettingsOpen": "false",
+        "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    start_fmt = f"{start}T00:00" if start else ""
+    end_fmt = f"{end}T00:00" if end else ""
+
+    url = f"{BASE_URL}/find?DateFilterType=0&StartDate={start_fmt}&EndDate={end_fmt}&Distance=10&page=1&SportID=2"
+    if status:
+        url += f"&StatusFilterID={status}"
+
+    resp = s.get(url, timeout=10)
+    page_soup = BeautifulSoup(resp.text, "html.parser")
+    form = page_soup.select_one("#form_globalsearch")
+    form_data = {}
+    if form:
+        for inp in form.find_all("input"):
+            name = inp.get("name", "")
+            value = inp.get("value", "")
+            if name:
+                form_data[name] = value
+    if status:
+        form_data["TournamentExtendedFilter.StatusFilterID"] = status
+
+    resp = s.post(f"{BASE_URL}/find/tournament/DoSearch",
+        data=form_data,
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        timeout=10)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    tournaments = []
+    for item in soup.select("li.list__item"):
+        link = item.select_one("a.media__link")
+        if not link:
+            continue
+        name = link.get_text(strip=True)
+        href = link.get("href", "")
+        location_el = item.select_one(".media__subheading .nav-link__value")
+        location = location_el.get_text(strip=True) if location_el else ""
+        time_els = item.select("time")
+        date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+        date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+        status_el = item.select_one(".tournament-status, .media__status")
+        status_text = status_el.get_text(strip=True) if status_el else ""
+        tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+        tid = tid_match.group(1) if tid_match else ""
+
+        tournaments.append({
+            "id": tid,
+            "name": name,
+            "location": location,
+            "date_start": date_start,
+            "date_end": date_end,
+            "status": status_text
+        })
+
+    return tournaments

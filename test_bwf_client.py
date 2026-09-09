@@ -1207,5 +1207,143 @@ class TestEnsureTournamentEndpoint(unittest.TestCase):
         self.assertEqual(resp.get_json(), {"success": False, "error": "refused"})
 
 
+
+FIND_PAGE_HTML = """
+<form id="form_globalsearch">
+  <input name="__RequestVerificationToken" value="tok-123" />
+  <input name="TournamentExtendedFilter.StatusFilterID" value="4" />
+  <input value="ignored-because-it-has-no-name" />
+</form>
+"""
+
+TOURNAMENT_RESULTS_HTML = """
+<ul>
+  <li class="list__item">
+    <a class="media__link" href="/tournament.aspx?id=AB12-34CD">Vikingaslaget</a>
+    <div class="media__subheading"><span class="nav-link__value">Sollentuna</span></div>
+    <time datetime="2026-03-01T00:00:00"></time>
+    <time datetime="2026-03-02T00:00:00"></time>
+    <span class="media__status">Online-anmalan oppen</span>
+  </li>
+  <li class="list__item"><span>no link at all</span></li>
+</ul>
+"""
+
+FIND_URL = "https://badmintonsweden.tournamentsoftware.com/find"
+DOSEARCH_URL = "https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch"
+
+
+class TestSearchTournaments(unittest.TestCase):
+    """The results page search: a find page for the form, then DoSearch."""
+
+    def _session(self):
+        session = MagicMock()
+        session.get.side_effect = [_resp(FIND_PAGE_HTML)]
+        session.post.side_effect = [MagicMock(), _resp(TOURNAMENT_RESULTS_HTML)]
+        return session
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_id_dates_and_status(self, mock_session_cls):
+        session = self._session()
+        mock_session_cls.return_value = session
+
+        results = bwf_client.search_tournaments("2026-03-01", "2026-03-31", "2")
+
+        self.assertEqual(results, [{
+            "id": "AB12-34CD",
+            "name": "Vikingaslaget",
+            "location": "Sollentuna",
+            "date_start": "2026-03-01",
+            "date_end": "2026-03-02",
+            "status": "Online-anmalan oppen",
+        }])
+
+        # Pin request construction for all three calls.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.get.assert_called_once_with(
+            FIND_URL + "?DateFilterType=0&StartDate=2026-03-01T00:00&EndDate=2026-03-31T00:00"
+                       "&Distance=10&page=1&SportID=2&StatusFilterID=2",
+            timeout=10)
+        self.assertEqual(session.post.call_args_list, [
+            call(COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5),
+            call(DOSEARCH_URL,
+                 data={"__RequestVerificationToken": "tok-123",
+                       "TournamentExtendedFilter.StatusFilterID": "2"},
+                 headers={"X-Requested-With": "XMLHttpRequest"},
+                 timeout=10),
+        ])
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_blank_dates_and_status_are_left_out_of_the_query(self, mock_session_cls):
+        session = self._session()
+        mock_session_cls.return_value = session
+
+        bwf_client.search_tournaments("", "", "")
+
+        session.get.assert_called_once_with(
+            FIND_URL + "?DateFilterType=0&StartDate=&EndDate=&Distance=10&page=1&SportID=2",
+            timeout=10)
+        # Without a status the form's own value is posted back untouched.
+        self.assertEqual(
+            session.post.call_args_list[1][1]["data"],
+            {"__RequestVerificationToken": "tok-123",
+             "TournamentExtendedFilter.StatusFilterID": "4"})
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_missing_form_posts_only_the_status(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp("<div>no search form</div>")]
+        session.post.side_effect = [MagicMock(), _resp(TOURNAMENT_RESULTS_HTML)]
+        mock_session_cls.return_value = session
+
+        results = bwf_client.search_tournaments("2026-03-01", "", "3")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(
+            session.post.call_args_list[1][1]["data"],
+            {"TournamentExtendedFilter.StatusFilterID": "3"})
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.search_tournaments("2026-03-01", "2026-03-31", "2")
+
+
+class TestSearchTournamentsEndpoint(unittest.TestCase):
+    """/api/search-tournaments passes the query through and owns no session."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def test_query_arguments_are_forwarded(self):
+        found = [{"id": "T-1", "name": "Vikingaslaget", "location": "Sollentuna",
+                  "date_start": "2026-03-01", "date_end": "2026-03-02", "status": "Open"}]
+        with patch("app.bwf_client.search_tournaments", return_value=found) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/search-tournaments?start=2026-03-01&end=2026-03-31&status=2")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, "tournaments": found})
+        mocked.assert_called_once_with("2026-03-01", "2026-03-31", "2")
+        mock_session_cls.assert_not_called()
+
+    def test_missing_arguments_become_empty_strings(self):
+        with patch("app.bwf_client.search_tournaments", return_value=[]) as mocked:
+            self.client.get("/api/search-tournaments")
+        mocked.assert_called_once_with("", "", "")
+
+    def test_scrape_failure_is_a_500_with_an_empty_list(self):
+        with patch("app.bwf_client.search_tournaments", side_effect=Boom("refused")):
+            resp = self.client.get("/api/search-tournaments")
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(),
+                         {"success": False, "error": "refused", "tournaments": []})
+
+
 if __name__ == "__main__":
     unittest.main()
