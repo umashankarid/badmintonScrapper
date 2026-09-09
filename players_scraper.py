@@ -11,10 +11,11 @@ Functions:
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
-import json
 import logging
 import os
 from datetime import datetime
+
+import bwf_client
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,6 @@ BASE_URL = "https://badmintonsweden.tournamentsoftware.com"
 SEARCH_URL = f"{BASE_URL}/find/player/DoSearch"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(__file__))
 PLAYERS_DB = os.path.join(DATA_DIR, "players.db")
-
-HEADERS = {
-    "X-Requested-With": "XMLHttpRequest",
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-}
 
 
 def scrape_player_by_license_id(license_id):
@@ -38,49 +34,34 @@ def scrape_player_by_license_id(license_id):
     """
     try:
         logger.info(f"🔍 Scraping player by license_id: {license_id}")
-        
-        # Fetch player profile page
-        profile_url = f"{BASE_URL}/player-profile/{license_id}"
-        resp = requests.get(profile_url, headers=HEADERS, timeout=10)
-        
-        if resp.status_code != 200:
-            logger.warning(f"⚠️  Player not found: {license_id}")
+
+        profile = bwf_client.get_player_profile_by_license(license_id)
+
+        if profile is None:
             return None
-        
-        soup = BeautifulSoup(resp.text, "html.parser")
-        
+
         # Extract player info
         player_data = {
             "license_id": license_id,
-            "profile_url": f"/player-profile/{license_id}",
+            "profile_url": profile["profile_url"],
             "scraped_at": datetime.now().isoformat()
         }
-        
+
         # Get player name
-        name_elem = soup.select_one("h1.view__title")
-        if name_elem:
-            player_data["name"] = name_elem.get_text(strip=True)
-        
+        if profile["name"] is not None:
+            player_data["name"] = profile["name"]
+
         # Get club
-        club_elem = soup.select_one(".row span")
-        if club_elem:
-            player_data["club"] = club_elem.get_text(strip=True)
-        
+        if profile["club"] is not None:
+            player_data["club"] = profile["club"]
+
         # Get gender from profile (if available)
         # Usually indicated by icon or text
-        player_data["gender"] = ""
-        
+        player_data["gender"] = profile["gender"]
+
         # Scrape ranking
-        ranking = {}
-        try:
-            ranking_resp = requests.get(f"{profile_url}/ranking", headers=HEADERS, timeout=10)
-            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
-            ranking = scrape_ranking_from_page(ranking_soup)
-            player_data["ranking"] = json.dumps(ranking)
-        except Exception as e:
-            logger.warning(f"⚠️  Could not scrape ranking: {e}")
-            player_data["ranking"] = None
-        
+        player_data["ranking"] = profile["ranking"]
+
         logger.info(f"✅ Scraped player: {player_data.get('name', 'Unknown')}")
         
         # Update players.db with scraped data
@@ -100,60 +81,6 @@ def scrape_player_by_license_id(license_id):
     except Exception as e:
         logger.error(f"❌ Error scraping player {license_id}: {e}")
         return None
-
-
-def scrape_ranking_from_page(soup):
-    """
-    Extract ranking data from Badminton Sweden ranking page
-    
-    Returns: dict in format
-    {
-        "singles": {
-            "A": {"rank": 5, "points": 1250},
-            ...
-        },
-        "doubles": {...}
-    }
-    """
-    ranking = {
-        "singles": {},
-        "doubles": {},
-        "mixed": {}
-    }
-    
-    try:
-        table = soup.find("table")
-        if not table:
-            return ranking
-        
-        rows = table.find_all("tr")
-        for row in rows:
-            cells = row.find_all("td")
-            if len(cells) < 3:
-                continue
-            
-            category = cells[0].get_text(strip=True)  # e.g., "A", "B", "HS", "DD"
-            rank_text = cells[1].get_text(strip=True)
-            points_text = cells[2].get_text(strip=True)
-            
-            rank = int(rank_text) if rank_text.isdigit() else None
-            points = int(points_text) if points_text.isdigit() else 0
-            
-            # Categorize by type
-            if category in ["HS", "A", "B", "C", "D", "Elit"]:
-                # Singles category
-                ranking["singles"][category] = {"rank": rank, "points": points}
-            elif category in ["HD", "DD", "MD"]:
-                # Doubles category
-                ranking["doubles"][category] = {"rank": rank, "points": points}
-    
-    except Exception as e:
-        logger.warning(f"⚠️  Error parsing ranking table: {e}")
-    
-    return ranking
-
-
-
 
 
 def check_player_data_stale(license_id, max_age_hours=24):

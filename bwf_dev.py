@@ -74,5 +74,9 @@ def get_tournament_clubs(tournament_id):
     raise NotImplementedError("Stub added in Task 12")
 
 
+def get_player_profile_by_license(license_id):
+    raise NotImplementedError("Stub added in Task 12")
+
+
 def submit_registrations(tournament_name, club_login, club_password):
     raise NotImplementedError("Stub added in Task 12")

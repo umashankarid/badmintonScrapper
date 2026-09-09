@@ -120,5 +120,9 @@ def get_tournament_clubs(tournament_id):
     return _backend().get_tournament_clubs(tournament_id)
 
 
+def get_player_profile_by_license(license_id):
+    return _backend().get_player_profile_by_license(license_id)
+
+
 def submit_registrations(tournament_name, club_login, club_password):
     return _backend().submit_registrations(tournament_name, club_login, club_password)

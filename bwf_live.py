@@ -434,6 +434,122 @@ def get_player_ranking_by_profile(profile_url):
     return ranking_data
 
 
+def _scrape_ranking_from_page(soup):
+    """
+    Extract ranking data from Badminton Sweden ranking page
+
+    Moved verbatim from players_scraper.scrape_ranking_from_page. Returns
+    dict in format
+    {
+        "singles": {
+            "A": {"rank": 5, "points": 1250},
+            ...
+        },
+        "doubles": {...}
+    }
+    """
+    ranking = {
+        "singles": {},
+        "doubles": {},
+        "mixed": {}
+    }
+
+    try:
+        table = soup.find("table")
+        if not table:
+            return ranking
+
+        rows = table.find_all("tr")
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) < 3:
+                continue
+
+            category = cells[0].get_text(strip=True)  # e.g., "A", "B", "HS", "DD"
+            rank_text = cells[1].get_text(strip=True)
+            points_text = cells[2].get_text(strip=True)
+
+            rank = int(rank_text) if rank_text.isdigit() else None
+            points = int(points_text) if points_text.isdigit() else 0
+
+            # Categorize by type
+            if category in ["HS", "A", "B", "C", "D", "Elit"]:
+                # Singles category
+                ranking["singles"][category] = {"rank": rank, "points": points}
+            elif category in ["HD", "DD", "MD"]:
+                # Doubles category
+                ranking["doubles"][category] = {"rank": rank, "points": points}
+
+    except Exception as e:
+        logger.warning(f"⚠️  Error parsing ranking table: {e}")
+
+    return ranking
+
+
+def get_player_profile_by_license(license_id):
+    """Fetch a player's profile and ranking pages by licence ID.
+
+    Moved verbatim from players_scraper.scrape_player_by_license_id's two
+    outgoing requests (the profile fetch and the ranking fetch). None means
+    the profile page returned a non-200 status, exactly as before. The
+    profile fetch has no try/except of its own (unlike the ranking fetch):
+    a network failure there propagates to the caller's own try/except,
+    exactly as it did when this code lived inline in players_scraper.
+    """
+    profile_url = f"{BASE_URL}/player-profile/{license_id}"
+    resp = ext_requests.get(profile_url, headers={
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+    }, timeout=10)
+
+    if resp.status_code != 200:
+        logger.warning(f"⚠️  Player not found: {license_id}")
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Get player name
+    name = None
+    name_elem = soup.select_one("h1.view__title")
+    if name_elem:
+        name = name_elem.get_text(strip=True)
+
+    # Get club
+    club = None
+    club_elem = soup.select_one(".row span")
+    if club_elem:
+        club = club_elem.get_text(strip=True)
+
+    # Get gender from profile (if available)
+    # Usually indicated by icon or text
+    gender = ""
+
+    # Scrape ranking
+    ranking = None
+    try:
+        ranking_resp = ext_requests.get(f"{profile_url}/ranking", headers={
+            "X-Requested-With": "XMLHttpRequest",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+        }, timeout=10)
+        ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
+        ranking = json.dumps(_scrape_ranking_from_page(ranking_soup))
+    except Exception as e:
+        logger.warning(f"⚠️  Could not scrape ranking: {e}")
+        ranking = None
+
+    return {
+        "name": name,
+        "club": club,
+        "gender": gender,
+        "email": "",
+        "phone": "",
+        "dob": "",
+        "age": "",
+        "ranking": ranking,
+        "profile_url": f"/player-profile/{license_id}",
+    }
+
+
 def get_tournament_events(tournament_id, session=None):
     """Event classes for one tournament, in the two shapes app.py derives from them.
 

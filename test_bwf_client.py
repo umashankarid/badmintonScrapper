@@ -2008,5 +2008,146 @@ class TestSubmitTournamentEndpoint(unittest.TestCase):
         self.assertEqual(resp.get_json()["error"], "browser crashed")
 
 
+PROFILE_URL = "https://badmintonsweden.tournamentsoftware.com/player-profile/SE12345"
+RANKING_BY_LICENSE_URL = f"{PROFILE_URL}/ranking"
+PROFILE_HEADERS = {
+    "X-Requested-With": "XMLHttpRequest",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+}
+
+PROFILE_PAGE_HTML = """
+<h1 class="view__title">Anna Andersson</h1>
+<div class="row"><span>BMK Komet</span></div>
+"""
+
+RANKING_TABLE_TD_HTML = """
+<table>
+  <tr><td>HS</td><td>5</td><td>1250</td></tr>
+  <tr><td>DD</td><td>10</td><td>900</td></tr>
+</table>
+"""
+
+
+class TestPlayerProfileByLicense(unittest.TestCase):
+    """Profile + ranking fetch, moved verbatim from
+    players_scraper.scrape_player_by_license_id's two outgoing requests."""
+
+    def _resp(self, html, status_code=200):
+        resp = MagicMock()
+        resp.text = html
+        resp.status_code = status_code
+        return resp
+
+    @patch("bwf_live.ext_requests.get")
+    def test_returns_none_when_profile_missing(self, mock_get):
+        resp = MagicMock()
+        resp.status_code = 404
+        mock_get.side_effect = [resp]
+        self.assertIsNone(bwf_client.get_player_profile_by_license("NOPE"))
+
+    @patch("bwf_live.ext_requests.get")
+    def test_parses_profile_and_ranking(self, mock_get):
+        mock_get.side_effect = [
+            self._resp(PROFILE_PAGE_HTML), self._resp(RANKING_TABLE_TD_HTML)
+        ]
+
+        result = bwf_client.get_player_profile_by_license("SE12345")
+
+        self.assertEqual(result["name"], "Anna Andersson")
+        self.assertEqual(result["club"], "BMK Komet")
+        self.assertEqual(result["gender"], "")
+        self.assertEqual(result["profile_url"], "/player-profile/SE12345")
+        self.assertEqual(
+            json.loads(result["ranking"]),
+            {"singles": {"HS": {"rank": 5, "points": 1250}},
+             "doubles": {"DD": {"rank": 10, "points": 900}},
+             "mixed": {}},
+        )
+
+        # Pin request construction for both outgoing calls.
+        self.assertEqual(
+            mock_get.call_args_list,
+            [
+                call(PROFILE_URL, headers=PROFILE_HEADERS, timeout=10),
+                call(RANKING_BY_LICENSE_URL, headers=PROFILE_HEADERS, timeout=10),
+            ],
+        )
+
+    @patch("bwf_live.ext_requests.get")
+    def test_missing_name_and_club_elements_leave_those_keys_none(self, mock_get):
+        """No h1.view__title / .row span on the page: distinct from 'element
+        present but empty', which players_scraper still records as ""."""
+        mock_get.side_effect = [self._resp("<div>nothing here</div>"), self._resp(RANKING_TABLE_TD_HTML)]
+        result = bwf_client.get_player_profile_by_license("SE12345")
+        self.assertIsNone(result["name"])
+        self.assertIsNone(result["club"])
+
+    @patch("bwf_live.ext_requests.get")
+    def test_ranking_failure_leaves_ranking_none(self, mock_get):
+        """A broken ranking page loses ranking but keeps name/club, as today."""
+        mock_get.side_effect = [self._resp(PROFILE_PAGE_HTML), Boom("ranking down")]
+
+        result = bwf_client.get_player_profile_by_license("SE12345")
+
+        self.assertEqual(result["name"], "Anna Andersson")
+        self.assertEqual(result["club"], "BMK Komet")
+        self.assertIsNone(result["ranking"])
+
+    @patch("bwf_live.ext_requests.get")
+    def test_profile_fetch_failure_propagates(self, mock_get):
+        """No try/except around the profile fetch: a failure bubbles up, as today."""
+        mock_get.side_effect = Boom("connection refused")
+        with self.assertRaises(Boom):
+            bwf_client.get_player_profile_by_license("SE12345")
+
+
+class TestScrapePlayerByLicenseId(unittest.TestCase):
+    """players_scraper.scrape_player_by_license_id: keeps the DB write, delegates
+    the HTTP work to bwf_client.get_player_profile_by_license."""
+
+    def setUp(self):
+        import players_scraper
+        self.players_scraper = players_scraper
+
+    def test_not_found_profile_returns_none_without_writing_to_db(self):
+        with patch("players_scraper.bwf_client.get_player_profile_by_license",
+                   return_value=None), \
+             patch("players_scraper.update_player_in_db") as mocked_write:
+            result = self.players_scraper.scrape_player_by_license_id("NOPE")
+        self.assertIsNone(result)
+        mocked_write.assert_not_called()
+
+    def test_found_profile_writes_name_profile_url_and_ranking_only(self):
+        """Matches the pre-move quirk: club and gender are parsed but never
+        passed to update_player_in_db."""
+        profile = {
+            "name": "Anna Andersson", "club": "BMK Komet", "gender": "F",
+            "email": "", "phone": "", "dob": "", "age": "",
+            "ranking": json.dumps({"singles": {"HS": {"rank": 5, "points": 1250}},
+                                    "doubles": {}, "mixed": {}}),
+            "profile_url": "/player-profile/SE12345",
+        }
+        with patch("players_scraper.bwf_client.get_player_profile_by_license",
+                   return_value=profile), \
+             patch("players_scraper.update_player_in_db") as mocked_write:
+            result = self.players_scraper.scrape_player_by_license_id("SE12345")
+
+        self.assertEqual(result["name"], "Anna Andersson")
+        self.assertEqual(result["club"], "BMK Komet")
+        self.assertEqual(result["gender"], "F")
+        mocked_write.assert_called_once_with(
+            license_id="SE12345", name="Anna Andersson",
+            profile_url="/player-profile/SE12345", ranking=profile["ranking"],
+        )
+
+    def test_client_exception_is_swallowed_and_returns_none(self):
+        """The outer try/except in scrape_player_by_license_id has always
+        turned any failure into a logged None, not a raised exception."""
+        with patch("players_scraper.bwf_client.get_player_profile_by_license",
+                   side_effect=Boom("connection refused")):
+            result = self.players_scraper.scrape_player_by_license_id("SE12345")
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()
