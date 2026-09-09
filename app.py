@@ -11,6 +11,8 @@ import os
 import sys
 import unittest
 
+import bwf_client
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -6100,7 +6102,7 @@ def get_reminders_sent_status():
     tournament_name = request.args.get("tournament", "").strip()
     if not tournament_name:
         return jsonify(success=True, sent_types=[])
-    
+
     try:
         conn = sqlite3.connect(ADMIN_DB)
         cur = conn.cursor()
@@ -6108,7 +6110,7 @@ def get_reminders_sent_status():
                    (f"{tournament_name}_%",))
         rows = cur.fetchall()
         conn.close()
-        
+
         sent_types = []
         for row in rows:
             # Extract type from "tournament_name_TYPE"
@@ -6116,10 +6118,39 @@ def get_reminders_sent_status():
             if key.startswith(tournament_name + "_"):
                 reminder_type = key[len(tournament_name) + 1:]
                 sent_types.append(reminder_type)
-        
+
         return jsonify(success=True, sent_types=sent_types)
     except Exception as e:
         return jsonify(success=True, sent_types=[])
+
+
+# ==================== LOCAL DEVELOPMENT MODE ====================
+
+@app.route("/api/dev-mode", methods=["GET"])
+def get_dev_mode():
+    """Report whether dev tools exist on this server, and the mode in effect."""
+    if not bwf_client.dev_tools_enabled():
+        return jsonify(success=False, error="Not found"), 404
+    return jsonify(dev_tools=True, mode=bwf_client.get_mode())
+
+
+@app.route("/api/dev-mode", methods=["POST"])
+def set_dev_mode():
+    """Switch between live and dev. Local servers only."""
+    if not bwf_client.dev_tools_enabled():
+        return jsonify(success=False, error="Not found"), 404
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+
+    mode = (request.json or {}).get("mode", "")
+    try:
+        active = bwf_client.set_mode(mode)
+    except ValueError as e:
+        logger.warning(f"⚠️  Rejected dev-mode switch: {e}")
+        return jsonify(success=False, error=str(e)), 400
+
+    logger.info(f"🔀 Mode switched to {active} by admin session")
+    return jsonify(success=True, mode=active)
 
 
 if __name__ == "__main__":
