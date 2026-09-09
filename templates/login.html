@@ -16,46 +16,8 @@
     </form>
     <p id="error" style="color:red;display:none;"></p>
 
-    <!-- Populated only when the server runs with DEV_TOOLS and is in dev mode. -->
-    <div id="dev-personas" style="display:none;margin-top:28px;padding:14px;border:1px solid #c2410c;border-radius:6px;background:#fff7ed;">
-        <div style="font-weight:600;color:#c2410c;margin-bottom:4px;">DEV — test accounts</div>
-        <div style="font-size:0.85em;color:#7c2d12;margin-bottom:10px;">Fake accounts served by the stub backend. Any password works; nothing is sent to Badminton Sweden.</div>
-        <div id="dev-personas-list"></div>
-    </div>
 
     <script>
-        // Test-account picker. Renders only when /api/dev-personas returns some,
-        // which needs DEV_TOOLS set AND the mode switched to dev. In production the
-        // endpoint 404s and this leaves the page untouched.
-        (async function loadDevPersonas() {
-            let data;
-            try {
-                const res = await fetch("/api/dev-personas");
-                if (!res.ok) return;
-                data = await res.json();
-            } catch (e) {
-                return;
-            }
-            if (!data.personas || !data.personas.length) return;
-
-            const list = document.getElementById("dev-personas-list");
-            data.personas.forEach(p => {
-                const row = document.createElement("button");
-                row.type = "button";
-                row.style.cssText = "display:block;width:100%;text-align:left;margin:0 0 6px 0;padding:8px 10px;border:1px solid #fdba74;border-radius:4px;background:#fff;cursor:pointer;font:inherit";
-                const title = document.createElement("div");
-                title.style.cssText = "font-weight:600";
-                title.textContent = `${p.player_name} (${p.username})`;
-                const detail = document.createElement("div");
-                detail.style.cssText = "font-size:0.85em;color:#555";
-                detail.textContent = p.description || p.club;
-                row.append(title, detail);
-                row.onclick = () => signIn(p.username, "dev");
-                list.appendChild(row);
-            });
-            document.getElementById("dev-personas").style.display = "block";
-        })();
-
         async function signIn(login, password) {
             const errEl = document.getElementById("error");
             errEl.style.display = "none";

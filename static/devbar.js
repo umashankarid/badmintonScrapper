@@ -40,7 +40,7 @@
       });
       const body = await res.json();
       if (!res.ok) {
-        alert(body.error || "Could not switch mode. Are you logged in as admin?");
+        alert(body.error || "Could not switch mode.");
         button.disabled = false;
         return;
       }
@@ -48,7 +48,53 @@
       location.reload();
     };
     bar.append(label, button);
+    if (dev) addPersonaPicker(bar);
   };
   render();
   document.body.prepend(bar);
+
+  // Sign in as one of the stub accounts. Dev mode only: these usernames resolve
+  // against the stub backend, so /api/dev-personas returns an empty list in live.
+  async function addPersonaPicker(bar) {
+    let personas;
+    try {
+      const res = await fetch("/api/dev-personas");
+      if (!res.ok) return;
+      personas = (await res.json()).personas;
+    } catch (e) {
+      return;
+    }
+    if (!personas || !personas.length) return;
+
+    const select = document.createElement("select");
+    select.style.cssText = "padding:2px 6px;border-radius:3px;border:1px solid #fff;background:#fff;color:#333;font:inherit;max-width:340px";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Sign in as…";
+    select.appendChild(placeholder);
+    personas.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.username;
+      opt.textContent = `${p.player_name} — ${p.description || p.club}`;
+      select.appendChild(opt);
+    });
+    select.onchange = async () => {
+      if (!select.value) return;
+      select.disabled = true;
+      const res = await fetch("/api/bwf-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login: select.value, password: "dev" }),
+      });
+      const body = await res.json();
+      if (!body.success) {
+        alert(body.error || "Could not sign in as that account.");
+        select.disabled = false;
+        select.value = "";
+        return;
+      }
+      window.location.href = "/";
+    };
+    bar.appendChild(select);
+  }
 })();
