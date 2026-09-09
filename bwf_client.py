@@ -41,3 +41,16 @@ def set_mode(mode):
     _mode = mode
     logger.info(f"🔀 BWF mode set to: {mode}")
     return get_mode()
+
+
+import bwf_dev
+import bwf_live
+
+
+def _backend():
+    """The module that services calls right now."""
+    return bwf_dev if get_mode() == "dev" else bwf_live
+
+
+def get_player_license(player_name):
+    return _backend().get_player_license(player_name)

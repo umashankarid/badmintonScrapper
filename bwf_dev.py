@@ -1,0 +1,14 @@
+"""
+Fake Badminton Sweden data for local development.
+
+Imports no network library, on purpose: if anything here tries to reach the
+internet, that is a bug, and the absence of an import makes it obvious.
+"""
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def get_player_license(player_name):
+    raise NotImplementedError("Stub added in Task 12")

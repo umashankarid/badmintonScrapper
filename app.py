@@ -463,27 +463,6 @@ def get_player_club(player_name):
     return row[0] if row and row[0] else ""
 
 
-def get_player_license(player_name):
-    """Look up a player's license ID from Badminton Sweden search."""
-    try:
-        resp = ext_requests.get(
-            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-            params={"Page": 1, "SportID": 2, "Query": player_name},
-            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
-            timeout=5
-        )
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.select("li.list__item"):
-            name_el = item.select_one("a.media__link span.nav-link__value")
-            if name_el and name_el.get_text(strip=True).lower() == player_name.lower():
-                license_el = item.select_one(".media__title-aside")
-                if license_el:
-                    return license_el.get_text(strip=True).strip("()")
-    except Exception:
-        pass
-    return ""
-
-
 def get_player_ranking(player_name):
     """Fetch a player's ranking by searching for their profile and visiting the ranking page."""
     try:
