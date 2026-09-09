@@ -38,7 +38,10 @@
   guard test so a new leak, or a third one, fails the build instead of passing silently.
 
 - **`/api/dev-mode`** (new) — `GET` reports `{dev_tools, mode}`; `POST` switches the mode.
-  Both 404 when `DEV_TOOLS` is unset; `POST` also requires an admin session.
+  Both 404 when `DEV_TOOLS` is unset -- that 404 is the only access control on `POST`. No
+  session check: `session["admin"]` is only ever set by a successful login against the real
+  Badminton Sweden site, so requiring it here would make the switch unreachable on exactly the
+  credential-free machine dev mode exists for.
 
 - Dev-mode toggle bar and "FAKE" markers in the templates for any row carrying `_fake: true`.
 
@@ -64,9 +67,37 @@
   - Deployment: none, Dockerfile and the production environment are untouched; `DEV_TOOLS`
     is unset there, so `bwf_client.get_mode()` always returns `"live"`
 
-- **Tests**: `python3 -m pytest test_dev_mode.py test_bwf_client.py -v` → 162 passed
-  (39 in `test_dev_mode.py`, including the 5 `TestGuards` tests above).
+- **Tests**: `python3 -m pytest test_dev_mode.py test_bwf_client.py -v` → 164 passed
+  (41 in `test_dev_mode.py`, including the 5 `TestGuards` tests above).
   `python3 run_tests.py` → Ran 10 tests - OK.
+
+- **Final fix wave** (before merge) — a whole-branch review found the toggle above was
+  unreachable on the machine it was built for, plus five smaller gaps. All seven fixed:
+  1. `set_dev_mode` no longer checks `session["admin"]` (see the `/api/dev-mode` note above);
+     the 404 gate is the only access control it ever needed.
+  2. `test_dev_mode_makes_no_network_calls` renamed to
+     `test_bwf_client_functions_complete_without_network_in_dev_mode` -- it never touched a
+     Flask route, so the old name overclaimed. A new route-level test,
+     `test_player_details_name_lookup_leaks_to_the_live_site_in_dev_mode`, proves (rather than
+     assumes) that `player_details`' by-name lookup still reaches the live site in dev mode.
+  3. The `bwf_dev`/`bwf_live` signature-parity guard now also checks `bwf_client`'s
+     forwarders, and its docstring no longer credits it with catching a forwarder-body bug
+     (dropped `session`) that only a call-through test, not a signature comparison, can catch.
+  4. `_persist_login_profile` now writes a dev persona's `groups` to `kometPlayers.groups`,
+     gated on `bwf_client.get_mode() == "dev"` so it can never fire in production -- without
+     this, a dev login as a `LEVEL 3-5` persona never actually became a `LEVEL 3-5` player.
+  5. `/api/open-tournaments`' `_fake` flag is now keyed off provenance (the row's URL starting
+     with `https://dev.local/`), not the mode in effect at request time -- the old logic
+     tagged a real tournament FAKE whenever dev mode happened to be on, and untagged a dev
+     fixture the moment the toggle flipped back.
+  6. `bwf_dev.get_player_ranking_by_profile` no longer puts `"_fake": True` inside the ranking
+     dict it returns -- `_register_partner` `json.dumps`s that dict straight into
+     `players.ranking`, so the old code persisted a bogus ranking category into the database.
+  7. This section's test counts, corrected above (were 39/162, are 41/164).
+  All six guards (1, 3, 4, 5, 6, and the leak-pin in 2) were mutation-tested: each one was
+  broken by hand and confirmed to fail before being restored.
+  Tests: `python3 -m pytest test_dev_mode.py test_bwf_client.py -v` → 168 passed
+  (45 in `test_dev_mode.py`). `python3 run_tests.py` → Ran 10 tests - OK.
 
 ### Added - Local Development Setup (Configurable Port, Data Directory, Email Kill Switch)
 - **Problem**: Several web projects run on this machine and port 3000 was hardcoded, so the app
