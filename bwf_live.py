@@ -398,3 +398,33 @@ def get_player_details(profile_url):
         pass
 
     return {"gender": gender, "email": email, "phone": phone, "ranking": ranking}
+
+
+def get_player_ranking_by_profile(profile_url):
+    """Ranking for a known profile URL. Cookiewall + ranking page only.
+
+    Moved verbatim from _register_partner's original inline ranking fetch
+    (pre-Task-6) — deliberately not routed through get_player_details, which
+    also fetches the profile page and would add a request and a new failure
+    mode that did not exist before.
+    """
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/",
+        "SettingsOpen": "false",
+        "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+    ranking_resp = s.get(f"{BASE_URL}{profile_url}/ranking", timeout=10)
+    ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
+    table = ranking_soup.find("table")
+    ranking_data = {}
+    if table:
+        for row in table.find_all("tr")[1:]:
+            th = row.find("th", scope="row")
+            tds = row.find_all("td")
+            if th and len(tds) >= 2:
+                category = th.get_text(strip=True)
+                if category:
+                    ranking_data[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
+    return ranking_data

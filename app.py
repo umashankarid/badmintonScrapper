@@ -3038,7 +3038,7 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
     partner_ranking = None
     if partner_profile_url:
         try:
-            ranking_data = bwf_client.get_player_details(partner_profile_url)["ranking"]
+            ranking_data = bwf_client.get_player_ranking_by_profile(partner_profile_url)
             if ranking_data:
                 partner_ranking = json.dumps(ranking_data)
                 logger.info(f"✅ Fetched ranking for partner {partner_name}")
@@ -3825,16 +3825,15 @@ def player_details():
         return jsonify(success=False, error="profile_url or name required"), 400
 
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
         # If no profile_url, search for the player
         if not profile_url:
+            s = ext_requests.Session()
+            s.headers.update({"User-Agent": "Mozilla/5.0"})
+            s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3"
+            }, allow_redirects=True, timeout=5)
             resp = s.get(
                 "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
                 params={"Page": 1, "SportID": 2, "Query": player_name},

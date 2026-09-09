@@ -32,3 +32,7 @@ def search_players(query):
 
 def get_player_details(profile_url):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def get_player_ranking_by_profile(profile_url):
+    raise NotImplementedError("Stub added in Task 12")

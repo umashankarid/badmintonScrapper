@@ -577,6 +577,82 @@ class TestGetPlayerDetails(unittest.TestCase):
             bwf_client.get_player_details("/player-profile/ABC-123")
 
 
+class TestGetPlayerRankingByProfile(unittest.TestCase):
+    """Ranking-only fetch used by _register_partner — cookiewall + ranking page,
+    no profile-page GET (that distinction is the point: get_player_details fetches
+    an extra page this function must not)."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_ranking_table(self, mock_session_cls):
+        session = MagicMock()
+        session.get.return_value = _resp(RANKING_HTML)
+        mock_session_cls.return_value = session
+
+        result = bwf_client.get_player_ranking_by_profile("/player-profile/ABC-123")
+
+        self.assertEqual(result, {
+            "HS": {"rank": "42", "points": "1500"},
+            "HD": {"rank": "17", "points": "2100"},
+        })
+
+        # Pin request construction: exactly one GET, the ranking page — no profile-page fetch.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/cookiewall/Save",
+            data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3",
+            },
+            allow_redirects=True,
+            timeout=5,
+        )
+        session.get.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/player-profile/ABC-123/ranking",
+            timeout=10,
+        )
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_returns_empty_dict_when_no_table(self, mock_session_cls):
+        session = MagicMock()
+        session.get.return_value = _resp("<div>no table</div>")
+        mock_session_cls.return_value = session
+        self.assertEqual(bwf_client.get_player_ranking_by_profile("/player-profile/ABC-123"), {})
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        """No try/except of its own: _register_partner's own try/except is what
+        catches this, exactly as the pre-Task-6 inline code did."""
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.get_player_ranking_by_profile("/player-profile/ABC-123")
+
+
+class TestRegisterPartnerRankingSource(unittest.TestCase):
+    """Pins which client function _register_partner's ranking fetch calls.
+
+    Fix round 1 overturned Task 6's original choice of get_player_details:
+    routing through it added a profile-page GET and a new failure mode that
+    did not exist before Task 6. This is the one guard against a silent
+    revert back to it — none of the boundary-function tests above would
+    catch that, since they never touch _register_partner.
+    """
+
+    def test_uses_the_narrow_ranking_function_not_get_player_details(self):
+        import app
+        with patch("app.bwf_client.get_player_ranking_by_profile",
+                   return_value={"HS": {"rank": "1", "points": "999"}}) as narrow, \
+             patch("app.bwf_client.get_player_details") as wide, \
+             patch("sqlite3.connect"):
+            app._register_partner("Test Cup", "TEST-ROUTING-ONLY", "Smoke Test",
+                                   partner_profile_url="/player-profile/XYZ")
+
+        narrow.assert_called_once_with("/player-profile/XYZ")
+        wide.assert_not_called()
+
+
 PLAYER_PROFILE = {
     "player_name": "Anna Andersson", "license_id": "SE12345", "club": "BMK Komet",
     "gender": "F", "email": "anna@example.com", "phone": "0700000000",
@@ -709,6 +785,67 @@ class TestAddAdminEndpoint(unittest.TestCase):
         resp = self.client.post("/admin/add-admin", json={
             "username": "u", "password": "p", "confirm_password": "nope"})
         self.assertEqual(resp.status_code, 403)
+
+
+class TestPlayerDetailsEndpoint(unittest.TestCase):
+    """/api/player-details: pins which path owns the cookiewall session.
+
+    Regression coverage for fix round 1: the direct-profile_url path (the
+    common one — search results already carry profile_url) must create no
+    local ext_requests.Session at all, since bwf_client.get_player_details
+    makes its own. Only the by-name path still needs app.py's own session,
+    to resolve profile_url before delegating.
+    """
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def test_direct_profile_url_creates_no_local_session(self):
+        details = {"gender": "F", "email": "a@example.com", "phone": "070",
+                   "ranking": {}}
+        with patch("app.bwf_client.get_player_details", return_value=details) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/player-details?profile_url=/player-profile/ABC-123")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, **details})
+        mocked.assert_called_once_with("/player-profile/ABC-123")
+        # The one place a second cookiewall POST used to sneak in.
+        mock_session_cls.assert_not_called()
+
+    def test_by_name_path_resolves_profile_url_then_delegates(self):
+        session = MagicMock()
+        session.get.return_value = _resp(SEARCH_HTML)
+        details = {"gender": "F", "email": "anna@example.com", "phone": "0700000000",
+                   "ranking": {"HS": {"rank": "42", "points": "1500"}}}
+        with patch("app.ext_requests.Session", return_value=session) as mock_session_cls, \
+             patch("app.bwf_client.get_player_details", return_value=details) as mocked:
+            resp = self.client.get("/api/player-details?name=Anna+Andersson")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, **details})
+
+        # Exactly one local session, one cookiewall POST, one DoSearch GET.
+        mock_session_cls.assert_called_once()
+        session.post.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/cookiewall/Save",
+            data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3",
+            },
+            allow_redirects=True,
+            timeout=5,
+        )
+        session.get.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+            params={"Page": 1, "SportID": 2, "Query": "Anna Andersson"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=5,
+        )
+        mocked.assert_called_once_with("/player-profile/ABC-123")
 
 
 if __name__ == "__main__":

@@ -78,3 +78,7 @@ def search_players(query):
 
 def get_player_details(profile_url):
     return _backend().get_player_details(profile_url)
+
+
+def get_player_ranking_by_profile(profile_url):
+    return _backend().get_player_ranking_by_profile(profile_url)
