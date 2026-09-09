@@ -36,6 +36,12 @@ class TestGetPlayerLicense(unittest.TestCase):
     def test_returns_license_for_exact_name(self, mock_get):
         mock_get.return_value = self._response(SEARCH_HTML)
         self.assertEqual(bwf_client.get_player_license("Anna Andersson"), "SE12345")
+        mock_get.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+            params={"Page": 1, "SportID": 2, "Query": "Anna Andersson"},
+            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
+            timeout=5,
+        )
 
     @patch("bwf_live.ext_requests.get")
     def test_name_match_is_case_insensitive(self, mock_get):
