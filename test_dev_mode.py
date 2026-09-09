@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import unittest
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import bwf_client
@@ -173,16 +174,21 @@ class TestOpenTournamentsFakeFlag(unittest.TestCase):
         rows = resp.get_json()["tournaments"]
         return next(t for t in rows if t["url"] == url)
 
-    def test_dev_local_row_is_tagged_fake_in_either_mode(self):
-        bwf_client.set_mode("live")
-        self.assertTrue(self._fetch_row(self.DEV_URL)["_fake"])
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_dev_local_row_is_tagged_fake_in_dev_mode(self):
         bwf_client.set_mode("dev")
         self.assertTrue(self._fetch_row(self.DEV_URL)["_fake"])
 
+    def test_dev_local_row_is_not_listed_at_all_in_live_mode(self):
+        """Superseded the "tagged in either mode" case: fixtures are now filtered
+        out of live listings entirely, so there is no row left to tag. Tagging by
+        provenance still matters for the rows that DO appear."""
+        bwf_client.set_mode("live")
+        rows = self.client.get("/api/open-tournaments").get_json()["tournaments"]
+        self.assertNotIn(self.DEV_URL, [t["url"] for t in rows])
+
     def test_real_row_is_never_tagged_fake(self):
         bwf_client.set_mode("live")
-        self.assertFalse(self._fetch_row(self.REAL_URL)["_fake"])
-        bwf_client.set_mode("dev")
         self.assertFalse(self._fetch_row(self.REAL_URL)["_fake"])
 
 
@@ -847,3 +853,89 @@ class TestSessionCannotCrossModes(unittest.TestCase):
         self.client.get("/api/bwf-status")
         with self.client.session_transaction() as sess:
             self.assertEqual(sess["bwf_login"], "realuser")
+
+
+class TestFixturesDoNotLeakIntoLive(unittest.TestCase):
+    """Dev fixtures are written into the same local tournaments.db as real
+    tournaments. Without a provenance filter they keep appearing after a switch
+    back to live -- and worse, they satisfy the "already fetched today" cache
+    check in /api/bwf-tournaments-all, so live mode serves fixtures and never
+    calls the real site at all. Found by using the app, not by a test."""
+
+    FIXTURE_URL = "https://dev.local/tournament/DEV-T1"
+    REAL_URL = "https://badmintonsweden.tournamentsoftware.com/tournament/REAL-1"
+
+    def setUp(self):
+        import app
+        self.app = app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        bwf_client.set_mode("live")
+        self._reset_rows()
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        self._reset_rows()
+
+    def _reset_rows(self):
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute("DELETE FROM tournaments WHERE tournament_url IN (?, ?)",
+                     (self.FIXTURE_URL, self.REAL_URL))
+        conn.commit()
+        conn.close()
+
+    def _insert(self, url, name, start):
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+            "selected_for_view) VALUES (?, ?, ?, 1)", (name, url, start))
+        conn.commit()
+        conn.close()
+
+    def _names(self):
+        body = self.client.get("/api/open-tournaments").get_json()
+        return {t["name"] for t in body["tournaments"]}
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_live_mode_hides_fixtures_and_shows_real(self):
+        future = (date.today() + timedelta(days=30)).isoformat()
+        self._insert(self.FIXTURE_URL, "Dev Open (FAKE)", future)
+        self._insert(self.REAL_URL, "Real Cup", future)
+        self.assertEqual(self._names() & {"Dev Open (FAKE)", "Real Cup"}, {"Real Cup"})
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_dev_mode_hides_real_and_shows_fixtures(self):
+        future = (date.today() + timedelta(days=30)).isoformat()
+        self._insert(self.FIXTURE_URL, "Dev Open (FAKE)", future)
+        self._insert(self.REAL_URL, "Real Cup", future)
+        bwf_client.set_mode("dev")
+        self.assertEqual(self._names() & {"Dev Open (FAKE)", "Real Cup"}, {"Dev Open (FAKE)"})
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_production_shows_real_tournaments(self):
+        """The filter must never hide a real tournament in production."""
+        future = (date.today() + timedelta(days=30)).isoformat()
+        self._insert(self.REAL_URL, "Real Cup", future)
+        self.assertIn("Real Cup", self._names())
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_fixtures_do_not_satisfy_the_live_cache_check(self):
+        """The bug as hit: a fixture cached today made live mode skip the fetch."""
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+            "last_updated) VALUES (?, ?, ?, ?)",
+            ("Dev Open (FAKE)", self.FIXTURE_URL,
+             (date.today() + timedelta(days=30)).isoformat(),
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+        conn.close()
+
+        clause, params = self.app._mode_url_clause()
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        today = date.today().strftime("%Y-%m-%d")
+        count = conn.execute(
+            f"SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ? AND {clause}",
+            (f"{today}%",) + params).fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 0, "a dev fixture counted as live cache")

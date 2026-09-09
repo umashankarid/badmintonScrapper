@@ -1735,12 +1735,17 @@ def get_all_bwf_tournaments():
             conn_cache = sqlite3.connect(TOURNAMENTS_DB)
             cur_cache = conn_cache.cursor()
             today = datetime.now().strftime("%Y-%m-%d")
-            cur_cache.execute("SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ?", (f"{today}%",))
+            # Only rows from this mode count as cache, and only they are served:
+            # otherwise dev fixtures make live mode look "already fetched today".
+            mode_clause, mode_params = _mode_url_clause()
+            cur_cache.execute(
+                f"SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ? AND {mode_clause}",
+                (f"{today}%",) + mode_params)
             fetched_today = cur_cache.fetchone()[0]
-            
+
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories, enable_accommodation_transport FROM tournaments ORDER BY date_start")
+                cur_cache.execute(f"SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories, enable_accommodation_transport FROM tournaments WHERE {mode_clause} ORDER BY date_start", mode_params)
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
                     tg = []
@@ -2023,16 +2028,19 @@ def open_tournaments():
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get tournaments marked as selected_for_view = 1 AND date_start >= TODAY
-        cur.execute("""
+        # Get tournaments marked as selected_for_view = 1 AND date_start >= TODAY,
+        # restricted to the current mode so dev fixtures do not surface in live.
+        mode_clause, mode_params = _mode_url_clause()
+        cur.execute(f"""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
                    competition_start, competition_end, admin_reg_end_date, tournament_groups
-            FROM tournaments 
-            WHERE selected_for_view = 1 
+            FROM tournaments
+            WHERE selected_for_view = 1
             AND date_start >= ?
+            AND {mode_clause}
             ORDER BY registration_closes ASC, tournament_name ASC
-        """, (today,))
+        """, (today,) + mode_params)
         rows = cur.fetchall()
         conn.close()
         
@@ -5318,6 +5326,27 @@ def get_reminders_sent_status():
 
 
 # ==================== LOCAL DEVELOPMENT MODE ====================
+
+DEV_FIXTURE_URL_PREFIX = "https://dev.local/"
+
+
+def _mode_url_clause():
+    """SQL fragment and params restricting tournaments to the current mode.
+
+    Dev fixtures are written into the same local tournaments.db as real ones,
+    so without this a fixture scraped in dev mode keeps showing up in live —
+    and worse, counts towards the "already fetched today" cache check, which
+    then serves fixtures instead of calling the real site at all.
+
+    Provenance is the URL host: every fixture uses https://dev.local/. In
+    production get_mode() is always "live", so this is always the NOT LIKE
+    branch, which no real tournament URL matches.
+    """
+    pattern = DEV_FIXTURE_URL_PREFIX + "%"
+    if bwf_client.get_mode() == "dev":
+        return "tournament_url LIKE ?", (pattern,)
+    return "tournament_url NOT LIKE ?", (pattern,)
+
 
 @app.before_request
 def _drop_session_from_another_mode():
