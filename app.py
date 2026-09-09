@@ -4856,26 +4856,7 @@ def tournament_player_id():
     try:
         tournament_id = request.args.get("id", "")
         name = request.args.get("name", "")
-
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Players/GetPlayersContent",
-            headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        import re
-        for a in soup.find_all("a", href=True):
-            if a.get_text(strip=True) == name or name in a.get_text(strip=True):
-                href = a.get("href", "")
-                match = re.search(r"player=(\d+)", href)
-                if match:
-                    return jsonify(success=True, player_id=match.group(1))
-
-        return jsonify(success=True, player_id="")
+        return jsonify(success=True, player_id=bwf_client.get_tournament_player_id(tournament_id, name))
     except Exception as e:
         return jsonify(success=False, error=str(e), player_id=""), 500
 

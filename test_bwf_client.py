@@ -1644,5 +1644,90 @@ class TestTournamentMedalsEndpoint(unittest.TestCase):
         self.assertEqual(resp.get_json(), {"success": False, "error": "refused", "medals": []})
 
 
+PLAYERS_LIST_HTML = """
+<div>
+  <a href="/tournament/T-1/player?player=55&x=1">Anna Andersson</a>
+  <a href="/tournament/T-1/player?player=77">Bea Bergstrom</a>
+</div>
+"""
+
+PLAYERS_URL = "https://badmintonsweden.tournamentsoftware.com/tournament/T-1/Players/GetPlayersContent"
+
+
+class TestTournamentPlayerId(unittest.TestCase):
+    """A player's tournament-specific ID, matched off the player list page."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_returns_id_for_matching_name(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(PLAYERS_LIST_HTML)]
+        mock_session_cls.return_value = session
+
+        player_id = bwf_client.get_tournament_player_id("T-1", "Anna Andersson")
+
+        self.assertEqual(player_id, "55")
+
+        # Pin request construction for every outgoing call.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5)
+        session.get.assert_called_once_with(
+            PLAYERS_URL, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_matches_a_name_contained_within_the_link_text(self, mock_session_cls):
+        """The 'or name in text' branch: a substring match still resolves."""
+        session = MagicMock()
+        session.get.side_effect = [_resp(PLAYERS_LIST_HTML)]
+        mock_session_cls.return_value = session
+        self.assertEqual(bwf_client.get_tournament_player_id("T-1", "Andersson"), "55")
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_returns_empty_string_when_not_found(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(PLAYERS_LIST_HTML)]
+        mock_session_cls.return_value = session
+        self.assertEqual(bwf_client.get_tournament_player_id("T-1", "Nobody At All"), "")
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.get_tournament_player_id("T-1", "Anna Andersson")
+
+
+class TestTournamentPlayerIdEndpoint(unittest.TestCase):
+    """/api/tournament-player-id: delegates, and owns no session of its own."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def test_delegates_and_owns_no_session(self):
+        with patch("app.bwf_client.get_tournament_player_id", return_value="55") as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/tournament-player-id?id=T-1&name=Anna+Andersson")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, "player_id": "55"})
+        mocked.assert_called_once_with("T-1", "Anna Andersson")
+        mock_session_cls.assert_not_called()
+
+    def test_not_found_is_still_a_200_with_an_empty_id(self):
+        with patch("app.bwf_client.get_tournament_player_id", return_value=""):
+            resp = self.client.get("/api/tournament-player-id?id=T-1&name=Nobody")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, "player_id": ""})
+
+    def test_scrape_failure_is_a_500(self):
+        with patch("app.bwf_client.get_tournament_player_id", side_effect=Boom("refused")):
+            resp = self.client.get("/api/tournament-player-id?id=T-1&name=Anna")
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(), {"success": False, "error": "refused", "player_id": ""})
+
+
 if __name__ == "__main__":
     unittest.main()

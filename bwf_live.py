@@ -750,3 +750,25 @@ def get_tournament_medals(tournament_id):
                             medals.append({"name": clean, "event": event_name, "placement": placement})
 
     return medals
+
+
+def get_tournament_player_id(tournament_id, player_name):
+    """A player's ID from the tournament player list, matched by name. "" when not found."""
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    resp = s.get(f"{BASE_URL}/tournament/{tournament_id}/Players/GetPlayersContent",
+        headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    for a in soup.find_all("a", href=True):
+        if a.get_text(strip=True) == player_name or player_name in a.get_text(strip=True):
+            href = a.get("href", "")
+            match = re.search(r"player=(\d+)", href)
+            if match:
+                return match.group(1)
+
+    return ""
