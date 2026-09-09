@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://badmintonsweden.tournamentsoftware.com"
 
 
+class LoginPageUnavailable(Exception):
+    """The login form could not be loaded, so no credentials were ever submitted."""
+
+
+class ProfileNotFound(Exception):
+    """The credentials were accepted but the account has no player profile."""
+
+
 def get_player_license(player_name):
     """Look up a player's license ID from Badminton Sweden search."""
     try:
@@ -114,7 +122,7 @@ def _authenticate(username, password):
     soup = BeautifulSoup(resp.text, "html.parser")
     token_el = soup.find("input", {"name": "__RequestVerificationToken"})
     if not token_el:
-        raise RuntimeError("Could not load login page")
+        raise LoginPageUnavailable("Could not load login page")
 
     # Submit login
     logo_el = soup.find("input", {"name": "LogoUrl"})
@@ -181,7 +189,7 @@ def login(username, password):
                 "is_club_account": True,
             }
         else:
-            return None
+            raise ProfileNotFound("Login succeeded but could not find player profile")
 
     # Get player name from the masthead (shown after login)
     player_name = ""

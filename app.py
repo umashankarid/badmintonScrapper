@@ -669,8 +669,12 @@ def bwf_login():
 
     try:
         profile = bwf_client.login(login, password)
+    except bwf_client.LoginPageUnavailable:
+        return jsonify(success=False, error="Could not load login page"), 500
+    except bwf_client.ProfileNotFound as e:
+        return jsonify(success=False, error=str(e)), 500
     except Exception as e:
-        logger.error(f"❌ Login error: {e}")
+        logger.exception(f"❌ Login error: {e}")
         return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
 
     if not profile:
@@ -1119,6 +1123,8 @@ def add_admin():
     try:
         if not bwf_client.verify_credentials(username, password):
             return jsonify(success=False, error="Invalid Badminton Sweden credentials"), 401
+    except bwf_client.LoginPageUnavailable:
+        return jsonify(success=False, error="Could not connect to Badminton Sweden"), 500
     except Exception as e:
         return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
 

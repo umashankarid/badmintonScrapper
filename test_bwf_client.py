@@ -186,7 +186,12 @@ class TestLogin(unittest.TestCase):
         session.get.return_value = resp
         session.post.return_value = resp
         mock_session_cls.return_value = session
+
         self.assertIsNone(bwf_client.login("someone", "wrong-password"))
+
+        # Only the login page was fetched: the rejection short-circuits before the
+        # profile search, so this fails if the rejection check is ever removed.
+        session.get.assert_called_once_with(f"{BASE}/user", timeout=10)
 
     @patch("bwf_live.ext_requests.Session")
     def test_successful_login_returns_profile_dict(self, mock_session_cls):
@@ -305,13 +310,16 @@ class TestLogin(unittest.TestCase):
         self.assertTrue(result["is_club_account"])
 
     @patch("bwf_live.ext_requests.Session")
-    def test_no_profile_for_an_ordinary_login_returns_none(self, mock_session_cls):
-        """Credentials accepted but no player profile found: treated as failure."""
+    def test_no_profile_for_an_ordinary_login_raises(self, mock_session_cls):
+        """Credentials accepted but no player profile: distinct from a bad password."""
         session = MagicMock()
         session.get.side_effect = [_resp(LOGIN_PAGE_HTML), _resp(CLUB_HTML)]
         session.post.return_value = _resp("<div>logged in</div>")
         mock_session_cls.return_value = session
-        self.assertIsNone(bwf_client.login("anna", "correct-password"))
+        with self.assertRaises(bwf_client.ProfileNotFound) as caught:
+            bwf_client.login("anna", "correct-password")
+        self.assertEqual(str(caught.exception),
+                         "Login succeeded but could not find player profile")
 
     @patch("bwf_live.ext_requests.Session")
     def test_missing_verification_token_raises(self, mock_session_cls):
@@ -319,7 +327,7 @@ class TestLogin(unittest.TestCase):
         session = MagicMock()
         session.get.return_value = _resp("<div>maintenance</div>")
         mock_session_cls.return_value = session
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(bwf_client.LoginPageUnavailable):
             bwf_client.login("anna", "correct-password")
         session.post.assert_called_once()  # only the cookiewall POST went out
 
@@ -431,6 +439,149 @@ class TestVerifyCredentials(unittest.TestCase):
         mock_session_cls.return_value = session
         with self.assertRaises(Boom):
             bwf_client.verify_credentials("anna", "correct-password")
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_missing_verification_token_raises(self, mock_session_cls):
+        """Shared with login(): no token is 'site broken', not 'wrong password'."""
+        session = MagicMock()
+        session.get.return_value = _resp("<div>maintenance</div>")
+        mock_session_cls.return_value = session
+        with self.assertRaises(bwf_client.LoginPageUnavailable):
+            bwf_client.verify_credentials("anna", "correct-password")
+
+
+PLAYER_PROFILE = {
+    "player_name": "Anna Andersson", "license_id": "SE12345", "club": "BMK Komet",
+    "gender": "F", "email": "anna@example.com", "phone": "0700000000",
+    "dob": "2011-05-04", "age": "15",
+    "ranking": {"HS": {"rank": "42", "points": "1500"}},
+    "profile_url": "/player-profile/ABC-123", "is_club_account": False,
+}
+
+CLUB_PROFILE = dict(PLAYER_PROFILE, player_name="BMK Komet", license_id="", club="",
+                    gender="", email="", phone="", dob="", age="", ranking={},
+                    profile_url="", is_club_account=True)
+
+
+class TestBwfLoginEndpoint(unittest.TestCase):
+    """/api/bwf-login owns the session writes, the DB write and the status codes."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.app = app
+        self.client = app.app.test_client()
+
+    def test_missing_credentials_are_rejected(self):
+        resp = self.client.post("/api/bwf-login", json={"login": "", "password": ""})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_rejected_credentials_return_401(self):
+        with patch("app.bwf_client.login", return_value=None):
+            resp = self.client.post("/api/bwf-login", json={"login": "a", "password": "b"})
+        self.assertEqual(resp.status_code, 401)
+        self.assertIn("Inloggning misslyckades", resp.get_json()["error"])
+
+    def test_missing_profile_is_a_500_not_a_401(self):
+        """A real account with no profile must not be told its password is wrong."""
+        boom = bwf_client.ProfileNotFound("Login succeeded but could not find player profile")
+        with patch("app.bwf_client.login", side_effect=boom):
+            resp = self.client.post("/api/bwf-login", json={"login": "a", "password": "b"})
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json()["error"],
+                         "Login succeeded but could not find player profile")
+
+    def test_unloadable_login_page_is_a_500(self):
+        boom = bwf_client.LoginPageUnavailable("Could not load login page")
+        with patch("app.bwf_client.login", side_effect=boom):
+            resp = self.client.post("/api/bwf-login", json={"login": "a", "password": "b"})
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json()["error"], "Could not load login page")
+
+    def test_transport_error_is_a_connection_error(self):
+        with patch("app.bwf_client.login", side_effect=Boom("connection refused")):
+            resp = self.client.post("/api/bwf-login", json={"login": "a", "password": "b"})
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json()["error"], "Connection error: connection refused")
+
+    def test_successful_login_fills_the_session_and_saves_the_player(self):
+        with patch("app.bwf_client.login", return_value=PLAYER_PROFILE), \
+             patch("app.is_admin_user", return_value=False), \
+             patch("app._persist_login_profile") as persist:
+            resp = self.client.post("/api/bwf-login", json={"login": "anna", "password": "b"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.get_json(),
+            {"success": True, "player_name": "Anna Andersson", "license_id": "SE12345",
+             "club": "BMK Komet", "gender": "F", "email": "anna@example.com",
+             "phone": "0700000000", "dob": "2011-05-04", "age": "15",
+             "ranking": {"HS": {"rank": "42", "points": "1500"}}},
+        )
+        persist.assert_called_once_with(PLAYER_PROFILE)
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["bwf_player"], "Anna Andersson")
+            self.assertEqual(sess["bwf_login"], "anna")
+            self.assertEqual(sess["bwf_license_id"], "SE12345")
+            self.assertEqual(sess["bwf_club"], "BMK Komet")
+            self.assertEqual(sess["bwf_gender"], "F")
+            self.assertEqual(sess["bwf_email"], "anna@example.com")
+            self.assertEqual(sess["bwf_phone"], "0700000000")
+            self.assertEqual(sess["bwf_dob"], "2011-05-04")
+            self.assertEqual(sess["bwf_age"], "15")
+            self.assertEqual(sess["bwf_ranking"], {"HS": {"rank": "42", "points": "1500"}})
+            self.assertIs(sess["admin"], False)
+
+    def test_club_account_is_an_admin_without_a_lookup(self):
+        """Club logins have always been admins outright; is_admin_user must not decide."""
+        with patch("app.bwf_client.login", return_value=CLUB_PROFILE), \
+             patch("app.is_admin_user", return_value=False), \
+             patch("app._persist_login_profile"):
+            resp = self.client.post("/api/bwf-login",
+                                    json={"login": "sbf04959", "password": "b"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["ranking"], {})
+        with self.client.session_transaction() as sess:
+            self.assertIs(sess["admin"], True)
+            self.assertEqual(sess["bwf_player"], "BMK Komet")
+
+
+class TestAddAdminEndpoint(unittest.TestCase):
+    """/admin/add-admin verifies against Badminton Sweden before writing admin.db."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def _post(self):
+        return self.client.post("/admin/add-admin", json={
+            "username": "u", "password": "p", "confirm_password": "admin@2026"})
+
+    def test_invalid_credentials_return_401(self):
+        with patch("app.bwf_client.verify_credentials", return_value=False):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.get_json()["error"], "Invalid Badminton Sweden credentials")
+
+    def test_unloadable_login_page_returns_500(self):
+        boom = bwf_client.LoginPageUnavailable("Could not load login page")
+        with patch("app.bwf_client.verify_credentials", side_effect=boom):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json()["error"], "Could not connect to Badminton Sweden")
+
+    def test_transport_error_returns_500(self):
+        with patch("app.bwf_client.verify_credentials", side_effect=Boom("refused")):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json()["error"], "Connection error: refused")
+
+    def test_wrong_confirmation_password_is_rejected(self):
+        resp = self.client.post("/admin/add-admin", json={
+            "username": "u", "password": "p", "confirm_password": "nope"})
+        self.assertEqual(resp.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,10 @@ def set_mode(mode):
 import bwf_dev
 import bwf_live
 
+# Re-exported so app.py can distinguish these from a transport failure without
+# importing bwf_live directly.
+from bwf_live import LoginPageUnavailable, ProfileNotFound
+
 
 def _backend():
     """The module that services calls right now."""
