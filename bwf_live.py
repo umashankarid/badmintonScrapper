@@ -295,3 +295,106 @@ def login(username, password):
         "profile_url": profile_url,
         "is_club_account": False,
     }
+
+
+def search_players(query):
+    """Search Badminton Sweden for players matching query. Empty list on any failure."""
+    try:
+        resp = ext_requests.get(
+            f"{BASE_URL}/find/player/DoSearch",
+            params={"Page": 1, "SportID": 2, "Query": query},
+            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
+            timeout=5
+        )
+        soup = BeautifulSoup(resp.text, "html.parser")
+        items = soup.select("li.list__item")
+        live_results = []
+        for item in items:
+            name_el = item.select_one("a.media__link span.nav-link__value")
+            if not name_el:
+                continue
+            name = name_el.get_text(strip=True)
+            club = ""
+            club_el = item.select_one(".media__subheading span.nav-link__value")
+            if club_el:
+                club = club_el.get_text(strip=True).split("|")[0].strip()
+            license_id = ""
+            license_el = item.select_one(".media__title-aside")
+            if license_el:
+                license_id = license_el.get_text(strip=True).strip("()")
+            profile_link = item.select_one("a.media__link")
+            profile_url = profile_link.get("href", "") if profile_link else ""
+            live_results.append({"name": name, "club": club, "license_id": license_id, "profile_url": profile_url, "source": "live"})
+        return live_results
+    except Exception:
+        return []
+
+
+def get_player_details(profile_url):
+    """Fetch full player details (gender, email, phone, ranking) from Badminton Sweden profile."""
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/",
+        "SettingsOpen": "false",
+        "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    # Fetch player profile page to get gender
+    gender = ""
+    resp = s.get(f"{BASE_URL}{profile_url}", timeout=10)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    # Gender is often in the profile meta info
+    for dt in soup.find_all("dt"):
+        dd = dt.find_next_sibling("dd")
+        if not dd:
+            continue
+        label = dt.get_text(strip=True).rstrip(":")
+        value = dd.get_text(strip=True)
+        if label == "Kön" or "gender" in label.lower():
+            gender = "F" if "kvinna" in value.lower() or "female" in value.lower() else "M" if "man" in value.lower() or "male" in value.lower() else ""
+
+    # Try to get email and phone from profile page
+    email = ""
+    phone = ""
+    for dt in soup.find_all("dt"):
+        dd = dt.find_next_sibling("dd")
+        if not dd:
+            continue
+        label = dt.get_text(strip=True).rstrip(":")
+        value = dd.get_text(strip=True)
+        if "e-mail" in label.lower() or "email" in label.lower():
+            email = value.replace("(Redigera)", "").strip()
+        elif "telefon" in label.lower() or "phone" in label.lower() or "mobil" in label.lower():
+            if value and not phone:
+                phone = value
+
+    # If gender not found on profile page, try to infer from events
+    if not gender:
+        for a in soup.select("a"):
+            text = a.get_text(strip=True)
+            if text.startswith("DS ") or text.startswith("DD "):
+                gender = "F"
+                break
+            elif text.startswith("HS ") or text.startswith("HD "):
+                gender = "M"
+                break
+
+    # Fetch ranking
+    ranking = {}
+    try:
+        ranking_resp = s.get(f"{BASE_URL}{profile_url}/ranking", timeout=10)
+        ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
+        table = ranking_soup.find("table")
+        if table:
+            for row in table.find_all("tr")[1:]:
+                th = row.find("th", scope="row")
+                tds = row.find_all("td")
+                if th and len(tds) >= 2:
+                    category = th.get_text(strip=True)
+                    if category:
+                        ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
+    except Exception:
+        pass
+
+    return {"gender": gender, "email": email, "phone": phone, "ranking": ranking}

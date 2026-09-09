@@ -70,3 +70,11 @@ def login(username, password):
 
 def verify_credentials(username, password):
     return _backend().verify_credentials(username, password)
+
+
+def search_players(query):
+    return _backend().search_players(query)
+
+
+def get_player_details(profile_url):
+    return _backend().get_player_details(profile_url)

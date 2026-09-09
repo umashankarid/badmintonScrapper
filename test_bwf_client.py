@@ -450,6 +450,133 @@ class TestVerifyCredentials(unittest.TestCase):
             bwf_client.verify_credentials("anna", "correct-password")
 
 
+class TestSearchPlayers(unittest.TestCase):
+    """Live player search: same DoSearch endpoint and parsing as get_player_license."""
+
+    @patch("bwf_live.ext_requests.get")
+    def test_parses_search_results(self, mock_get):
+        resp = MagicMock()
+        resp.text = SEARCH_HTML
+        mock_get.return_value = resp
+
+        results = bwf_client.search_players("Andersson")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0], {
+            "name": "Anna Andersson",
+            "club": "BMK Komet",
+            "license_id": "SE12345",
+            "profile_url": "/player-profile/ABC-123",
+            "source": "live",
+        })
+
+        # Pin request construction for the one outgoing call.
+        mock_get.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+            params={"Page": 1, "SportID": 2, "Query": "Andersson"},
+            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
+            timeout=5,
+        )
+
+    @patch("bwf_live.ext_requests.get")
+    def test_returns_empty_list_when_no_results(self, mock_get):
+        resp = MagicMock()
+        resp.text = "<ul></ul>"
+        mock_get.return_value = resp
+        self.assertEqual(bwf_client.search_players("Nobody At All"), [])
+        mock_get.assert_called_once()
+
+    @patch("bwf_live.ext_requests.get")
+    def test_returns_empty_list_on_error(self, mock_get):
+        """Errors are swallowed and reported as 'no results', as today."""
+        mock_get.side_effect = Exception("timeout")
+        self.assertEqual(bwf_client.search_players("Andersson"), [])
+        mock_get.assert_called_once()
+
+
+class TestGetPlayerDetails(unittest.TestCase):
+    """Given an already-known profile_url, scrape gender/email/phone/ranking."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_details_and_ranking(self, mock_session_cls):
+        session = MagicMock()
+        profile, ranking = MagicMock(), MagicMock()
+        profile.text = ACCOUNT_HTML
+        ranking.text = RANKING_HTML
+        session.get.side_effect = [profile, ranking]
+        mock_session_cls.return_value = session
+
+        details = bwf_client.get_player_details("/player-profile/ABC-123")
+
+        self.assertEqual(details, {
+            "gender": "F",
+            "email": "anna@example.com",
+            "phone": "0700000000",
+            "ranking": {
+                "HS": {"rank": "42", "points": "1500"},
+                "HD": {"rank": "17", "points": "2100"},
+            },
+        })
+
+        # Pin request construction for every outgoing call the function makes.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/cookiewall/Save",
+            data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3",
+            },
+            allow_redirects=True,
+            timeout=5,
+        )
+        self.assertEqual(
+            session.get.call_args_list,
+            [
+                call("https://badmintonsweden.tournamentsoftware.com/player-profile/ABC-123", timeout=10),
+                call("https://badmintonsweden.tournamentsoftware.com/player-profile/ABC-123/ranking", timeout=10),
+            ],
+        )
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_infers_gender_from_events_when_absent_from_profile(self, mock_session_cls):
+        """No Kön dt/dd on the profile page: fall back to scanning event links."""
+        session = MagicMock()
+        profile, ranking = MagicMock(), MagicMock()
+        profile.text = "<a>DS B</a>"
+        ranking.text = "<div>no table</div>"
+        session.get.side_effect = [profile, ranking]
+        mock_session_cls.return_value = session
+
+        details = bwf_client.get_player_details("/player-profile/ABC-123")
+        self.assertEqual(details["gender"], "F")
+        self.assertEqual(details["ranking"], {})
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_ranking_failure_is_swallowed(self, mock_session_cls):
+        """A broken ranking page leaves ranking empty rather than raising."""
+        session = MagicMock()
+        profile = MagicMock()
+        profile.text = ACCOUNT_HTML
+        session.get.side_effect = [profile, Boom("ranking down")]
+        mock_session_cls.return_value = session
+
+        details = bwf_client.get_player_details("/player-profile/ABC-123")
+        self.assertEqual(details["ranking"], {})
+        self.assertEqual(details["email"], "anna@example.com")
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_profile_fetch_failure_propagates(self, mock_session_cls):
+        """The profile fetch has no try/except of its own (unlike the ranking fetch):
+        a failure bubbles up so app.py's outer handler can turn it into a 500."""
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+
+        with self.assertRaises(Boom):
+            bwf_client.get_player_details("/player-profile/ABC-123")
+
+
 PLAYER_PROFILE = {
     "player_name": "Anna Andersson", "license_id": "SE12345", "club": "BMK Komet",
     "gender": "F", "email": "anna@example.com", "phone": "0700000000",

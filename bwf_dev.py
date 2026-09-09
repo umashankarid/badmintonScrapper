@@ -24,3 +24,11 @@ def login(username, password):
 
 def verify_credentials(username, password):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def search_players(query):
+    raise NotImplementedError("Stub added in Task 12")
+
+
+def get_player_details(profile_url):
+    raise NotImplementedError("Stub added in Task 12")
