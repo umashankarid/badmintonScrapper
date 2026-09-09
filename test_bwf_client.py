@@ -1729,5 +1729,104 @@ class TestTournamentPlayerIdEndpoint(unittest.TestCase):
         self.assertEqual(resp.get_json(), {"success": False, "error": "refused", "player_id": ""})
 
 
+PLAYER_RESULTS_HTML = """
+<table>
+  <tr><th>Cat</th><th>P</th><th>W-L</th><th>Sets</th><th>Pts</th></tr>
+  <tr><td>HS A</td><td>3</td><td>2-1</td><td>5-3</td><td>1500</td></tr>
+</table>
+<div class="match">
+  <div class="match__header-title-item"><span class="nav-link__value">R16</span></div>
+  <div class="match__header-title-item"><span class="nav-link__value">HS A</span></div>
+  <div class="match__row has-won"><span class="nav-link__value">Anna Andersson</span></div>
+  <div class="match__row"><span class="nav-link__value">Bea Bergstrom</span></div>
+  <ul class="points"><li class="points__cell">21</li><li class="points__cell">15</li></ul>
+  <ul class="points"><li class="points__cell">21</li><li class="points__cell">18</li></ul>
+</div>
+"""
+
+PLAYER_RESULTS_URL = "https://badmintonsweden.tournamentsoftware.com/tournament/T-1/player/55"
+
+
+class TestTournamentPlayerResults(unittest.TestCase):
+    """A player's stats table plus their per-match history for a tournament."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_stats_and_matches(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(PLAYER_RESULTS_HTML)]
+        mock_session_cls.return_value = session
+
+        result = bwf_client.get_tournament_player_results("T-1", "55")
+
+        self.assertEqual(result["stats"], [{
+            "category": "HS A", "played": "3", "win_loss": "2-1",
+            "sets": "5-3", "points": "1500",
+        }])
+        self.assertEqual(result["matches"], [{
+            "round": "R16", "event": "HS A",
+            "team1": "Anna Andersson", "team2": "Bea Bergstrom",
+            "team1_won": True, "score": "21-15 21-18",
+        }])
+
+        # Pin request construction for every outgoing call.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5)
+        session.get.assert_called_once_with(PLAYER_RESULTS_URL, timeout=15)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_missing_table_and_matches_return_empty_lists(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp("<div>nothing here</div>")]
+        mock_session_cls.return_value = session
+
+        result = bwf_client.get_tournament_player_results("T-1", "55")
+        self.assertEqual(result, {"stats": [], "matches": []})
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.get_tournament_player_results("T-1", "55")
+
+
+class TestTournamentPlayerResultsEndpoint(unittest.TestCase):
+    """/api/tournament-player-results: delegates, and owns no session of its own."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def test_delegates_and_owns_no_session(self):
+        result = {"stats": [{"category": "HS A", "played": "3", "win_loss": "2-1",
+                              "sets": "5-3", "points": "1500"}],
+                  "matches": [{"round": "R16", "event": "HS A", "team1": "A", "team2": "B",
+                               "team1_won": True, "score": "21-15"}]}
+        with patch("app.bwf_client.get_tournament_player_results", return_value=result) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/tournament-player-results?id=T-1&player=55")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, **result})
+        mocked.assert_called_once_with("T-1", "55")
+        mock_session_cls.assert_not_called()
+
+    def test_missing_parameters_are_a_400(self):
+        resp = self.client.get("/api/tournament-player-results?id=T-1")
+        self.assertEqual(resp.status_code, 400)
+        resp = self.client.get("/api/tournament-player-results?player=55")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_scrape_failure_is_a_500(self):
+        with patch("app.bwf_client.get_tournament_player_results", side_effect=Boom("refused")):
+            resp = self.client.get("/api/tournament-player-results?id=T-1&player=55")
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(),
+                         {"success": False, "error": "refused", "stats": [], "matches": []})
+
+
 if __name__ == "__main__":
     unittest.main()

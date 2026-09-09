@@ -772,3 +772,73 @@ def get_tournament_player_id(tournament_id, player_name):
                 return match.group(1)
 
     return ""
+
+
+def get_tournament_player_results(tournament_id, player_id):
+    """A player's stats table and match history for one tournament."""
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    resp = s.get(f"{BASE_URL}/tournament/{tournament_id}/player/{player_id}", timeout=15)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Parse stats table
+    stats = []
+    stats_table = soup.select_one("table")
+    if stats_table:
+        for row in stats_table.select("tr")[1:]:
+            cells = [c.get_text(strip=True) for c in row.find_all("td")]
+            if len(cells) >= 5:
+                stats.append({
+                    "category": cells[0],
+                    "played": cells[1],
+                    "win_loss": cells[2],
+                    "sets": cells[3],
+                    "points": cells[4]
+                })
+
+    # Parse matches
+    matches = []
+    for match_el in soup.select(".match"):
+        # Round and event
+        header_items = match_el.select(".match__header-title-item .nav-link__value")
+        round_name = header_items[0].get_text(strip=True) if header_items else ""
+        event = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
+
+        # Teams
+        rows = match_el.select(".match__row")
+        team1 = ""
+        team2 = ""
+        team1_won = False
+        for i, row in enumerate(rows):
+            players = [el.get_text(strip=True) for el in row.select(".nav-link__value") if el.get_text(strip=True)]
+            is_won = "has-won" in row.get("class", [])
+            name = " / ".join(players) if players else row.get_text(strip=True).strip()
+            if i == 0:
+                team1 = name
+                team1_won = is_won
+            else:
+                team2 = name
+
+        # Scores from ul.points > li.points__cell
+        score_sets = []
+        points_lists = match_el.select("ul.points")
+        for pts in points_lists:
+            cells = pts.select("li.points__cell")
+            if len(cells) == 2:
+                score_sets.append(f"{cells[0].get_text(strip=True)}-{cells[1].get_text(strip=True)}")
+
+        if team1 or team2:
+            matches.append({
+                "round": round_name,
+                "event": event,
+                "team1": team1,
+                "team2": team2,
+                "team1_won": team1_won,
+                "score": " ".join(score_sets)
+            })
+
+    return {"stats": stats, "matches": matches}

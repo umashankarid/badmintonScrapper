@@ -64,3 +64,7 @@ def get_tournament_medals(tournament_id):
 
 def get_tournament_player_id(tournament_id, player_name):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def get_tournament_player_results(tournament_id, player_id):
+    raise NotImplementedError("Stub added in Task 12")

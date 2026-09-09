@@ -110,3 +110,7 @@ def get_tournament_medals(tournament_id):
 
 def get_tournament_player_id(tournament_id, player_name):
     return _backend().get_tournament_player_id(tournament_id, player_name)
+
+
+def get_tournament_player_results(tournament_id, player_id):
+    return _backend().get_tournament_player_results(tournament_id, player_id)
