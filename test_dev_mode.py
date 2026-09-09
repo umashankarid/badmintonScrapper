@@ -1,7 +1,9 @@
 """Tests for local development mode: state, endpoints and production guards."""
 
+import inspect
 import json
 import os
+import re
 import unittest
 from unittest.mock import patch
 
@@ -271,6 +273,134 @@ class TestStubs(unittest.TestCase):
             source = f.read()
         for lib in ("requests", "urllib", "httpx", "playwright", "bwf_submit"):
             self.assertNotIn(f"import {lib}", source)
+
+
+class TestGuards(unittest.TestCase):
+    """The properties that make dev mode trustworthy."""
+
+    def test_app_py_bwf_urls_are_limited_to_the_two_known_lookups(self):
+        """_register_partner's short-partner-name safeguard (searches by
+        licence ID) and player_details' `if not profile_url:` branch
+        (resolves a player name to a profile URL) are the plan's one
+        deliberate exemption: the plan considered extracting both behind
+        bwf_client, declined to expand scope, and left them named here
+        instead of silently weakening this guard. Both are NOT interceptable
+        in dev mode -- dev mode will hit the live Badminton Sweden site
+        through them. Any new tournamentsoftware.com reference, or one of
+        these two moved to a third place, fails this test."""
+        with open("app.py", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        occurrence_lines = [i for i, line in enumerate(lines) if "tournamentsoftware.com" in line]
+
+        def enclosing_function(line_index):
+            for i in range(line_index, -1, -1):
+                if lines[i].startswith("def "):
+                    return lines[i][len("def "):].split("(")[0]
+            return None
+
+        counts = {}
+        for i in occurrence_lines:
+            name = enclosing_function(i)
+            counts[name] = counts.get(name, 0) + 1
+
+        self.assertEqual(
+            counts, {"_register_partner": 1, "player_details": 2},
+            f"tournamentsoftware.com occurrences moved or changed count "
+            f"(found at lines {[i + 1 for i in occurrence_lines]}, inside {counts})")
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_dev_mode_makes_no_network_calls(self):
+        """The real proof: with every HTTP entry point armed to explode,
+        every one of bwf_live's 18 public functions still completes,
+        end to end, through bwf_client in dev mode."""
+        bwf_client.set_mode("dev")
+        try:
+            def explode(*args, **kwargs):
+                raise AssertionError("dev mode attempted a network call")
+
+            with patch("requests.get", explode), patch("requests.post", explode), \
+                 patch("requests.Session", explode):
+                self.assertEqual(bwf_client.get_player_license("Adam Adult"), "DEV-0001")
+                self.assertTrue(bwf_client.get_player_ranking("Adam Adult"))
+                self.assertTrue(bwf_client.verify_credentials("adam", "anything"))
+                self.assertIsNotNone(bwf_client.login("adam", "anything"))
+                self.assertTrue(bwf_client.search_players("Adam"))
+                self.assertTrue(bwf_client.get_player_details("/player-profile/DEV-0001"))
+                self.assertTrue(bwf_client.get_player_ranking_by_profile("/player-profile/DEV-0001"))
+                self.assertTrue(bwf_client.get_player_profile_by_license("DEV-0001"))
+                self.assertTrue(bwf_client.get_tournament_events("DEV-T1"))
+                self.assertTrue(bwf_client.fetch_tournament_info("https://dev.local/tournament/DEV-T1"))
+                self.assertTrue(bwf_client.fetch_tournament_details("https://dev.local/tournament/DEV-T1"))
+                self.assertTrue(bwf_client.search_tournaments("", "", ""))
+                self.assertTrue(bwf_client.list_all_tournaments("", ""))
+                self.assertTrue(bwf_client.get_tournament_medals("DEV-T1"))
+                self.assertEqual(bwf_client.get_tournament_player_id("DEV-T1", "Adam Adult"), "DEV-0001")
+                self.assertTrue(bwf_client.get_tournament_player_results("DEV-T1", "DEV-0001"))
+                self.assertTrue(bwf_client.get_tournament_clubs("DEV-T1"))
+                self.assertTrue(bwf_client.submit_registrations("Dev Open (FAKE)", "sbf04959", "pw")["success"])
+        finally:
+            bwf_client.set_mode("live")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_production_cannot_be_switched_into_dev(self):
+        """With DEV_TOOLS unset, get_mode() reads live no matter what --
+        even a direct mutation of the internal state -- and the switch
+        endpoint itself does not exist."""
+        bwf_client._mode = "dev"
+        try:
+            self.assertEqual(bwf_client.get_mode(), "live")
+
+            import app
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+            resp = client.post("/api/dev-mode", json={"mode": "dev"})
+            self.assertEqual(resp.status_code, 404)
+            self.assertEqual(bwf_client.get_mode(), "live")
+        finally:
+            bwf_client._mode = "live"
+
+    def test_bwf_dev_matches_bwf_live_names_and_signatures(self):
+        """A function added to one backend but not the other -- or added
+        with a different signature -- fails here, not in production.
+        Name-only parity is not enough on its own: this project has already
+        shipped a boundary bug where a forwarder's call site quietly dropped
+        an argument the signature declared (bwf_client.get_tournament_events
+        not passing session through to the backend), a class of bug that
+        only a signature comparison, not a name-only one, would catch."""
+        import bwf_dev
+        import bwf_live
+
+        def public_functions(module):
+            return {name: obj for name, obj in vars(module).items()
+                    if not name.startswith("_") and inspect.isfunction(obj)
+                    and obj.__module__ == module.__name__}
+
+        live_funcs = public_functions(bwf_live)
+        dev_funcs = public_functions(bwf_dev)
+
+        missing = set(live_funcs) - set(dev_funcs)
+        self.assertEqual(missing, set(), f"bwf_dev is missing stubs for: {missing}")
+
+        mismatched = {
+            name: (str(inspect.signature(live_funcs[name])), str(inspect.signature(dev_funcs[name])))
+            for name in live_funcs
+            if str(inspect.signature(live_funcs[name])) != str(inspect.signature(dev_funcs[name]))
+        }
+        self.assertEqual(mismatched, {}, f"bwf_dev signature drift from bwf_live: {mismatched}")
+
+    def test_bwf_live_and_bwf_client_do_not_import_flask_or_sqlite3(self):
+        """The boundary must stay swappable behind the mode switch. If
+        bwf_live or bwf_client ever imports Flask (request/session state) or
+        sqlite3 (database writes), the separation the whole design exists to
+        keep -- app.py owns Flask and the database, bwf_live/bwf_client own
+        neither -- has been undone."""
+        pattern = re.compile(r"^\s*(?:import|from)\s+(flask|sqlite3)\b", re.MULTILINE)
+        for module_name in ("bwf_live.py", "bwf_client.py"):
+            with open(module_name, encoding="utf-8") as f:
+                source = f.read()
+            matches = pattern.findall(source)
+            self.assertEqual(matches, [], f"{module_name} imports: {matches}")
 
 
 if __name__ == "__main__":
