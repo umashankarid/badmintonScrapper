@@ -113,6 +113,7 @@ Derived from the sixteen functions in `app.py` that currently reach Badminton Sw
 | `get_tournament_clubs(tid)` | `tournament_clubs()` |
 | `get_tournament_player_id(tid, name)` | `tournament_player_id()` |
 | `get_tournament_player_results(tid, pid)` | `tournament_player_results()` |
+| `get_player_profile_by_license(license_id)` | the two `requests.get` calls in `players_scraper.py` |
 | `submit_registrations(name, login, password)` | `submit_tournament()` |
 
 Each returns plain Python structures — the shapes `app.py` already builds after parsing — so the live implementations are a move, not a rewrite. Where a route currently parses HTML inline and immediately writes to the database, only the parsing half moves.
