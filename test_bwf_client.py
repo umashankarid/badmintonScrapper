@@ -1345,5 +1345,216 @@ class TestSearchTournamentsEndpoint(unittest.TestCase):
                          {"success": False, "error": "refused", "tournaments": []})
 
 
+
+CALENDAR_RESULTS_HTML = """
+<ul>
+  <li class="list__item">
+    <a class="media__link" href="/tournament.aspx?id=AB12-34CD">Vikingaslaget</a>
+    <div class="media__subheading"><span class="nav-link__value">Sollentuna</span></div>
+    <time datetime="2026-03-01T00:00:00"></time>
+    <time datetime="2026-03-02T00:00:00"></time>
+  </li>
+  <li class="list__item">
+    <a class="media__link" href="/nothing-that-looks-like-an-id">Okand tavling</a>
+  </li>
+  <li class="list__item"><span>no link at all</span></li>
+</ul>
+"""
+
+
+class TestListAllTournaments(unittest.TestCase):
+    """The calendar scrape behind both /admin/search-tournaments and the refresh."""
+
+    def _session(self):
+        session = MagicMock()
+        session.get.side_effect = [_resp(FIND_PAGE_HTML)]
+        session.post.side_effect = [MagicMock(), _resp(CALENDAR_RESULTS_HTML)]
+        return session
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_builds_a_tournament_url_from_the_id_in_the_href(self, mock_session_cls):
+        session = self._session()
+        mock_session_cls.return_value = session
+
+        results = bwf_client.list_all_tournaments("2026-03-01T00:00", "2026-05-30T00:00")
+
+        self.assertEqual(results, [
+            {"name": "Vikingaslaget",
+             "url": "https://badmintonsweden.tournamentsoftware.com/tournament/AB12-34CD",
+             "location": "Sollentuna",
+             "date_start": "2026-03-01",
+             "date_end": "2026-03-02"},
+            {"name": "Okand tavling", "url": "", "location": "",
+             "date_start": "", "date_end": ""},
+        ])
+
+        # Pin request construction for all three calls.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.get.assert_called_once_with(
+            FIND_URL + "?StatusFilterID=2&DateFilterType=0&StartDate=2026-03-01T00:00"
+                       "&EndDate=2026-05-30T00:00&Distance=10&page=1&SportID=2",
+            timeout=10)
+        self.assertEqual(session.post.call_args_list, [
+            call(COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5),
+            call(DOSEARCH_URL,
+                 data={"__RequestVerificationToken": "tok-123",
+                       "TournamentExtendedFilter.StatusFilterID": "2"},
+                 headers={"X-Requested-With": "XMLHttpRequest"},
+                 timeout=10),
+        ])
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_missing_form_still_forces_the_open_registration_filter(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp("<div>no search form</div>")]
+        session.post.side_effect = [MagicMock(), _resp(CALENDAR_RESULTS_HTML)]
+        mock_session_cls.return_value = session
+
+        bwf_client.list_all_tournaments("2026-03-01T00:00", "2026-05-30T00:00")
+
+        self.assertEqual(
+            session.post.call_args_list[1][1]["data"],
+            {"TournamentExtendedFilter.StatusFilterID": "2"})
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.list_all_tournaments("2026-03-01T00:00", "2026-05-30T00:00")
+
+
+class TestSearchTournamentsBwfEndpoint(unittest.TestCase):
+    """/admin/search-tournaments: a 90-day window, and no session of its own."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["admin"] = True
+
+    def test_asks_for_the_next_ninety_days(self):
+        found = [{"name": "Vikingaslaget", "url": "u", "location": "Sollentuna",
+                  "date_start": "2026-03-01", "date_end": "2026-03-02"}]
+        with patch("app.bwf_client.list_all_tournaments", return_value=found) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/admin/search-tournaments")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, "tournaments": found})
+        mock_session_cls.assert_not_called()
+
+        start, end = mocked.call_args[0]
+        self.assertRegex(start, r"^\d{4}-\d{2}-\d{2}T00:00$")
+        from datetime import datetime
+
+        parse = lambda v: datetime.strptime(v, "%Y-%m-%dT00:00")
+        self.assertEqual(parse(start).date(), date.today())
+        self.assertEqual((parse(end) - parse(start)).days, 90)
+
+    def test_scrape_failure_is_a_500(self):
+        with patch("app.bwf_client.list_all_tournaments", side_effect=Boom("refused")):
+            resp = self.client.get("/admin/search-tournaments")
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(), {"success": False, "error": "refused"})
+
+    def test_unauthenticated_request_never_scrapes(self):
+        import app
+        with patch("app.bwf_client.list_all_tournaments") as mocked:
+            resp = app.app.test_client().get("/admin/search-tournaments")
+        self.assertEqual(resp.status_code, 401)
+        mocked.assert_not_called()
+
+
+class TestAllBwfTournamentsEndpoint(unittest.TestCase):
+    """/api/bwf-tournaments-all: calendar scrape, then a detail scrape per hit."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["admin"] = True
+
+    def _empty_db(self):
+        conn = MagicMock()
+        cur = conn.cursor.return_value
+        cur.fetchone.return_value = None
+        cur.fetchall.return_value = []
+        return conn, cur
+
+    def test_each_tournament_is_scraped_once_and_inserted(self):
+        conn, cur = self._empty_db()
+        # The calendar dates deliberately differ from the detail page's
+        # competition_start/end: the insert takes date_start/date_end from here.
+        found = [{"name": "Vikingaslaget", "url": TOURNAMENT_URL, "location": "Sollentuna",
+                  "date_start": "2026-03-05", "date_end": "2026-03-06"}]
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.list_all_tournaments", return_value=found) as listed, \
+             patch("app.bwf_client.fetch_tournament_details",
+                   return_value=TOURNAMENT_INFO) as detailed, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/bwf-tournaments-all?force=true")
+
+        self.assertEqual(resp.status_code, 200)
+        listed.assert_called_once()
+        detailed.assert_called_once_with(TOURNAMENT_URL)
+        mock_session_cls.assert_not_called()
+
+        inserts = [c[0] for c in cur.execute.call_args_list
+                   if "INSERT INTO tournaments" in c[0][0]]
+        self.assertEqual(len(inserts), 1)
+        self.assertEqual(inserts[0][1], (
+            TOURNAMENT_URL, "Vikingaslaget", "Sollentuna", "2026-03-05", "2026-03-06",
+            "2026-01-01", "2026-02-01", "2026-02-10", "2026-03-01", "2026-03-02",
+            json.dumps({
+                "singles_levels": ["DS B", "HS A"],
+                "doubles_levels": ["DD B", "HD A"],
+                "mixed_levels": ["MD C"],
+                "doubles_partner": ["Partner A", "Partner B", "Partner C"],
+                "mixed_partner": ["Partner A", "Partner B", "Partner C"],
+            }),
+        ))
+
+        self.assertEqual(resp.get_json(), {"success": True, "tournaments": [{
+            "name": "Vikingaslaget", "url": TOURNAMENT_URL, "location": "Sollentuna",
+            "date_start": "2026-03-05", "date_end": "2026-03-06",
+            "selected_for_view": 0, "admin_reg_end_date": "",
+            "tournament_groups": [], "registration_closes": ""}]})
+
+    def test_a_tournament_whose_page_fails_is_skipped_not_wiped(self):
+        conn, cur = self._empty_db()
+        found = [{"name": "Vikingaslaget", "url": TOURNAMENT_URL, "location": "Sollentuna",
+                  "date_start": "2026-03-01", "date_end": "2026-03-02"}]
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.list_all_tournaments", return_value=found), \
+             patch("app.bwf_client.fetch_tournament_details", side_effect=Boom("refused")):
+            resp = self.client.get("/api/bwf-tournaments-all?force=true")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            [c[0] for c in cur.execute.call_args_list
+             if "INSERT INTO tournaments" in c[0][0]], [])
+
+    def test_a_cached_day_scrapes_nothing(self):
+        conn = MagicMock()
+        cur = conn.cursor.return_value
+        cur.fetchone.return_value = (1,)
+        cur.fetchall.return_value = [(
+            TOURNAMENT_URL, "Vikingaslaget", "Sollentuna", "2026-03-01", "2026-03-02",
+            1, "2026-02-01", None, None, 0)]
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.list_all_tournaments") as listed, \
+             patch("app.bwf_client.fetch_tournament_details") as detailed:
+            resp = self.client.get("/api/bwf-tournaments-all")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json()["cached"])
+        listed.assert_not_called()
+        detailed.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

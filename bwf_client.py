@@ -98,3 +98,7 @@ def fetch_tournament_details(url):
 
 def search_tournaments(start, end, status):
     return _backend().search_tournaments(start, end, status)
+
+
+def list_all_tournaments(start_date, end_date):
+    return _backend().list_all_tournaments(start_date, end_date)

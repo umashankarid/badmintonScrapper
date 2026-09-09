@@ -652,3 +652,69 @@ def search_tournaments(start, end, status):
         })
 
     return tournaments
+
+
+def list_all_tournaments(start_date, end_date):
+    """Every tournament with registration open in a window, from the find page.
+
+    start_date and end_date are the site's own "YYYY-MM-DDTHH:MM" format. Each
+    result is {"name", "url", "location", "date_start", "date_end"}; the status
+    filter is fixed at 2 ("Online-anmalan oppen"), as both callers always sent it.
+    """
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/",
+        "SettingsOpen": "false",
+        "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    # Load the find page to get form data
+    resp = s.get(f"{BASE_URL}/find?StatusFilterID=2&DateFilterType=0&StartDate={start_date}&EndDate={end_date}&Distance=10&page=1&SportID=2", timeout=10)
+    page_soup = BeautifulSoup(resp.text, "html.parser")
+    form = page_soup.select_one("#form_globalsearch")
+    form_data = {}
+    if form:
+        for inp in form.find_all("input"):
+            name = inp.get("name", "")
+            value = inp.get("value", "")
+            if name:
+                form_data[name] = value
+
+    # Set StatusFilterID to 2 for 'Online-anmalan oppen' (registration open)
+    form_data["TournamentExtendedFilter.StatusFilterID"] = "2"
+
+    # POST to get results
+    resp = s.post(f"{BASE_URL}/find/tournament/DoSearch",
+        data=form_data,
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        timeout=10)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    tournaments = []
+    for item in soup.select("li.list__item"):
+        link = item.select_one("a.media__link")
+        if not link:
+            continue
+        name = link.get_text(strip=True)
+        href = link.get("href", "")
+        # Get location
+        location_el = item.select_one(".media__subheading .nav-link__value")
+        location = location_el.get_text(strip=True) if location_el else ""
+        # Get dates
+        time_els = item.select("time")
+        date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+        date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+        # Build full URL
+        tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+        tournament_url = f"{BASE_URL}/tournament/{tid_match.group(1)}" if tid_match else ""
+
+        tournaments.append({
+            "name": name,
+            "url": tournament_url,
+            "location": location,
+            "date_start": date_start,
+            "date_end": date_end
+        })
+
+    return tournaments
