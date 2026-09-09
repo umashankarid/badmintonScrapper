@@ -7,4 +7,6 @@ $env:DEBUG = "0"
 $env:DATA_DIR = "$PSScriptRoot\data-local"
 # Never mail real players from a dev box. Set to 1 only to test against a throwaway Brevo account.
 $env:EMAIL_ENABLED = "0"
+# Offers the live/dev switch in the UI. Never set in production.
+$env:DEV_TOOLS = "1"
 & "$PSScriptRoot\.venv\Scripts\python.exe" "$PSScriptRoot\app.py"

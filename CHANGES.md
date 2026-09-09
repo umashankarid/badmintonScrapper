@@ -8,6 +8,66 @@
 
 ## [Unreleased]
 
+### Added - Local Development Mode (BWF Boundary, Live/Dev Toggle, Fake Fixtures)
+- **Problem**: Every route that needed player or tournament data called Badminton Sweden
+  directly, so working on the app locally meant real network calls, borrowed real
+  credentials, and no safe way to exercise edge cases (the under-13 dispens popup, a closed
+  tournament, an SJT-only tournament) without waiting for the real thing to occur.
+
+- **bwf_live.py** (new) — every Badminton Sweden HTTP call, moved verbatim out of `app.py`.
+  18 public functions covering login, player search/ranking, tournament scraping and
+  registration submission. Imports neither `flask` nor `sqlite3` — enforced by a test.
+
+- **bwf_dev.py** (new) — a same-name, same-signature stub for every `bwf_live` function,
+  backed by in-memory fixtures: 8 player personas (an under-13, a junior, an adult, and the
+  club account `sbf04959`, among others) and 4 tournament fixtures (open, SJT, closed, an
+  accommodation case). Imports no network library — enforced by a test that checks both the
+  source text and the module's own `__dict__`.
+
+- **bwf_client.py** (new) — the boundary `app.py` now calls instead of touching Badminton
+  Sweden directly. Dispatches each call to `bwf_live` or `bwf_dev` depending on `get_mode()`,
+  which reads `"live"` unconditionally whenever `DEV_TOOLS` is unset — no call to
+  `set_mode()` can move production off live.
+
+- **app.py**
+  Before: 33 lines of direct `tournamentsoftware.com` requests spread across login, search,
+  tournament scraping and registration submission.
+  After: every one of those goes through `bwf_client`; 3 lines remain — a short-partner-name
+  licence lookup inside `_register_partner` and a by-name profile lookup inside
+  `player_details` — deliberately not extracted (documented in AGENTS.md) and pinned by a
+  guard test so a new leak, or a third one, fails the build instead of passing silently.
+
+- **`/api/dev-mode`** (new) — `GET` reports `{dev_tools, mode}`; `POST` switches the mode.
+  Both 404 when `DEV_TOOLS` is unset; `POST` also requires an admin session.
+
+- Dev-mode toggle bar and "FAKE" markers in the templates for any row carrying `_fake: true`.
+
+- **run-local.ps1** — now also sets `DEV_TOOLS=1`, alongside the existing `PORT`, `DEBUG`,
+  `DATA_DIR` and `EMAIL_ENABLED`. Local-only; never set in production.
+
+- **AGENTS.md** — documents the boundary (`app.py` → `bwf_client` → `bwf_live`/`bwf_dev`)
+  and the two-lookup gap above.
+
+- **test_dev_mode.py::TestGuards** (new) — the tests that make the above trustworthy: every
+  one of `bwf_live`'s 18 public functions still returns real-shaped data through
+  `bwf_client` with `requests.get`/`.post`/`.Session` all patched to raise; `bwf_dev` has a
+  same-name *and* same-signature counterpart for every `bwf_live` function; `get_mode()` and
+  `POST /api/dev-mode` cannot be moved off live without `DEV_TOOLS`; the 3 remaining
+  `tournamentsoftware.com` lines in `app.py` are exactly the two named exemptions above, no
+  more and no fewer.
+
+- **Impact**:
+  - Users: none, no behaviour change in production
+  - Admins: none — the dev-mode bar and toggle endpoint exist only when `DEV_TOOLS` is set,
+    which happens only in `run-local.ps1`
+  - Database: none, no schema change
+  - Deployment: none, Dockerfile and the production environment are untouched; `DEV_TOOLS`
+    is unset there, so `bwf_client.get_mode()` always returns `"live"`
+
+- **Tests**: `python3 -m pytest test_dev_mode.py test_bwf_client.py -v` → 162 passed
+  (39 in `test_dev_mode.py`, including the 5 `TestGuards` tests above).
+  `python3 run_tests.py` → Ran 10 tests - OK.
+
 ### Added - Local Development Setup (Configurable Port, Data Directory, Email Kill Switch)
 - **Problem**: Several web projects run on this machine and port 3000 was hardcoded, so the app
   collided with them. Running locally also wrote databases into the repo root and, with a Brevo

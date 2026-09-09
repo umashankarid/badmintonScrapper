@@ -34,6 +34,18 @@ Docker: `python:3.10-slim` + Playwright Chromium, `CMD python app.py`, port 3000
 - `scraper.py` — standalone legacy A–Z player crawler, writes an older `players` schema. Not wired into the app.
 - `REFACTORED_ENDPOINTS.py` — reference snippets from an old refactor, not imported.
 
+**Badminton Sweden access goes through one boundary.** `app.py` calls `bwf_client`,
+which dispatches every call to `bwf_live` (real scraping) or `bwf_dev` (fixtures and
+stubs), depending on the mode. The mode is `"live"` unless `DEV_TOOLS` is set, which
+happens only in `run-local.ps1` — production never sets it, so `bwf_client.get_mode()`
+always returns `"live"` there. New scraping code belongs in `bwf_live`, with a matching
+stub added to `bwf_dev` (`test_dev_mode.py::TestGuards` fails the build if the two drift,
+by name or by signature). Known gap: two by-name lookups were never moved behind the
+boundary — `_register_partner`'s short-partner-name safeguard and `player_details`'s
+`if not profile_url:` branch — so those two still call `tournamentsoftware.com` directly
+and hit the live site even when dev mode is on. A guard test pins that to exactly those
+two functions so a third leak would fail the build.
+
 **Four SQLite databases**, all under `DATA_DIR` (env var, defaults to the repo dir; set to a persistent volume in production):
 
 | DB | Holds |
