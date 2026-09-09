@@ -8,6 +8,51 @@
 
 ## [Unreleased]
 
+### Added - Local Development Setup (Configurable Port, Data Directory, Email Kill Switch)
+- **Problem**: Several web projects run on this machine and port 3000 was hardcoded, so the app
+  collided with them. Running locally also wrote databases into the repo root and, with a Brevo
+  API key present, could have mailed real players from a dev box.
+
+- **app.py** — server startup is now environment-driven
+  Before: `app.run(host="0.0.0.0", port=3000, debug=True, use_reloader=False)`
+  After: `PORT`, `HOST` and `DEBUG` read from the environment
+  Defaults when unset are identical to the previous behaviour (0.0.0.0, 3000, debug on),
+  so production and the Docker image are unaffected. Startup now logs the resolved bind address.
+
+- **app.py** — `send_email()` honours an `EMAIL_ENABLED` kill switch
+  When `EMAIL_ENABLED` is `0`/`false`/`no`, the Brevo call is skipped, the intended recipient and
+  subject are logged, and `True` is returned so calling flows continue unchanged.
+  Unset (production) sends exactly as before. This protects against the reminder scheduler, which
+  runs every 30 minutes, mailing real players from a local instance.
+
+- **test_live_ensure_tournament.py** — target host derived from `PORT` instead of hardcoded
+  `localhost:3000`, so the live helper follows whichever port the app is on.
+
+- **run-local.ps1** (new) — local launcher setting `PORT=3002`, `DEBUG=0`,
+  `DATA_DIR=<repo>\data-local`, `EMAIL_ENABLED=0`. Local-only; nothing reads it in production.
+
+- **AGENTS.md** (new) — architecture and conventions reference for AI coding agents: commands,
+  the four-database layout, the in-place `ALTER TABLE` schema pattern, static-not-Jinja templates,
+  BWF-proxied session auth, reminder dedupe keys, and the age-group/level/MJT-SJT domain rules.
+  Agent-agnostic and the single source of truth. **CLAUDE.md** and
+  **.github/copilot-instructions.md** are one-line pointers to it, so Claude Code, GitHub Copilot,
+  Codex, Cursor, Gemini CLI and others all read the same document. Pointers rather than symlinks:
+  symlink creation needs Administrator rights on Windows and `core.symlinks` is false, so a
+  symlink would be checked out as a plain text file. The pointers duplicate no content, so there
+  is nothing to keep in sync.
+
+- **.gitignore** — added `.venv/`, `*.log`, `data-local/`, `backups/`.
+
+- **Impact**:
+  - Users: none, no behaviour change in production
+  - Admins: none
+  - Database: none, no schema change (`DATA_DIR` already existed and is unchanged by default)
+  - Deployment: none, Dockerfile and `EXPOSE 3000` untouched
+
+- **Tests**: `python3 run_tests.py` → Ran 10 tests - OK
+  Verified with no environment variables set that the app still binds 0.0.0.0:3000 with debug on,
+  and with `EMAIL_ENABLED=0` that `send_email()` skips the Brevo call and returns `True`.
+
 ### Added - Tournament Data Round-Trip Verification Tests
 - **New Test Suite**: test_tournament_roundtrip.py (409 lines, 7 tests)
   - Ensures tournament data survives INSERT → SELECT round-trip
