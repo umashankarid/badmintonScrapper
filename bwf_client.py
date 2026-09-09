@@ -102,3 +102,7 @@ def search_tournaments(start, end, status):
 
 def list_all_tournaments(start_date, end_date):
     return _backend().list_all_tournaments(start_date, end_date)
+
+
+def get_tournament_medals(tournament_id):
+    return _backend().get_tournament_medals(tournament_id)

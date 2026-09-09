@@ -718,3 +718,35 @@ def list_all_tournaments(start_date, end_date):
         })
 
     return tournaments
+
+
+def get_tournament_medals(tournament_id):
+    """Medal winners from a tournament's winners page."""
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    resp = s.get(f"{BASE_URL}/sport/winners.aspx?id={tournament_id}", timeout=15)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    medals = []
+    for table in soup.find_all("table"):
+        event_name = ""
+        for row in table.find_all("tr"):
+            cells = row.find_all(["td", "th"])
+            if len(cells) == 1:
+                event_name = cells[0].get_text(strip=True)
+                continue
+            if len(cells) >= 2:
+                placement = cells[0].get_text(strip=True)
+                player_links = cells[1].find_all("a")
+                for a in player_links:
+                    txt = a.get_text(strip=True)
+                    if txt and not re.match(r"^\[.*\]$", txt) and len(txt) > 3:
+                        clean = re.sub(r"\s*\[\d+(/\d+)?\]\s*$", "", txt).strip()
+                        if clean:
+                            medals.append({"name": clean, "event": event_name, "placement": placement})
+
+    return medals

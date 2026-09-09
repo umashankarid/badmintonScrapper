@@ -1556,5 +1556,93 @@ class TestAllBwfTournamentsEndpoint(unittest.TestCase):
         detailed.assert_not_called()
 
 
+WINNERS_HTML = """
+<table>
+  <tr><td>HS A</td></tr>
+  <tr><td>Winner</td><td><a>Anna Andersson</a></td></tr>
+  <tr><td>Runner-up</td><td><a>Bea Bergstrom</a></td></tr>
+</table>
+"""
+
+WINNERS_URL = "https://badmintonsweden.tournamentsoftware.com/sport/winners.aspx?id=T-1"
+
+
+class TestTournamentMedals(unittest.TestCase):
+    """The winners page: one table per event, dedup/seed-stripping via regex."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_medals_with_event_and_placement(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(WINNERS_HTML)]
+        mock_session_cls.return_value = session
+
+        medals = bwf_client.get_tournament_medals("T-1")
+
+        self.assertEqual(medals[0], {"name": "Anna Andersson", "event": "HS A", "placement": "Winner"})
+        self.assertEqual(medals[1], {"name": "Bea Bergstrom", "event": "HS A", "placement": "Runner-up"})
+
+        # Pin request construction for every outgoing call.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5)
+        session.get.assert_called_once_with(WINNERS_URL, timeout=15)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_strips_bracketed_seed_numbers_and_skips_short_names(self, mock_session_cls):
+        """Exercises the seed-number regex and the len(txt) > 3 filter in the same pass."""
+        html = """
+        <table>
+          <tr><td>DS A</td></tr>
+          <tr><td>Winner</td><td><a>Anna Andersson [1]</a><a>[2]</a><a>Bo</a></td></tr>
+        </table>
+        """
+        session = MagicMock()
+        session.get.side_effect = [_resp(html)]
+        mock_session_cls.return_value = session
+
+        medals = bwf_client.get_tournament_medals("T-1")
+
+        # "[2]" is filtered by the bracket-only check, "Bo" by the length check.
+        self.assertEqual(medals, [{"name": "Anna Andersson", "event": "DS A", "placement": "Winner"}])
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.get_tournament_medals("T-1")
+
+
+class TestTournamentMedalsEndpoint(unittest.TestCase):
+    """/api/tournament-medals: delegates, and owns no session of its own."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def test_delegates_and_owns_no_session(self):
+        medals = [{"name": "Anna Andersson", "event": "HS A", "placement": "Winner"}]
+        with patch("app.bwf_client.get_tournament_medals", return_value=medals) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/tournament-medals?id=T-1")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, "medals": medals})
+        mocked.assert_called_once_with("T-1")
+        mock_session_cls.assert_not_called()
+
+    def test_missing_id_is_a_400(self):
+        resp = self.client.get("/api/tournament-medals")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_scrape_failure_is_a_500(self):
+        with patch("app.bwf_client.get_tournament_medals", side_effect=Boom("refused")):
+            resp = self.client.get("/api/tournament-medals?id=T-1")
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(), {"success": False, "error": "refused", "medals": []})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4841,39 +4841,11 @@ def tournament_detail_page():
 def tournament_medals():
     """Get medal winners from tournament winners page."""
     try:
-        import re
         tournament_id = request.args.get("id", "")
         if not tournament_id:
             return jsonify(success=False, error="No tournament ID"), 400
 
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/winners.aspx?id={tournament_id}", timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        medals = []
-        for table in soup.find_all("table"):
-            event_name = ""
-            for row in table.find_all("tr"):
-                cells = row.find_all(["td", "th"])
-                if len(cells) == 1:
-                    event_name = cells[0].get_text(strip=True)
-                    continue
-                if len(cells) >= 2:
-                    placement = cells[0].get_text(strip=True)
-                    player_links = cells[1].find_all("a")
-                    for a in player_links:
-                        txt = a.get_text(strip=True)
-                        if txt and not re.match(r"^\[.*\]$", txt) and len(txt) > 3:
-                            clean = re.sub(r"\s*\[\d+(/\d+)?\]\s*$", "", txt).strip()
-                            if clean:
-                                medals.append({"name": clean, "event": event_name, "placement": placement})
-
-        return jsonify(success=True, medals=medals)
+        return jsonify(success=True, medals=bwf_client.get_tournament_medals(tournament_id))
     except Exception as e:
         return jsonify(success=False, error=str(e), medals=[]), 500
 
