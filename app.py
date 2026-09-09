@@ -372,13 +372,13 @@ def get_player_registrations_for_tournament(tournament_name):
         conn.execute(f"ATTACH DATABASE 'players.db' AS players_db")
         cur = conn.cursor()
         
-        # NORMALIZED QUERY: JOIN with players table to get player data
+        # NORMALIZED QUERY: LEFT JOIN so registrations show even if player record is missing
         cur.execute("""
-            SELECT p.name, r.license_id, p.club, p.gender, p.email, p.phone,
+            SELECT COALESCE(p.name, r.license_id), r.license_id, p.club, p.gender, p.email, p.phone,
                    r.singles_levels, r.doubles_levels, r.mixed_levels,
                    r.doubles_partner, r.mixed_partner, r.registration_date
             FROM tournament_registrations r
-            JOIN players_db.players p ON r.license_id = p.license_id
+            LEFT JOIN players_db.players p ON r.license_id = p.license_id
             WHERE r.tournament_name=?
             ORDER BY r.registration_date DESC
         """, (tournament_name,))
