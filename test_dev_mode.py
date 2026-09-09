@@ -465,5 +465,68 @@ class TestGuards(unittest.TestCase):
             self.assertEqual(matches, [], f"{module_name} imports: {matches}")
 
 
+class TestDevLoginPersistsGroups(unittest.TestCase):
+    """_persist_login_profile (app.py) writes a dev persona's "groups" to
+    kometPlayers.groups, but only in dev mode -- see Task 4 of the final fix
+    wave. Before this, bwf_dev.py set "groups" on every persona and nothing
+    ever read it: logging in as Jonas Junior (groups=["LEVEL 3-5"]) never
+    actually made him a LEVEL 3-5 player, so the MJT/SJT group-visibility
+    rules were never exercisable through a dev login, even though
+    test_personas_cover_the_mjt_sjt_split (TestFakeData) passed the whole
+    time -- it only ever asserted strings in a dict nothing read."""
+
+    LICENSE_ID = "DEV-0003"  # Jonas Junior, groups=["LEVEL 3-5"]
+
+    def setUp(self):
+        import app
+        self.app = app
+        bwf_client.set_mode("live")
+        self._delete_komet_row()
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        self._delete_komet_row()
+
+    def _delete_komet_row(self):
+        conn = sqlite3.connect(self.app.PLAYERS_DB)
+        conn.execute("DELETE FROM kometPlayers WHERE license_id = ?", (self.LICENSE_ID,))
+        conn.commit()
+        conn.close()
+
+    def _groups_in_db(self):
+        conn = sqlite3.connect(self.app.PLAYERS_DB)
+        cur = conn.execute("SELECT groups FROM kometPlayers WHERE license_id = ?", (self.LICENSE_ID,))
+        row = cur.fetchone()
+        conn.close()
+        return json.loads(row[0]) if row and row[0] else None
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_dev_login_as_level_3_5_persona_lands_groups_in_kometplayers(self):
+        bwf_client.set_mode("dev")
+        try:
+            profile = bwf_client.login("jonas", "anything")
+            self.assertEqual(profile["club"], "BMK Komet")
+            self.app._persist_login_profile(profile)
+            self.assertEqual(self._groups_in_db(), ["LEVEL 3-5"])
+        finally:
+            bwf_client.set_mode("live")
+
+    def test_live_mode_login_writes_no_groups(self):
+        """Guarded on bwf_client.get_mode() == "dev", not merely on the
+        "groups" key's presence -- a real login profile never carries that
+        key, but the explicit mode check means even a profile that somehow
+        did would not persist it outside dev mode."""
+        bwf_client.set_mode("live")
+        profile = {
+            "player_name": "Live Persona", "license_id": self.LICENSE_ID,
+            "club": "BMK Komet", "gender": "M", "email": "live@example.test",
+            "phone": "", "dob": "", "age": "", "ranking": {},
+            "profile_url": "/player-profile/DEV-0003", "is_club_account": False,
+            "groups": ["LEVEL 3-5"],
+        }
+        self.app._persist_login_profile(profile)
+        self.assertIsNone(self._groups_in_db())
+
+
 if __name__ == "__main__":
     unittest.main()

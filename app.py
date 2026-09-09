@@ -638,17 +638,28 @@ def _persist_login_profile(profile):
                     cur_k = conn_k.cursor()
                     cur_k.execute("SELECT id, groups FROM kometPlayers WHERE license_id = ?", (license_id,))
                     existing = cur_k.fetchone()
+                    # Dev-mode-only: a real login profile never carries "groups" (bwf_live
+                    # returns no such key), but gate on the mode explicitly rather than on
+                    # the key's mere absence, so this can never fire against production data.
+                    dev_groups = profile.get("groups") if bwf_client.get_mode() == "dev" else None
+                    dev_groups_json = json.dumps(dev_groups) if dev_groups else None
                     if existing:
-                        # Update name and email, preserve groups
-                        conn_k.execute(
-                            "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
-                            (player_name, email or None, license_id)
-                        )
+                        if dev_groups_json:
+                            conn_k.execute(
+                                "UPDATE kometPlayers SET name = ?, email = ?, groups = ? WHERE license_id = ?",
+                                (player_name, email or None, dev_groups_json, license_id)
+                            )
+                        else:
+                            # Update name and email, preserve groups
+                            conn_k.execute(
+                                "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
+                                (player_name, email or None, license_id)
+                            )
                     else:
                         # Insert new komet player
                         conn_k.execute(
-                            "INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
-                            (license_id, player_name, email or None)
+                            "INSERT INTO kometPlayers (license_id, name, email, groups) VALUES (?, ?, ?, ?)",
+                            (license_id, player_name, email or None, dev_groups_json)
                         )
                         logger.info(f"✅ Added {player_name} to kometPlayers (auto-detected from login)")
                     conn_k.commit()
