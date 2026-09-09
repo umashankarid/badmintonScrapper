@@ -2148,6 +2148,56 @@ class TestScrapePlayerByLicenseId(unittest.TestCase):
             result = self.players_scraper.scrape_player_by_license_id("SE12345")
         self.assertIsNone(result)
 
+    def test_missing_profile_fields_pass_none_and_omit_the_key(self):
+        """profile['name']/['club'] are None when bwf_live found no matching
+        element at all (vs. "" for an element present but blank -- see the
+        next test). None must reach update_player_in_db's name kwarg
+        unchanged: that's the exact case that fails silently inside its own
+        try/except, since players.name is NOT NULL. And "name"/"club" must
+        stay absent from the returned dict, matching the pre-move
+        `if name_elem: player_data["name"] = ...` gate that only ever set
+        the key when the element was found."""
+        profile = {
+            "name": None, "club": None, "gender": "F",
+            "email": "", "phone": "", "dob": "", "age": "",
+            "ranking": None,
+            "profile_url": "/player-profile/SE12345",
+        }
+        with patch("players_scraper.bwf_client.get_player_profile_by_license",
+                   return_value=profile), \
+             patch("players_scraper.update_player_in_db") as mocked_write:
+            result = self.players_scraper.scrape_player_by_license_id("SE12345")
+
+        self.assertNotIn("name", result)
+        self.assertNotIn("club", result)
+        mocked_write.assert_called_once_with(
+            license_id="SE12345", name=None,
+            profile_url="/player-profile/SE12345", ranking=None,
+        )
+
+    def test_empty_string_profile_fields_are_distinct_from_missing(self):
+        """The element-found-but-blank case: "" is a real value, not a
+        missing one, so both the returned key and the DB write carry it
+        through instead of None -- pinning it as genuinely different from
+        the missing-element case above."""
+        profile = {
+            "name": "", "club": "", "gender": "F",
+            "email": "", "phone": "", "dob": "", "age": "",
+            "ranking": None,
+            "profile_url": "/player-profile/SE12345",
+        }
+        with patch("players_scraper.bwf_client.get_player_profile_by_license",
+                   return_value=profile), \
+             patch("players_scraper.update_player_in_db") as mocked_write:
+            result = self.players_scraper.scrape_player_by_license_id("SE12345")
+
+        self.assertEqual(result["name"], "")
+        self.assertEqual(result["club"], "")
+        mocked_write.assert_called_once_with(
+            license_id="SE12345", name="",
+            profile_url="/player-profile/SE12345", ranking=None,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
