@@ -4881,11 +4881,29 @@ def cleanup_orphaned_registrations():
             # Clear partner references pointing to this ghost's partners
             cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (reg_id,))
         
+        # 3. Non-Komet MAIN registrations. Non-Komet players should only ever exist as
+        #    partner references, never as their own main registration row. A non-Komet
+        #    main row is the "inversion" bug (e.g. a non-Komet player registered the pair).
+        #    Delete these rows; the Komet partner's own row is preserved (they keep their slot).
+        cur.execute("""
+            SELECT tr.id, tr.tournament_name, tr.license_id, p.name, p.club,
+                   tr.doubles_partner, tr.mixed_partner
+            FROM tournament_registrations tr
+            JOIN players_db.players p ON tr.license_id = p.license_id
+            WHERE p.club IS NOT NULL
+              AND p.club != ''
+              AND LOWER(p.club) NOT LIKE '%komet%'
+        """)
+        for row in cur.fetchall():
+            reg_id, t_name, lic, pname, pclub, dpartner, mpartner = row
+            removed.append(f"{t_name} / {pname or lic} (non-Komet main: '{pclub}', partner: {dpartner or mpartner or '-'})")
+            cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (reg_id,))
+        
         conn.commit()
         conn.close()
         
-        logger.info(f"🗑️ Cleaned up {len(removed)} orphaned/ghost registrations: {removed}")
-        return jsonify(success=True, message=f"Removed {len(removed)} orphaned records (empty or ghost players).", details=removed)
+        logger.info(f"🗑️ Cleaned up {len(removed)} orphaned/ghost/non-Komet registrations: {removed}")
+        return jsonify(success=True, message=f"Removed {len(removed)} orphaned records (empty, ghost players, or non-Komet main registrations).", details=removed)
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
