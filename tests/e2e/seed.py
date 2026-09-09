@@ -12,7 +12,7 @@ open-registration fixture into a closed one.
 import json
 import sqlite3
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
@@ -62,38 +62,46 @@ DEFAULT_CATEGORIES = {
 }
 
 
-def _insert_tournament(data_dir, name, url, start, reg_closes, categories, groups):
+def _insert_tournament(data_dir, name, url, start, reg_closes, categories, groups,
+                        selected_for_view=1):
+    # registration_opens is derived from reg_closes rather than a second
+    # hardcoded offset: a tournament fixture whose closing date moves (e.g.
+    # past_tournament's -40 days) must never end up with registration
+    # opening *after* it closes.
+    reg_opens = (date.fromisoformat(reg_closes) - timedelta(days=14)).isoformat()
+    # last_updated is set explicitly to a local-date string rather than left
+    # to the column's own DEFAULT CURRENT_TIMESTAMP (SQLite's CURRENT_TIMESTAMP
+    # is UTC). app.py's same-day-cache check compares it against a local
+    # date string (datetime.now(), no tz) -- between 00:00 and 02:00 in
+    # Europe/Stockholm the two dates disagree, the cache misses, and the
+    # resulting fresh-fetch branch deletes expired tournaments (and their
+    # registrations) from the shared session database.
+    last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _execute(
         data_dir, "tournaments.db",
         "INSERT OR REPLACE INTO tournaments "
         "(tournament_name, tournament_url, location, date_start, date_end, "
         " registration_opens, registration_closes, cancellation_deadline, "
         " competition_start, competition_end, categories, selected_for_view, "
-        " tournament_groups) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)",
+        " tournament_groups, last_updated) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (name, url, "Testville", start, start,
-         _day(-30), reg_closes, reg_closes, start, start,
-         json.dumps(categories), json.dumps(groups) if groups else None))
+         reg_opens, reg_closes, reg_closes, start, start,
+         json.dumps(categories), selected_for_view,
+         json.dumps(groups) if groups else None, last_updated))
     return name
 
 
-def open_tournament(data_dir, name="Test Open", groups=None):
-    """Registration open, competition in the future."""
+def open_tournament(data_dir, name="Test Open", groups=None, selected_for_view=1):
+    """Registration open, competition in the future.
+
+    selected_for_view defaults to visible; pass 0 to build a hidden-but-
+    otherwise-open fixture -- the real negative case for the flag itself,
+    as opposed to past_tournament's exclusion-by-date.
+    """
     return _insert_tournament(
         data_dir, name, f"https://dev.local/tournament/{name.replace(' ', '-')}",
-        _day(30), _day(14), DEFAULT_CATEGORIES, groups)
-
-
-def sjt_tournament(data_dir, name="Test SJT Cup"):
-    """Name contains SJT, so the MJT/SJT level rules apply."""
-    categories = {
-        "singles_levels": ["HS U15", "MJT HS U13"],
-        "doubles_levels": [], "mixed_levels": [],
-        "doubles_partner": [], "mixed_partner": [],
-    }
-    return _insert_tournament(
-        data_dir, name, f"https://dev.local/tournament/{name.replace(' ', '-')}",
-        _day(45), _day(21), categories, None)
+        _day(30), _day(14), DEFAULT_CATEGORIES, groups, selected_for_view)
 
 
 def past_tournament(data_dir, name="Test Past Cup"):

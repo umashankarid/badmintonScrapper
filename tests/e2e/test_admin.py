@@ -34,9 +34,18 @@ def test_home_page_lists_only_visible_tournaments(app_server, page, data_dir):
     fetches /api/open-tournaments into a visible container once
     checkBwfStatus() confirms a session (templates/index.html:62-87) -- a
     bare page.goto("/") here would just be asserting against the login
-    page's own text, so sign in first."""
+    page's own text, so sign in first.
+
+    "Old Cup" is excluded by date, not by the flag -- seed.py hardcoded
+    selected_for_view=1 for every fixture until it became a parameter, so
+    that exclusion alone never actually proved the flag itself does
+    anything. "Hidden Cup" is the real negative case: visible=0, but
+    otherwise identical to "Visible Cup" (open registration, future
+    competition), so only the flag can be excluding it.
+    """
     visible = seed.open_tournament(data_dir, name="Visible Cup")
     seed.past_tournament(data_dir, name="Old Cup")
+    hidden = seed.open_tournament(data_dir, name="Hidden Cup", selected_for_view=0)
 
     with console_errors(page) as errors:
         sign_in_as(page, app_server, "sbf04959")
@@ -50,6 +59,7 @@ def test_home_page_lists_only_visible_tournaments(app_server, page, data_dir):
     body = page.locator("body").inner_text()
     assert visible in body
     assert "Old Cup" not in body, "a past tournament was listed"
+    assert hidden not in body, "a tournament with selected_for_view=0 was listed"
     assert errors == []
 
 
