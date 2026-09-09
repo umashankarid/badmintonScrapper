@@ -56,6 +56,25 @@ def _backend():
     return bwf_dev if get_mode() == "dev" else bwf_live
 
 
+def list_personas():
+    """The stub accounts available for signing in, or [] in live mode.
+
+    Lives here rather than in app.py so the boundary rule holds: app.py never
+    imports a backend directly, and the live/dev decision stays in one place.
+    """
+    if get_mode() != "dev":
+        return []
+    return [
+        {
+            "username": p["username"],
+            "player_name": p["player_name"],
+            "description": p.get("description", ""),
+            "club": p["club"],
+        }
+        for p in bwf_dev.PLAYERS
+    ]
+
+
 def get_player_license(player_name):
     return _backend().get_player_license(player_name)
 

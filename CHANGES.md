@@ -8,6 +8,55 @@
 
 ## [Unreleased]
 
+### Added - Dev-Mode Test-Account Picker and Session/Mode Coupling
+- **Problem**: the stub backend serves eight personas chosen to exercise specific
+  domain rules, but their usernames had to be memorised or read out of `bwf_dev.py`.
+  Separately, a session created under one backend stayed valid after the mode
+  changed — a stub persona could act against real Badminton Sweden data, and a
+  real login could act against the stubs.
+
+- **`bwf_dev.py`**: each persona gained a `description` naming the rule it exercises
+  (under-13 dispens, the MJT/SJT split, points above maximum, and so on).
+
+- **`bwf_client.py`**: new `list_personas()`, returning `[]` in live mode.
+  It lives here rather than in `app.py` so the one-boundary rule holds — `app.py`
+  never imports a backend directly.
+
+- **`app.py`**: new `GET /api/dev-personas`, 404 when `DEV_TOOLS` is unset.
+  Login now stamps `session["bwf_mode"]`, and a new `before_request` guard
+  (`_drop_session_from_another_mode`) ends any session whose stamped mode no longer
+  matches the server's.
+  Before: switching modes left the existing session intact.
+  After: the session is dropped on the next request, in both directions.
+  Enforcing it per-request rather than in the switch handler also covers what that
+  handler cannot see — other tabs and browsers holding sessions when someone else
+  flips the mode, and a server restart, which resets the mode to `"live"` while the
+  signed cookie survives. Sessions predating the stamp are grandfathered.
+
+- **`static/devbar.js`**: the picker is a "Sign in as…" dropdown in the bar, so it
+  is available on every page rather than only the login form. It re-checks the mode
+  immediately before signing in, because the mode is process-wide and can have moved
+  to live in another tab — posting a stub username then would forward it to the real
+  site as a failed login. All fetches go through helpers that return `null` on any
+  failure, so an HTML error page from the debugger can no longer throw out of an
+  event handler and leave a control permanently disabled.
+
+- **Tests**: 20 added in `test_dev_mode.py` (58 total) covering the personas
+  endpoint, sign-out on mode change in both directions, the per-request guard
+  including the restart case, and that production never drops a session.
+  `pytest test_dev_mode.py test_bwf_client.py` → 181 passed; `run_tests.py` →
+  Ran 10 tests - OK.
+  Two of the new tests sign in as a persona, which persists it to `players.db`;
+  they purge `DEV-%` rows in setUp and tearDown, because a plain `pytest` run has
+  no `DATA_DIR` set and would otherwise inject a fake child into the real Komet
+  roster and its `LEVEL 3-5` group.
+
+- **Impact**:
+  - Users: none — every route added here 404s when `DEV_TOOLS` is unset, and the
+    session guard returns immediately in production
+  - Database: no schema changes
+  - Deployment: none
+
 ### Added - Local Development Mode (BWF Boundary, Live/Dev Toggle, Fake Fixtures)
 - **Problem**: Every route that needed player or tournament data called Badminton Sweden
   directly, so working on the app locally meant real network calls, borrowed real

@@ -704,6 +704,9 @@ def bwf_login():
     session["bwf_ranking"] = profile["ranking"]
     # Club accounts have always been admins outright; ordinary logins are looked up.
     session["admin"] = True if profile["is_club_account"] else is_admin_user(login)
+    # Which backend produced this identity. _drop_session_from_another_mode()
+    # invalidates the session if the mode later moves away from it.
+    session["bwf_mode"] = bwf_client.get_mode()
 
     _persist_login_profile(profile)
 
@@ -5316,6 +5319,29 @@ def get_reminders_sent_status():
 
 # ==================== LOCAL DEVELOPMENT MODE ====================
 
+@app.before_request
+def _drop_session_from_another_mode():
+    """End any session created under a different backend than the current one.
+
+    A session belongs to the backend that made it: a stub persona has no
+    meaning against the real site, and a real login has none against the
+    stubs. Enforcing that here rather than only in the mode-switch handler
+    covers the cases that handler cannot see — another browser or tab holding
+    a session when someone else flips the mode, and a server restart, which
+    resets the mode to "live" while the signed session cookie survives.
+
+    Sessions predating this stamp carry no "bwf_mode" and are left alone.
+    In production dev_tools_enabled() is false, so this never runs.
+    """
+    if not bwf_client.dev_tools_enabled():
+        return
+    stamped = session.get("bwf_mode")
+    if stamped and stamped != bwf_client.get_mode():
+        logger.info(f"🔀 Dropping session for {session.get('bwf_login')} — "
+                    f"created in {stamped} mode, server is now {bwf_client.get_mode()}")
+        session.clear()
+
+
 @app.route("/api/dev-mode", methods=["GET"])
 def get_dev_mode():
     """Report whether dev tools exist on this server, and the mode in effect."""
@@ -5336,21 +5362,8 @@ def get_dev_personas():
     if not bwf_client.dev_tools_enabled():
         return jsonify(success=False, error="Not found"), 404
 
-    if bwf_client.get_mode() != "dev":
-        return jsonify(success=True, mode=bwf_client.get_mode(), personas=[])
-
-    import bwf_dev
-    personas = [
-        {
-            "username": p["username"],
-            "player_name": p["player_name"],
-            "description": p.get("description", ""),
-            "club": p["club"],
-            "groups": p.get("groups", []),
-        }
-        for p in bwf_dev.PLAYERS
-    ]
-    return jsonify(success=True, mode="dev", personas=personas)
+    return jsonify(success=True, mode=bwf_client.get_mode(),
+                   personas=bwf_client.list_personas())
 
 
 @app.route("/api/dev-mode", methods=["POST"])
@@ -5377,15 +5390,11 @@ def set_dev_mode():
         logger.warning(f"⚠️  Rejected dev-mode switch: {e}")
         return jsonify(success=False, error=str(e)), 400
 
-    # A session belongs to the backend that created it. Carrying a stub persona
-    # into live mode would mean a fake licence acting against real tournament
-    # data; carrying a real login into dev mode is the same problem inverted.
-    # Any genuine mode change therefore signs the user out, in both directions.
-    signed_out = False
-    if active != previous and session.get("bwf_login"):
-        logger.info(f"🔀 Signing out {session.get('bwf_login')} — mode changed {previous} → {active}")
-        session.clear()
-        signed_out = True
+    # The session is not cleared here: _drop_session_from_another_mode() does it
+    # on the next request, for every session rather than just this caller's.
+    # We only report whether the caller is about to lose theirs, so the UI can
+    # send them to the login page instead of a page they can no longer use.
+    signed_out = bool(session.get("bwf_login")) and active != previous
 
     logger.info(f"🔀 Mode switched to {active}")
     return jsonify(success=True, mode=active, signed_out=signed_out)

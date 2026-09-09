@@ -11,6 +11,22 @@ from unittest.mock import patch
 import bwf_client
 
 
+def _purge_dev_personas():
+    """Remove every stub persona a dev login may have persisted.
+
+    A plain `pytest` run has no DATA_DIR set, so app.PLAYERS_DB is the real
+    players.db in the repo root. Without this, logging in as a persona injects
+    a fake child into the BMK Komet roster and into the LEVEL 3-5 group that
+    drives tournament visibility and reminder targeting.
+    """
+    import app
+    conn = sqlite3.connect(app.PLAYERS_DB)
+    conn.execute("DELETE FROM kometPlayers WHERE license_id LIKE 'DEV-%'")
+    conn.execute("DELETE FROM players WHERE license_id LIKE 'DEV-%'")
+    conn.commit()
+    conn.close()
+
+
 class TestModeState(unittest.TestCase):
     """Mode defaults to live and only moves when dev tools are enabled."""
 
@@ -659,9 +675,11 @@ class TestDevPersonasEndpoint(unittest.TestCase):
         app.app.config["TESTING"] = True
         self.client = app.app.test_client()
         bwf_client.set_mode("live")
+        _purge_dev_personas()
 
     def tearDown(self):
         bwf_client.set_mode("live")
+        _purge_dev_personas()
 
     @patch.dict(os.environ, {}, clear=True)
     def test_returns_404_in_production(self):
@@ -713,9 +731,11 @@ class TestModeSwitchSignsOut(unittest.TestCase):
         app.app.config["TESTING"] = True
         self.client = app.app.test_client()
         bwf_client.set_mode("live")
+        _purge_dev_personas()
 
     def tearDown(self):
         bwf_client.set_mode("live")
+        _purge_dev_personas()
 
     @patch.dict(os.environ, {"DEV_TOOLS": "1"})
     def test_switching_to_dev_clears_a_live_session(self):
@@ -723,8 +743,14 @@ class TestModeSwitchSignsOut(unittest.TestCase):
             sess["bwf_login"] = "realuser"
             sess["bwf_player"] = "Real Person"
             sess["admin"] = True
+            # What a real login stamps. Sessions without it predate the stamp
+            # and are deliberately grandfathered rather than dropped.
+            sess["bwf_mode"] = "live"
         resp = self.client.post("/api/dev-mode", json={"mode": "dev"})
         self.assertTrue(resp.get_json()["signed_out"])
+        # The switch reports it; _drop_session_from_another_mode() performs it
+        # on the next request, before any handler can act on the stale session.
+        self.client.get("/api/bwf-status")
         with self.client.session_transaction() as sess:
             self.assertNotIn("bwf_login", sess)
             self.assertNotIn("admin", sess)
@@ -738,6 +764,7 @@ class TestModeSwitchSignsOut(unittest.TestCase):
             self.assertEqual(sess["bwf_login"], "mini")
         resp = self.client.post("/api/dev-mode", json={"mode": "live"})
         self.assertTrue(resp.get_json()["signed_out"])
+        self.client.get("/api/bwf-status")
         with self.client.session_transaction() as sess:
             self.assertNotIn("bwf_login", sess)
 
@@ -755,3 +782,68 @@ class TestModeSwitchSignsOut(unittest.TestCase):
     def test_switching_without_a_session_reports_no_sign_out(self):
         resp = self.client.post("/api/dev-mode", json={"mode": "dev"})
         self.assertFalse(resp.get_json()["signed_out"])
+
+
+class TestSessionCannotCrossModes(unittest.TestCase):
+    """A session is invalidated when the server's mode moves away from the one
+    that created it. Enforced per-request rather than only in the switch
+    handler, so it also covers sessions the switching client cannot see: other
+    tabs and browsers, and a server restart (which resets the mode to "live"
+    while the signed cookie survives, since app.secret_key is constant)."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        bwf_client.set_mode("live")
+        _purge_dev_personas()
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        _purge_dev_personas()
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_a_dev_session_is_dropped_once_the_mode_is_live(self):
+        """The restart case: signed in under the stubs, server now live."""
+        bwf_client.set_mode("dev")
+        self.client.post("/api/bwf-login", json={"login": "sbf04959", "password": "dev"})
+        with self.client.session_transaction() as sess:
+            self.assertTrue(sess["admin"])
+            self.assertEqual(sess["bwf_mode"], "dev")
+
+        # Mode moves without this client posting the switch itself.
+        bwf_client.set_mode("live")
+        self.client.get("/api/bwf-status")
+
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("bwf_login", sess)
+            self.assertNotIn("admin", sess)
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_a_live_session_is_dropped_once_the_mode_is_dev(self):
+        with self.client.session_transaction() as sess:
+            sess["bwf_login"] = "realuser"
+            sess["admin"] = True
+            sess["bwf_mode"] = "live"
+        bwf_client.set_mode("dev")
+        self.client.get("/api/bwf-status")
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("bwf_login", sess)
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_a_session_in_the_matching_mode_survives(self):
+        bwf_client.set_mode("dev")
+        self.client.post("/api/bwf-login", json={"login": "adam", "password": "dev"})
+        self.client.get("/api/bwf-status")
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["bwf_login"], "adam")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_production_never_drops_a_session(self):
+        """With DEV_TOOLS unset the guard must not run at all."""
+        with self.client.session_transaction() as sess:
+            sess["bwf_login"] = "realuser"
+            sess["bwf_mode"] = "dev"   # nonsense value; production must ignore it
+        self.client.get("/api/bwf-status")
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["bwf_login"], "realuser")

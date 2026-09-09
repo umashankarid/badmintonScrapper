@@ -3,23 +3,8 @@
 // In production /api/dev-mode returns 404 and this script does nothing at all.
 
 (async function () {
-  let state;
-  try {
-    const res = await fetch("/api/dev-mode");
-    if (!res.ok) return;            // production: no such endpoint
-    state = await res.json();
-  } catch (e) {
-    return;                          // server down or offline: stay invisible
-  }
-  if (!state.dev_tools) return;
-
-  // Who is signed in, so the switch can warn before signing them out.
-  try {
-    const who = await (await fetch("/api/bwf-status")).json();
-    if (who.logged_in) state.signed_in_as = who.player_name || "the current account";
-  } catch (e) {
-    // Non-fatal: without this the switch just skips its confirmation.
-  }
+  const state = await getJSON("/api/dev-mode");
+  if (!state || !state.dev_tools) return;
 
   const bar = document.createElement("div");
   bar.id = "devbar";
@@ -40,31 +25,23 @@
     button.textContent = dev ? "Switch to LIVE" : "Switch to DEV";
     button.style.cssText = "padding:2px 10px;cursor:pointer;border-radius:3px;border:1px solid #fff;background:transparent;color:#fff;font:inherit";
     button.onclick = async () => {
-      // A session belongs to the backend that created it, so the server signs
-      // you out on any real mode change. Say so before it happens.
-      if (state.signed_in_as) {
+      // Asked now rather than at page load: index.html signs in and out with
+      // fetch and no navigation, so a value captured earlier would be stale
+      // exactly when this matters.
+      const who = await getJSON("/api/bwf-status");
+      if (who && who.logged_in) {
         const target = dev ? "LIVE" : "DEV";
-        const ok = confirm(
-          `Switching to ${target} will sign you out of ${state.signed_in_as}.\n\n` +
-          `Sessions cannot cross modes: a stub account has no meaning against the ` +
-          `real site, and a real login has none against the stubs.`
-        );
-        if (!ok) return;
+        if (!confirm(`Switching to ${target} signs you out of ${who.player_name}.`)) return;
       }
       button.disabled = true;
-      const res = await fetch("/api/dev-mode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: dev ? "live" : "dev" }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        alert(body.error || "Could not switch mode.");
+      const body = await postJSON("/api/dev-mode", { mode: dev ? "live" : "dev" });
+      if (!body || !body.success) {
+        alert((body && body.error) || "Could not switch mode.");
         button.disabled = false;
         return;
       }
-      state.mode = body.mode;
-      window.location.href = body.signed_out ? "/login.html" : "/";
+      if (body.signed_out) window.location.href = "/login.html";
+      else location.reload();
     };
     bar.append(label, button);
     if (dev) addPersonaPicker(bar);
@@ -75,14 +52,8 @@
   // Sign in as one of the stub accounts. Dev mode only: these usernames resolve
   // against the stub backend, so /api/dev-personas returns an empty list in live.
   async function addPersonaPicker(bar) {
-    let personas;
-    try {
-      const res = await fetch("/api/dev-personas");
-      if (!res.ok) return;
-      personas = (await res.json()).personas;
-    } catch (e) {
-      return;
-    }
+    const listing = await getJSON("/api/dev-personas");
+    const personas = listing && listing.personas;
     if (!personas || !personas.length) return;
 
     const select = document.createElement("select");
@@ -100,14 +71,19 @@
     select.onchange = async () => {
       if (!select.value) return;
       select.disabled = true;
-      const res = await fetch("/api/bwf-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login: select.value, password: "dev" }),
-      });
-      const body = await res.json();
-      if (!body.success) {
-        alert(body.error || "Could not sign in as that account.");
+      // The mode is process-wide, so it may have moved to live in another tab
+      // or across a restart since this dropdown was built. Posting a stub
+      // username then would forward it to the real site as a failed login.
+      const now = await getJSON("/api/dev-mode");
+      if (!now || now.mode !== "dev") {
+        alert("The server is no longer in DEV mode. Reload before using this.");
+        select.disabled = false;
+        select.value = "";
+        return;
+      }
+      const body = await postJSON("/api/bwf-login", { login: select.value, password: "dev" });
+      if (!body || !body.success) {
+        alert((body && body.error) || "Could not sign in as that account.");
         select.disabled = false;
         select.value = "";
         return;
@@ -115,5 +91,30 @@
       window.location.href = "/";
     };
     bar.appendChild(select);
+  }
+
+  // Both return null on any failure — a 404, a network error, or an HTML error
+  // page from the debugger. Callers handle null, so nothing throws out of an
+  // event handler and leaves its control disabled forever.
+  async function getJSON(url) {
+    try {
+      const res = await fetch(url);
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function postJSON(url, payload) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (e) {
+      return null;
+    }
   }
 })();
