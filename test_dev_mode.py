@@ -649,3 +649,57 @@ class TestRegisterPartnerRankingIsClean(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDevPersonasEndpoint(unittest.TestCase):
+    """The login page's test-account picker is served only to a dev-mode server."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        bwf_client.set_mode("live")
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_returns_404_in_production(self):
+        """Production must not advertise the picker at all."""
+        self.assertEqual(self.client.get("/api/dev-personas").status_code, 404)
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_returns_no_personas_in_live_mode(self):
+        """These usernames only resolve against the stubs, so live mode offers none."""
+        resp = self.client.get("/api/dev-personas")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["mode"], "live")
+        self.assertEqual(body["personas"], [])
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_lists_every_persona_in_dev_mode(self):
+        import bwf_dev
+        bwf_client.set_mode("dev")
+        body = self.client.get("/api/dev-personas").get_json()
+        self.assertEqual(len(body["personas"]), len(bwf_dev.PLAYERS))
+        usernames = {p["username"] for p in body["personas"]}
+        self.assertEqual(usernames, {p["username"] for p in bwf_dev.PLAYERS})
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_every_persona_carries_a_description(self):
+        """The picker is useless without them - that is the point of the feature."""
+        bwf_client.set_mode("dev")
+        for p in self.client.get("/api/dev-personas").get_json()["personas"]:
+            self.assertTrue(p["description"].strip(), f"{p['username']} has no description")
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_a_listed_persona_can_actually_log_in(self):
+        """Pins the contract the picker depends on: username in, session out."""
+        bwf_client.set_mode("dev")
+        personas = self.client.get("/api/dev-personas").get_json()["personas"]
+        target = next(p for p in personas if p["username"] == "mini")
+        resp = self.client.post("/api/bwf-login",
+                                json={"login": target["username"], "password": "dev"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["player_name"], target["player_name"])

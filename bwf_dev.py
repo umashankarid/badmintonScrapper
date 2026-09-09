@@ -39,7 +39,7 @@ PLAYERS = [
         "club": "BMK Komet", "gender": "", "email": "tavlingar@bmkkomet.se",
         "phone": "", "dob": "", "age": "", "ranking": {},
         "profile_url": "", "is_club_account": True,
-        "username": "sbf04959", "groups": [],
+        "username": "sbf04959", "description": "Club account. Admin access, no player profile.", "groups": [],
     },
     {
         "_fake": True, "player_name": "Adam Adult", "license_id": "DEV-0001",
@@ -49,7 +49,7 @@ PLAYERS = [
                     "HD": {"rank": "95", "points": "1600"},
                     "MD": {"rank": "150", "points": "1200"}},
         "profile_url": "/player-profile/DEV-0001", "is_club_account": False,
-        "username": "adam", "groups": ["SENIOR"],
+        "username": "adam", "description": "Adult, 31. A-level points across HS/HD/MD — ordinary senior registration.", "groups": ["SENIOR"],
     },
     {
         "_fake": True, "player_name": "Elin Elit", "license_id": "DEV-0002",
@@ -58,7 +58,7 @@ PLAYERS = [
         "ranking": {"DS": {"rank": "3", "points": "8000"},
                     "DD": {"rank": "5", "points": "7500"}},
         "profile_url": "/player-profile/DEV-0002", "is_club_account": False,
-        "username": "elin", "groups": ["SENIOR"],
+        "username": "elin", "description": "Adult, 27. Elit-level points — exceeds the maximum for lower classes.", "groups": ["SENIOR"],
     },
     {
         "_fake": True, "player_name": "Jonas Junior", "license_id": "DEV-0003",
@@ -66,7 +66,7 @@ PLAYERS = [
         "phone": "0700000003", "dob": _birthday(15), "age": "15",
         "ranking": {"HS": {"rank": "400", "points": "350"}},
         "profile_url": "/player-profile/DEV-0003", "is_club_account": False,
-        "username": "jonas", "groups": ["LEVEL 3-5"],
+        "username": "jonas", "description": "Junior, 15. LEVEL 3-5, so MJT-only in an SJT tournament. Blocked from C and D.", "groups": ["LEVEL 3-5"],
     },
     {
         "_fake": True, "player_name": "Mini Minior", "license_id": "DEV-0004",
@@ -74,7 +74,7 @@ PLAYERS = [
         "phone": "0700000004", "dob": _birthday(11), "age": "11",
         "ranking": {"DS": {"rank": "900", "points": "50"}},
         "profile_url": "/player-profile/DEV-0004", "is_club_account": False,
-        "username": "mini", "groups": ["LEVEL 3-5"],
+        "username": "mini", "description": "Child, 11. Triggers the under-13 dispens confirmation for senior classes.", "groups": ["LEVEL 3-5"],
     },
     {
         "_fake": True, "player_name": "Sara Sexan", "license_id": "DEV-0005",
@@ -83,7 +83,7 @@ PLAYERS = [
         "ranking": {"DS": {"rank": "200", "points": "900"},
                     "DD": {"rank": "180", "points": "950"}},
         "profile_url": "/player-profile/DEV-0005", "is_club_account": False,
-        "username": "sara", "groups": ["LEVEL_6"],
+        "username": "sara", "description": "Junior, 16. LEVEL_6, so allowed in both MJT and SJT.", "groups": ["LEVEL_6"],
     },
     {
         "_fake": True, "player_name": "Pia Partner", "license_id": "DEV-0006",
@@ -92,7 +92,7 @@ PLAYERS = [
         "ranking": {"DD": {"rank": "300", "points": "800"},
                     "MD": {"rank": "310", "points": "780"}},
         "profile_url": "/player-profile/DEV-0006", "is_club_account": False,
-        "username": "pia", "groups": [],
+        "username": "pia", "description": "Adult, 29, another club. Spare partner for doubles and mixed.", "groups": [],
     },
     {
         "_fake": True, "player_name": "Per Partner", "license_id": "DEV-0007",
@@ -101,7 +101,7 @@ PLAYERS = [
         "ranking": {"HD": {"rank": "290", "points": "820"},
                     "MD": {"rank": "305", "points": "790"}},
         "profile_url": "/player-profile/DEV-0007", "is_club_account": False,
-        "username": "per", "groups": [],
+        "username": "per", "description": "Adult, 30, another club. Spare partner for doubles and mixed.", "groups": [],
     },
 ]
 

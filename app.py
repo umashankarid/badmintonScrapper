@@ -5324,6 +5324,35 @@ def get_dev_mode():
     return jsonify(dev_tools=True, mode=bwf_client.get_mode())
 
 
+@app.route("/api/dev-personas", methods=["GET"])
+def get_dev_personas():
+    """List the stub accounts the login page offers as a picker.
+
+    404s when DEV_TOOLS is unset, exactly like the mode routes. Returns an
+    empty list while the mode is live, because these usernames only resolve
+    against the stub backend -- offering them in live mode would just produce
+    failed logins against the real Badminton Sweden site.
+    """
+    if not bwf_client.dev_tools_enabled():
+        return jsonify(success=False, error="Not found"), 404
+
+    if bwf_client.get_mode() != "dev":
+        return jsonify(success=True, mode=bwf_client.get_mode(), personas=[])
+
+    import bwf_dev
+    personas = [
+        {
+            "username": p["username"],
+            "player_name": p["player_name"],
+            "description": p.get("description", ""),
+            "club": p["club"],
+            "groups": p.get("groups", []),
+        }
+        for p in bwf_dev.PLAYERS
+    ]
+    return jsonify(success=True, mode="dev", personas=personas)
+
+
 @app.route("/api/dev-mode", methods=["POST"])
 def set_dev_mode():
     """Switch between live and dev.
