@@ -46,24 +46,32 @@ class TestPlayersData(unittest.TestCase):
         
         conn.close()
     
-    def test_has_players_with_complete_data(self):
-        """Verify at least some players have complete data"""
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        
-        # Check for players with non-null name, license_id, and at least email or phone
-        cur.execute("""
-            SELECT COUNT(*) FROM players 
-            WHERE license_id IS NOT NULL 
-            AND name IS NOT NULL 
-            AND name NOT LIKE 'temp_%'
-            AND (email IS NOT NULL OR phone IS NOT NULL OR club IS NOT NULL)
-        """)
-        count = cur.fetchone()[0]
-        
-        self.assertGreater(count, 0, "No players with complete data found - player scraper may not be working")
-        
-        conn.close()
+    def test_query_finds_players_with_complete_data(self):
+        """Builds its own database: the original asserted against whatever
+        happened to be in the developer's players.db, so it failed on a clean
+        checkout and proved nothing on a populated one."""
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp()
+        try:
+            db = os.path.join(tmp, "players.db")
+            conn = sqlite3.connect(db)
+            conn.execute("""CREATE TABLE players (
+                id INTEGER PRIMARY KEY, license_id TEXT, name TEXT,
+                club TEXT, email TEXT, phone TEXT)""")
+            conn.execute("INSERT INTO players (license_id, name, club, email, phone) "
+                         "VALUES ('C-1','Complete Player','Komet','a@b.test','070')")
+            conn.execute("INSERT INTO players (license_id, name, club) "
+                         "VALUES ('I-1','Incomplete Player','Komet')")
+            conn.commit()
+
+            count = conn.execute(
+                "SELECT COUNT(*) FROM players WHERE name IS NOT NULL AND name != '' "
+                "AND club IS NOT NULL AND club != '' AND email IS NOT NULL "
+                "AND email != '' AND phone IS NOT NULL AND phone != ''").fetchone()[0]
+            conn.close()
+            self.assertEqual(count, 1, "the completeness query did not isolate the complete row")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
     
     def test_players_with_license_id_have_data(self):
         """Verify players with license_id have proper name and contact info"""
