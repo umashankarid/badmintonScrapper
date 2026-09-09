@@ -11,7 +11,6 @@ open-registration fixture into a closed one.
 
 import json
 import sqlite3
-import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -23,30 +22,21 @@ def _connect(data_dir: Path):
 
 
 def _execute(data_dir, db_name, sql, params):
-    """Run one write against `db_name` in data_dir, retrying briefly on lock.
+    """Run one write against `db_name` in data_dir.
 
     The app server owns the same SQLite files while it's running, so a write
-    from here can occasionally collide with one of its own. A few retries
-    with a short backoff clears it without restructuring the fixtures. One
-    helper for every db this module writes to (tournaments.db, players.db),
-    rather than three copies of the same loop.
+    from here can occasionally collide with one of its own. sqlite3.connect's
+    own timeout=5 already blocks and retries internally on SQLITE_BUSY -- a
+    second, hand-rolled retry loop on top of it was two mechanisms doing the
+    same job. One helper for every db this module writes to (tournaments.db,
+    players.db), rather than three copies of the same call.
     """
-    # ponytail: retry loop is a lock workaround, not a queue -- fine at this
-    # test-suite scale; replace with a real writer lock if seeds grow heavy.
-    attempts = 5
-    for attempt in range(attempts):
-        conn = sqlite3.connect(Path(data_dir) / db_name, timeout=5)
-        try:
-            conn.execute(sql, params)
-            conn.commit()
-            return
-        except sqlite3.OperationalError as e:
-            if "locked" in str(e) and attempt < attempts - 1:
-                time.sleep(0.2 * (attempt + 1))
-                continue
-            raise
-        finally:
-            conn.close()
+    conn = sqlite3.connect(Path(data_dir) / db_name, timeout=5)
+    try:
+        conn.execute(sql, params)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _day(offset: int) -> str:
