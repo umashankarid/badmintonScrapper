@@ -17,10 +17,6 @@ from tests.e2e.conftest import console_errors
 PUBLIC_PAGES = [
     ("/", "Badminton Tournaments"),
     ("/login.html", "Login"),
-    # Same client-side is_admin redirect to "/" as the admin pages below (see
-    # report): stays here because that's how it was classified, but expect
-    # this one to keep failing the title check as an anonymous visitor.
-    ("/results.html", "Tournament Results"),
 ]
 
 ADMIN_PAGES = [
@@ -32,6 +28,9 @@ ADMIN_PAGES = [
     ("/add-remove-tournaments.html", "Add/Remove Tournaments"),
     ("/email-settings.html", "Email Settings"),
     ("/send-email.html", "Send Email"),
+    # Looks public (it's just a results listing), but carries the same
+    # client-side is_admin redirect to "/" as the pages above.
+    ("/results.html", "Tournament Results"),
 ]
 
 # Errors a page legitimately produces. Every entry needs a reason; an
