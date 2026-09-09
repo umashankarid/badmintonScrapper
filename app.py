@@ -3003,11 +3003,24 @@ def get_tournament_registration():
         """, (tournament_name, license_id))
         
         row = cur.fetchone()
-        conn.close()
         
         if not row:
             # No existing registration
+            conn.close()
             return jsonify(success=True, registration=None)
+        
+        # If the registration has NO categories (orphaned/empty), treat as not registered and clean it up
+        if not (row[3] or "").strip() and not (row[4] or "").strip() and not (row[5] or "").strip():
+            try:
+                conn.execute("DELETE FROM tournament_registrations WHERE id = ?", (row[0],))
+                conn.commit()
+                logger.info(f"🗑️ Removed orphaned empty registration id={row[0]} for {license_id} in {tournament_name}")
+            except Exception as e:
+                logger.error(f"Error cleaning orphaned registration: {e}")
+            conn.close()
+            return jsonify(success=True, registration=None)
+        
+        conn.close()
         
         registration = {
             "player_id": row[0],
@@ -4807,6 +4820,40 @@ def reset_reminder():
         
         logger.info(f"🔄 Reset reminder '{key}': deleted {deleted} record(s)")
         return jsonify(success=True, message=f"Reset '{reminder_type}' for '{tournament_name}'. Deleted {deleted} record(s). Will be resent on next scheduler run.")
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/cleanup-orphaned-registrations", methods=["GET", "POST"])
+def cleanup_orphaned_registrations():
+    """Remove registrations with no categories (orphaned records). Admin only."""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        # Find orphaned records first (for logging)
+        cur.execute("""
+            SELECT tournament_name, license_id FROM tournament_registrations
+            WHERE (singles_levels IS NULL OR singles_levels = '')
+              AND (doubles_levels IS NULL OR doubles_levels = '')
+              AND (mixed_levels IS NULL OR mixed_levels = '')
+        """)
+        orphaned = cur.fetchall()
+        
+        cur.execute("""
+            DELETE FROM tournament_registrations
+            WHERE (singles_levels IS NULL OR singles_levels = '')
+              AND (doubles_levels IS NULL OR doubles_levels = '')
+              AND (mixed_levels IS NULL OR mixed_levels = '')
+        """)
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🗑️ Cleaned up {deleted} orphaned registrations: {orphaned}")
+        return jsonify(success=True, message=f"Removed {deleted} orphaned (empty) registrations.", details=[f"{o[0]} / {o[1]}" for o in orphaned])
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
