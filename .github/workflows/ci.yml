@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: namespace-profile-badmintonkomet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"      # matches the production image
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run the offline suite
+        run: pytest -m "not live" --ignore=tests/e2e -q
+
+  e2e:
+    runs-on: namespace-profile-badmintonkomet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Cache the Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          # Keyed on the pinned version, so it invalidates exactly when
+          # requirements.txt moves and never otherwise.
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+      - run: playwright install --with-deps chromium
+      - name: Run the browser suite
+        run: pytest tests/e2e -q
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
