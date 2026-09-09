@@ -16,11 +16,17 @@ python3 run_tests.py                           # the gate used by build.sh (runs
 python3 -m unittest test_badminton -v
 python3 -m unittest test_badminton.TestTournamentVisibility.test_toggle_tournament_visibility -v
 python3 -m pytest test_player_storage.py -v    # other test_*.py are run individually
+
+pytest -m "not live" --ignore=tests/e2e         # the offline suite, what CI gates on
+pytest tests/e2e                                # the browser suite (needs: playwright install chromium)
+pytest -m live                                  # reaches the real site; needs credentials, never runs in CI
 ```
 
 `app.py` runs `test_badminton.py` at import time and calls `sys.exit(1)` if anything fails — a broken test in that one file stops the server from booting. `build.sh` (Render/Coolify build step) runs the same gate.
 
-Not all `test_*.py` files are unit tests: `test_bwf_steps.py`, `test_bwf_doubles.py`, `test_live_ensure_tournament.py`, and `test_ensure_tournament_e2e.py` hit the live Badminton Sweden site (Playwright/HTTP) and need real credentials. Don't add them to `unittest discover` runs.
+Not all `test_*.py` files are unit tests: `test_bwf_steps.py`, `test_bwf_doubles.py`, `test_live_ensure_tournament.py`, and `test_ensure_tournament_e2e.py` hit the live Badminton Sweden site (Playwright/HTTP) and need real credentials. Don't add them to `unittest discover` runs. The first three also carry pytest's `@pytest.mark.live` (declared in `pytest.ini`), so a plain `pytest` run deselects them with `-m "not live"`; CI always runs with that flag and never sets credentials.
+
+**The browser suite** (`tests/e2e/`) boots `app.py` as a subprocess in dev mode with its own temporary `DATA_DIR` and outbound HTTP blocked, then drives Chromium against it via Playwright/pytest-playwright. State is seeded by writing SQLite directly, and every write lives in `tests/e2e/seed.py` — put new state builders there rather than inline in a test, so a schema change breaks one file instead of many. CI runs it as a separate job from the offline suite (`.github/workflows/ci.yml`) because it needs `playwright install --with-deps chromium` first.
 
 Docker: `python:3.10-slim` + Playwright Chromium, `CMD python app.py`, port 3000.
 
