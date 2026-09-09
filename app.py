@@ -5312,11 +5312,19 @@ def get_dev_mode():
 
 @app.route("/api/dev-mode", methods=["POST"])
 def set_dev_mode():
-    """Switch between live and dev. Local servers only."""
+    """Switch between live and dev.
+
+    Deliberately no session["admin"] check: the 404 above IS the access
+    control -- this route only exists when DEV_TOOLS is set, which happens
+    only on a developer's own machine (see run-local.ps1), never in
+    production. Gating it behind admin too would be circular: session["admin"]
+    is only ever set by a successful login against the real Badminton Sweden
+    site, which is exactly the credential-free workflow dev mode exists to
+    provide. Requiring it here would make the switch permanently unreachable
+    on the machine it was built for.
+    """
     if not bwf_client.dev_tools_enabled():
         return jsonify(success=False, error="Not found"), 404
-    if not session.get("admin"):
-        return jsonify(success=False, error="Unauthorized"), 401
 
     mode = (request.json or {}).get("mode", "")
     try:
@@ -5325,7 +5333,7 @@ def set_dev_mode():
         logger.warning(f"⚠️  Rejected dev-mode switch: {e}")
         return jsonify(success=False, error=str(e)), 400
 
-    logger.info(f"🔀 Mode switched to {active} by admin session")
+    logger.info(f"🔀 Mode switched to {active}")
     return jsonify(success=True, mode=active)
 
 

@@ -81,14 +81,20 @@ class TestModeEndpoints(unittest.TestCase):
         self.assertEqual(resp.get_json(), {"dev_tools": True, "mode": "live"})
 
     @patch.dict(os.environ, {"DEV_TOOLS": "1"})
-    def test_post_requires_admin(self):
-        """Switching mode is a mutating action, like every other admin endpoint."""
+    def test_post_switches_mode_without_admin_session(self):
+        """No admin check: the 404 gate above is the only access control, and
+        session["admin"] is only ever set by a real Badminton Sweden login --
+        requiring it here would make the switch unreachable on a machine with
+        no real credentials, which defeats the point of dev mode."""
         resp = self.client.post("/api/dev-mode", json={"mode": "dev"})
-        self.assertEqual(resp.status_code, 401)
-        self.assertEqual(bwf_client.get_mode(), "live")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["mode"], "dev")
+        self.assertEqual(bwf_client.get_mode(), "dev")
 
     @patch.dict(os.environ, {"DEV_TOOLS": "1"})
     def test_post_switches_mode_for_admin(self):
+        """An admin session works too -- the removal of the admin *requirement*
+        does not make an admin session harmful."""
         with self.client.session_transaction() as sess:
             sess["admin"] = True
         resp = self.client.post("/api/dev-mode", json={"mode": "dev"})
