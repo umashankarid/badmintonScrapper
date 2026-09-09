@@ -2072,7 +2072,8 @@ def open_tournaments():
                 "cancellation_deadline": row[7],
                 "competition_start": row[8],
                 "competition_end": row[9],
-                "admin_reg_end_date": row[10] or ""
+                "admin_reg_end_date": row[10] or "",
+                "_fake": bwf_client.get_mode() == "dev"
             })
         
         return jsonify(tournaments=tournaments)

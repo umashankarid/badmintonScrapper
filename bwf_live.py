@@ -1,8 +1,10 @@
 """
 Real Badminton Sweden access.
 
-Every function here was moved verbatim from app.py. This is the only module in
-the project that names tournamentsoftware.com.
+Every function here was moved verbatim from app.py. This is the main module
+that names tournamentsoftware.com, but not the only one: three occurrences
+remain in app.py, deliberately left unextracted, in _register_partner's
+licence-ID safeguard and player_details's name-to-profile-URL lookup.
 """
 
 import json

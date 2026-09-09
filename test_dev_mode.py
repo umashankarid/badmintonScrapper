@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 import re
+import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -102,6 +103,61 @@ class TestModeEndpoints(unittest.TestCase):
         resp = self.client.post("/api/dev-mode", json={"mode": "banana"})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(bwf_client.get_mode(), "live")
+
+
+class TestOpenTournamentsFakeFlag(unittest.TestCase):
+    """/api/open-tournaments reads local SQLite rows, not bwf_client -- the
+    table has no _fake column and gets none (a schema change is out of
+    scope), so the honest signal is the mode in effect at request time:
+    everything visible locally in dev mode is dev data."""
+
+    TEST_URL = "https://dev.local/test-fake-flag-tournament"
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        self.app = app
+        bwf_client.set_mode("live")
+
+        conn = sqlite3.connect(app.TOURNAMENTS_DB)
+        conn.execute("DELETE FROM tournaments WHERE tournament_url = ?", (self.TEST_URL,))
+        conn.execute(
+            "INSERT INTO tournaments "
+            "(tournament_url, tournament_name, location, date_start, date_end, selected_for_view) "
+            "VALUES (?, ?, ?, ?, ?, 1)",
+            (self.TEST_URL, "Fake Flag Test Tournament", "Testville", "2099-01-01", "2099-01-02"),
+        )
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute("DELETE FROM tournaments WHERE tournament_url = ?", (self.TEST_URL,))
+        conn.commit()
+        conn.close()
+
+    def _fetch_row(self):
+        resp = self.client.get("/api/open-tournaments")
+        self.assertEqual(resp.status_code, 200)
+        rows = resp.get_json()["tournaments"]
+        return next(t for t in rows if t["url"] == self.TEST_URL)
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_dev_mode_rows_carry_fake_true(self):
+        bwf_client.set_mode("dev")
+        self.assertTrue(self._fetch_row()["_fake"])
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_production_rows_carry_fake_false(self):
+        """Even if something left the internal mode at 'dev', DEV_TOOLS unset
+        forces get_mode() -- and therefore this flag -- back to false."""
+        bwf_client._mode = "dev"
+        try:
+            self.assertFalse(self._fetch_row()["_fake"])
+        finally:
+            bwf_client._mode = "live"
 
 
 class TestFakeData(unittest.TestCase):
