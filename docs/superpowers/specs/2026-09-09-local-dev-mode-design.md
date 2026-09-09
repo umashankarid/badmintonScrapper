@@ -188,6 +188,8 @@ New tests go in `test_bwf_client.py` and `test_dev_mode.py`. The existing gate, 
 - It does not fake the scraping. See the accepted trade-off above.
 - It does not seed the local database. Dev mode fakes the *external* site; local tournaments and registrations are still created through the normal admin flow, which now works offline.
 - It does not touch `send_email()`, `scraper.py` (a standalone legacy crawler, unused by the app) or the Brevo webhook.
+
+  Brevo is the transactional email provider the app sends through. Folding it into the dev toggle was considered and rejected: `EMAIL_ENABLED=0`, set in `run-local.ps1`, already prevents every send, so there is nothing left to leak and no reason to have two mechanisms doing one job. The option not taken was capturing dev-mode messages into the existing `email_events` table so the existing viewer in `email-settings.html` could show them. What that costs us: message bodies stay invisible except as a log line, so the four reminder templates, the bilingual text and attachment handling still cannot be inspected offline. If that becomes annoying, capture-to-`email_events` is the cheap fix — it needs no new table and no new page.
 - It does not persist the chosen mode. Restart returns to live, on purpose.
 
 ---
