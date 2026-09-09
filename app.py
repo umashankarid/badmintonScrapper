@@ -847,6 +847,26 @@ def bwf_login():
         if not player_name:
             player_name = login
 
+        # RESTRICT: Only Badmintonklubben Komet members can use the internal registration system.
+        # Non-Komet players must ask their Komet partner to register the pair.
+        # (Admin/club accounts are handled earlier and never reach this point.)
+        if not is_admin_user(login) and (not club or "komet" not in club.lower()):
+            logger.warning(f"⛔ Non-Komet login blocked: {player_name} ({license_id}) club='{club}'")
+            return jsonify(
+                success=False,
+                error=(
+                    "Detta registreringssystem är endast för medlemmar i Badmintonklubben Komet.\n\n"
+                    "Om du ska spela dubbel/mixed med en Komet-spelare, be din Komet-partner att "
+                    "registrera paret – du läggs då till automatiskt som partner.\n\n"
+                    "Frågor? Kontakta Tavlingar@bmkkomet.se\n\n"
+                    "─────────────────────\n\n"
+                    "This registration system is only for members of Badmintonklubben Komet.\n\n"
+                    "If you're playing doubles/mixed with a Komet player, please ask your Komet "
+                    "partner to register the pair — you'll be added automatically as their partner.\n\n"
+                    "Questions? Contact Tavlingar@bmkkomet.se"
+                )
+            ), 403
+
         session["bwf_player"] = player_name
         session["bwf_login"] = login
         session["bwf_license_id"] = license_id
