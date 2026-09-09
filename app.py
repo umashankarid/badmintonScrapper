@@ -4826,34 +4826,46 @@ def reset_reminder():
 
 @app.route("/api/cleanup-orphaned-registrations", methods=["GET", "POST"])
 def cleanup_orphaned_registrations():
-    """Remove registrations with no categories (orphaned records). Admin only."""
+    """Remove orphaned registrations: empty records AND records whose player doesn't exist. Admin only."""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
         cur = conn.cursor()
-        # Find orphaned records first (for logging)
-        cur.execute("""
-            SELECT tournament_name, license_id FROM tournament_registrations
-            WHERE (singles_levels IS NULL OR singles_levels = '')
-              AND (doubles_levels IS NULL OR doubles_levels = '')
-              AND (mixed_levels IS NULL OR mixed_levels = '')
-        """)
-        orphaned = cur.fetchall()
         
+        removed = []
+        
+        # 1. Empty registrations (no categories)
         cur.execute("""
-            DELETE FROM tournament_registrations
+            SELECT id, tournament_name, license_id FROM tournament_registrations
             WHERE (singles_levels IS NULL OR singles_levels = '')
               AND (doubles_levels IS NULL OR doubles_levels = '')
               AND (mixed_levels IS NULL OR mixed_levels = '')
         """)
-        deleted = cur.rowcount
+        for row in cur.fetchall():
+            removed.append(f"{row[1]} / {row[2]} (empty)")
+            cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (row[0],))
+        
+        # 2. Ghost-player registrations (license_id not in players table)
+        cur.execute("""
+            SELECT tr.id, tr.tournament_name, tr.license_id, tr.doubles_partner, tr.mixed_partner
+            FROM tournament_registrations tr
+            LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+            WHERE p.license_id IS NULL
+        """)
+        for row in cur.fetchall():
+            reg_id, t_name, lic, dpartner, mpartner = row
+            removed.append(f"{t_name} / {lic} (ghost player, partner: {dpartner or mpartner or '-'})")
+            # Clear partner references pointing to this ghost's partners
+            cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (reg_id,))
+        
         conn.commit()
         conn.close()
         
-        logger.info(f"🗑️ Cleaned up {deleted} orphaned registrations: {orphaned}")
-        return jsonify(success=True, message=f"Removed {deleted} orphaned (empty) registrations.", details=[f"{o[0]} / {o[1]}" for o in orphaned])
+        logger.info(f"🗑️ Cleaned up {len(removed)} orphaned/ghost registrations: {removed}")
+        return jsonify(success=True, message=f"Removed {len(removed)} orphaned records (empty or ghost players).", details=removed)
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
