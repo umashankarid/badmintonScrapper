@@ -14,7 +14,7 @@
   reaches the database would ship unnoticed — nothing actually drove the app in a browser. There
   was also no CI: every gate ran only when someone remembered to run it locally.
 
-- **`tests/e2e/`** (new package, 27 tests) — Playwright-driven browser tests against a real running
+- **`tests/e2e/`** (new package, 29 tests) — Playwright-driven browser tests against a real running
   instance of `app.py`:
   - `conftest.py`: `app_server` boots `app.py` as a subprocess in dev mode (`DEV_TOOLS=1`) with its
     own temporary `DATA_DIR` and outbound HTTP blocked, and drains the subprocess's stdout/stderr on
@@ -57,10 +57,12 @@
     regardless of environment, with the column/filename assertions updated to match
     (`id`/`klass`, `point_rules.json`).
   - `test_players_data.py`: `test_has_players_with_complete_data` asserted against whatever real
-    data happened to be in `players.db` — production data, not code under test. Replaced with
-    `test_query_finds_players_with_complete_data`, which builds its own throwaway `players.db` with
-    one complete and one incomplete row and asserts the completeness query isolates exactly the
-    complete one.
+    data happened to be in `players.db` — production data, not code under test. It was replaced
+    with `test_query_finds_players_with_complete_data`, a self-contained test against its own
+    throwaway `players.db`. That replacement was itself deleted in a later commit on this branch
+    (`ab5a8f5`) because it touched no application code and stood in for nothing — a permanently
+    green test that exercised nothing. Net effect on this branch for that test: a pure deletion,
+    not a replacement.
   - All three fixes are confined to the test files themselves; no production code or schema
     changed.
 
@@ -80,8 +82,8 @@
 
 - **Tests**: verified locally with `DATA_DIR` unset (the CI situation — clean checkout, no
   pre-existing database files):
-  `pytest -m "not live" --ignore=tests/e2e -q` → 291 passed, 3 deselected (the `live`-marked files).
-  `pytest tests/e2e -q` → 27 passed.
+  `pytest -m "not live" --ignore=tests/e2e -q` → 290 passed, 3 deselected (the `live`-marked files).
+  `pytest tests/e2e -q` → 29 passed.
 
 - **Impact**:
   - Users: none — no production behaviour change; all changes are test files, test configuration,
