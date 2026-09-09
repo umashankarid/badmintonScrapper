@@ -22,18 +22,20 @@ def _connect(data_dir: Path):
     return conn
 
 
-def _execute(data_dir, sql, params):
-    """Run one write against tournaments.db, retrying briefly on lock.
+def _execute(data_dir, db_name, sql, params):
+    """Run one write against `db_name` in data_dir, retrying briefly on lock.
 
-    The app server owns the same SQLite file while it's running, so a write
+    The app server owns the same SQLite files while it's running, so a write
     from here can occasionally collide with one of its own. A few retries
-    with a short backoff clears it without restructuring the fixtures.
+    with a short backoff clears it without restructuring the fixtures. One
+    helper for every db this module writes to (tournaments.db, players.db),
+    rather than three copies of the same loop.
     """
     # ponytail: retry loop is a lock workaround, not a queue -- fine at this
     # test-suite scale; replace with a real writer lock if seeds grow heavy.
     attempts = 5
     for attempt in range(attempts):
-        conn = _connect(data_dir)
+        conn = sqlite3.connect(Path(data_dir) / db_name, timeout=5)
         try:
             conn.execute(sql, params)
             conn.commit()
@@ -62,7 +64,7 @@ DEFAULT_CATEGORIES = {
 
 def _insert_tournament(data_dir, name, url, start, reg_closes, categories, groups):
     _execute(
-        data_dir,
+        data_dir, "tournaments.db",
         "INSERT OR REPLACE INTO tournaments "
         "(tournament_name, tournament_url, location, date_start, date_end, "
         " registration_opens, registration_closes, cancellation_deadline, "
@@ -103,7 +105,7 @@ def past_tournament(data_dir, name="Test Past Cup"):
 
 def registration(data_dir, tournament, license_id, singles="HS B"):
     _execute(
-        data_dir,
+        data_dir, "tournaments.db",
         "INSERT OR REPLACE INTO tournament_registrations "
         "(tournament_name, license_id, singles_levels) VALUES (?,?,?)",
         (tournament, license_id, singles))
@@ -123,43 +125,19 @@ def player(data_dir, license_id, name, club="BMK Komet"):
     matches bwf_dev.py's own fixtures, so this coexists cleanly with a row
     the real login path (_persist_login_profile) writes for the same player.
     """
-    attempts = 5
-    for attempt in range(attempts):
-        conn = sqlite3.connect(Path(data_dir) / "players.db", timeout=5)
-        try:
-            conn.execute(
-                "INSERT OR REPLACE INTO players (license_id, name, profile_url, club) "
-                "VALUES (?,?,?,?)",
-                (license_id, name, f"/player-profile/{license_id}", club))
-            conn.commit()
-            return
-        except sqlite3.OperationalError as e:
-            if "locked" in str(e) and attempt < attempts - 1:
-                time.sleep(0.2 * (attempt + 1))
-                continue
-            raise
-        finally:
-            conn.close()
+    _execute(
+        data_dir, "players.db",
+        "INSERT OR REPLACE INTO players (license_id, name, profile_url, club) "
+        "VALUES (?,?,?,?)",
+        (license_id, name, f"/player-profile/{license_id}", club))
 
 
 def komet_player(data_dir, license_id, name, groups):
-    attempts = 5
-    for attempt in range(attempts):
-        conn = sqlite3.connect(Path(data_dir) / "players.db", timeout=5)
-        try:
-            conn.execute(
-                "INSERT OR REPLACE INTO kometPlayers (license_id, name, groups) "
-                "VALUES (?,?,?)",
-                (license_id, name, json.dumps(groups)))
-            conn.commit()
-            return
-        except sqlite3.OperationalError as e:
-            if "locked" in str(e) and attempt < attempts - 1:
-                time.sleep(0.2 * (attempt + 1))
-                continue
-            raise
-        finally:
-            conn.close()
+    _execute(
+        data_dir, "players.db",
+        "INSERT OR REPLACE INTO kometPlayers (license_id, name, groups) "
+        "VALUES (?,?,?)",
+        (license_id, name, json.dumps(groups)))
 
 
 def tournaments(data_dir):
