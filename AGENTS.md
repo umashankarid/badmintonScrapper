@@ -88,6 +88,17 @@ User-facing error messages are bilingual: Swedish first, blank line, then Englis
 
 `CODE_GUIDELINES.md` is the active working agreement and its rules apply here: write the test first, log every operation (INFO for events, ERROR for failures, the codebase uses ✅/❌/📧 emoji prefixes consistently), update `CHANGES.md` with every commit, and **never push without explicit user approval**.
 
+**Change a user-facing flow, update its browser test in the same commit.** The templates are static HTML with inline JavaScript and no type checking, so nothing but `tests/e2e/` connects a control to the endpoint it calls. If you touch a page, a route a page calls, a response shape a page reads, or an element id or class a test selects, update the covering test in `tests/e2e/` as part of the same change. CI runs that suite on every push and will fail — which is the point, but a failure you discover in CI costs more than one you fix while the change is still in front of you.
+
+Concretely, these break browser tests and are easy to do without noticing:
+
+- renaming or removing an `id`/class the tests select — `#submit-btn`, `#register-section`, `#devbar select`, `select.singles-level`, `#doubles-partner`
+- renaming an endpoint, or changing a key in a JSON response a page reads
+- changing what a rejection message says: several tests assert the exact text, so that the test proves *which* rule fired rather than merely that something was refused
+- changing the database schema — `tests/e2e/seed.py` is the only file in the suite that knows it, and every write belongs there rather than inline in a test
+
+If the flow you changed has no test, add one rather than leaving the gap. If you deliberately remove coverage, say so in the commit message; a test quietly deleted to make a change pass is worse than no test at all.
+
 **Do not commit plans or specs.** Design documents, implementation plans, task breakdowns and similar planning artifacts stay local — `docs/superpowers/` is gitignored for this reason. They are working notes for a single piece of work, they go stale the moment the code moves on, and this repository already carries a dozen abandoned `*_PLAN.md` and `*_SUMMARY.md` files that prove the point. Put the reasoning that outlives the task in the commit message, in `CHANGES.md`, or here.
 
 Most other root-level `.md` files (`FINAL_STATUS.md`, `SESSION_SUMMARY.md`, `PHASE_5_COMPLETE.md`, `PROGRESS_SUMMARY.md`, `*_PLAN.md`, …) are historical session logs from past refactors and are stale — `ACTUAL_DB_STRUCTURE.md` in particular still claims `tournaments.db` doesn't exist and that per-tournament `.db` files are in use. That migration is done: registrations live in `tournaments.db`, and `get_tournament_db()` is a deprecated stub that returns `None`. Read those files as history, not as spec.

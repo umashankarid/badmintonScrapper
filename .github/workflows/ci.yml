@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   unit:
-    runs-on: namespace-profile-badmintonkomet
+    runs-on: ubuntu-latest   # TEMPORARY: proving the workflow while the Namespace runner is linked
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
         run: pytest -m "not live" --ignore=tests/e2e -q
 
   e2e:
-    runs-on: namespace-profile-badmintonkomet
+    runs-on: ubuntu-latest   # TEMPORARY: proving the workflow while the Namespace runner is linked
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
