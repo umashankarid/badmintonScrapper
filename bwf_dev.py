@@ -12,3 +12,7 @@ logger = logging.getLogger(__name__)
 
 def get_player_license(player_name):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def get_player_ranking(player_name):
+    raise NotImplementedError("Stub added in Task 12")

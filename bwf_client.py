@@ -54,3 +54,7 @@ def _backend():
 
 def get_player_license(player_name):
     return _backend().get_player_license(player_name)
+
+
+def get_player_ranking(player_name):
+    return _backend().get_player_ranking(player_name)
