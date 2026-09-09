@@ -53,10 +53,30 @@ def _day(offset: int) -> str:
     return (date.today() + timedelta(days=offset)).isoformat()
 
 
+# Mirrors app.py's DEV_FIXTURE_URL_PREFIX ("https://dev.local/"): every
+# fixture tournament this suite writes uses it, so the app's own
+# provenance check (_mode_url_clause) recognizes them as dev-mode rows.
+DEV_FIXTURE_URL_PREFIX = "https://dev.local/"
+
+
+def tournament_url(name):
+    """The dev-fixture URL for a tournament seeded by this module.
+
+    One place to build it: it used to be hand-rolled in five places across
+    seed.py and the test files, which is exactly the kind of duplication
+    that breaks silently if DEV_FIXTURE_URL_PREFIX's shape ever changes.
+    """
+    return f"{DEV_FIXTURE_URL_PREFIX}tournament/{name.replace(' ', '-')}"
+
+
+# Only the categories the suite actually exercises (grep tests/e2e for the
+# rest before adding one back): "HS A"/"HS B" and "DS A"/"DS B" singles,
+# "HD B" doubles. A wider list here just invites a fixture that silently
+# stops matching what any test selects.
 DEFAULT_CATEGORIES = {
     "singles_levels": ["HS A", "HS B", "DS A", "DS B"],
-    "doubles_levels": ["HD B", "DD B"],
-    "mixed_levels": ["MD B"],
+    "doubles_levels": ["HD B"],
+    "mixed_levels": [],
     "doubles_partner": [],
     "mixed_partner": [],
 }
@@ -100,14 +120,14 @@ def open_tournament(data_dir, name="Test Open", groups=None, selected_for_view=1
     as opposed to past_tournament's exclusion-by-date.
     """
     return _insert_tournament(
-        data_dir, name, f"https://dev.local/tournament/{name.replace(' ', '-')}",
+        data_dir, name, tournament_url(name),
         _day(30), _day(14), DEFAULT_CATEGORIES, groups, selected_for_view)
 
 
 def past_tournament(data_dir, name="Test Past Cup"):
     """Registration closed, competition already happened."""
     return _insert_tournament(
-        data_dir, name, f"https://dev.local/tournament/{name.replace(' ', '-')}",
+        data_dir, name, tournament_url(name),
         _day(-30), _day(-40), DEFAULT_CATEGORIES, None)
 
 

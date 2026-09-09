@@ -25,15 +25,11 @@ def sign_in_as(page, base, username):
         page.locator("#devbar select").select_option(username)
 
 
-def tournament_url(name):
-    return f"https://dev.local/tournament/{name.replace(' ', '-')}"
-
-
 def test_player_registers_and_the_row_lands_in_the_database(app_server, page, data_dir):
     name = seed.open_tournament(data_dir, name="Journey Cup")
     sign_in_as(page, app_server, "adam")
 
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
     # The level controls are generated into #levels-container at runtime, one
@@ -68,7 +64,7 @@ def test_player_registers_doubles_with_a_partner_and_the_row_lands_in_the_databa
     """
     name = seed.open_tournament(data_dir, name="Partner Cup")
     sign_in_as(page, app_server, "adam")
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
     page.wait_for_selector("#register-section", state="visible")
 
@@ -100,7 +96,7 @@ def test_player_withdraws_and_the_row_disappears(app_server, page, data_dir):
     seed.registration(data_dir, name, "DEV-0001", singles="HS A")
     sign_in_as(page, app_server, "adam")   # DEV-0001 is Adam Adult
 
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
     # deletePlayer() confirms upfront (templates/tournament.html:762). Same
@@ -116,7 +112,7 @@ def test_under_13_sees_the_dispens_confirmation(app_server, page, data_dir):
     """Mini Minior is 11. Senior classes require a confirmation popup."""
     name = seed.open_tournament(data_dir, name="Dispens Cup")
     sign_in_as(page, app_server, "mini")
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
     seen = []
@@ -156,7 +152,7 @@ def test_level_3_5_player_is_blocked_from_an_sjt_event(app_server, page, data_di
     # (app.py:_persist_login_profile), so bwf_dev.py's "jonas" persona --
     # already ["LEVEL 3-5"] -- is the actual source of truth.
     sign_in_as(page, app_server, "jonas")
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
     seen = []
@@ -187,7 +183,7 @@ def test_level_6_player_is_allowed_in_an_sjt_event(app_server, page, data_dir):
     # test above: bwf_dev.py's "sara" persona (["LEVEL_6"]) is the source
     # of truth once she signs in.
     sign_in_as(page, app_server, "sara")
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
     page.wait_for_selector("#register-section", state="visible")
@@ -211,7 +207,7 @@ def test_points_above_the_class_maximum_are_blocked(app_server, page, data_dir):
     """
     name = seed.open_tournament(data_dir, name="Points Cup")
     sign_in_as(page, app_server, "elin")
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_selector("#register-section", state="visible")
 
     seen = []

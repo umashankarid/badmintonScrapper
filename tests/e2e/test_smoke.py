@@ -90,7 +90,7 @@ def test_admin_page_renders_without_console_errors(app_server, page, path, title
 def test_tournament_page_renders(app_server, page, data_dir):
     """Needs a real tournament in the database to render against."""
     name = seed.open_tournament(data_dir, name="Smoke Cup")
-    url = f"https://dev.local/tournament/{name.replace(' ', '-')}"
+    url = seed.tournament_url(name)
     with console_errors(page) as errors:
         page.goto(f"{app_server}/tournament.html?url={url}")
         page.wait_for_load_state("networkidle")

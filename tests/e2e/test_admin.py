@@ -2,7 +2,7 @@
 
 from tests.e2e import seed
 from tests.e2e.conftest import console_errors
-from tests.e2e.test_player import sign_in_as, tournament_url
+from tests.e2e.test_player import sign_in_as
 
 
 def test_admin_sees_registrations_for_a_tournament(app_server, page, data_dir):
@@ -17,7 +17,7 @@ def test_admin_sees_registrations_for_a_tournament(app_server, page, data_dir):
     seed.registration(data_dir, name, "DEV-0001", singles="HS A")
     sign_in_as(page, app_server, "sbf04959")     # the club account is an admin
 
-    page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
     # get_by_text("Adam Adult") is ambiguous: the devbar's persona <option>
