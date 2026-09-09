@@ -86,3 +86,11 @@ def get_player_ranking_by_profile(profile_url):
 
 def get_tournament_events(tournament_id):
     return _backend().get_tournament_events(tournament_id)
+
+
+def fetch_tournament_info(url):
+    return _backend().fetch_tournament_info(url)
+
+
+def fetch_tournament_details(url):
+    return _backend().fetch_tournament_details(url)

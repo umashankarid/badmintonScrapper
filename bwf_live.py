@@ -482,3 +482,103 @@ def get_tournament_events(tournament_id, session=None):
         elif event.startswith("MD"):
             events["mixed_levels"].append(event)
     return events
+
+
+def _fetch_tournament(url, tolerate_missing_events):
+    """One tournament page plus its events page: one cookiewall POST, two GETs.
+
+    tolerate_missing_events is the one thing the two callers below disagree on,
+    so it stays a parameter rather than being unified away.
+    """
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/",
+        "SettingsOpen": "false",
+        "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    # Fetch tournament page
+    resp = s.get(url, timeout=10)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Get tournament name
+    name = ""
+    name_el = soup.select_one(".media__title a")
+    if name_el:
+        name = name_el.get_text(strip=True)
+    if not name:
+        name_el = soup.select_one(".media__title")
+        if name_el:
+            name = name_el.get_text(strip=True)
+
+    # Get location
+    location = ""
+    location_el = soup.select_one(".media__subheading")
+    if location_el:
+        location = location_el.get_text(strip=True)
+
+    # Get timeline dates
+    dates = {}
+    timeline = soup.select_one(".tournament-meta__timeline")
+    if timeline:
+        for li in timeline.find_all("li"):
+            label_el = li.select_one(".list__value")
+            time_el = li.find("time")
+            if label_el and time_el:
+                label = label_el.get_text(strip=True)
+                datetime_val = time_el.get("datetime", "")[:10]  # Get YYYY-MM-DD
+                if "öppnar" in label.lower():
+                    dates["registration_opens"] = datetime_val
+                elif "stänger" in label.lower():
+                    dates["registration_closes"] = datetime_val
+                elif "återbud" in label.lower():
+                    dates["cancellation_deadline"] = datetime_val
+                elif "start" in label.lower():
+                    dates["competition_start"] = datetime_val
+                elif "slut" in label.lower():
+                    dates["competition_end"] = datetime_val
+
+    # Get event classes from the events page, on the same session
+    events = {"singles_levels": [], "doubles_levels": [], "mixed_levels": [], "levels": []}
+    tid_match = re.search(r'/tournament/([^/]+)', url)
+    if tid_match:
+        try:
+            events = get_tournament_events(tid_match.group(1), session=s)
+        except Exception as e:
+            if not tolerate_missing_events:
+                raise
+            logger.debug(f"⚠️  Could not extract categories: {e}")
+
+    return {
+        "name": name,
+        "location": location,
+        "levels": events["levels"],
+        "singles_levels": events["singles_levels"],
+        "doubles_levels": events["doubles_levels"],
+        "mixed_levels": events["mixed_levels"],
+        "registration_opens": dates.get("registration_opens", ""),
+        "registration_closes": dates.get("registration_closes", ""),
+        "cancellation_deadline": dates.get("cancellation_deadline", ""),
+        "competition_start": dates.get("competition_start", ""),
+        "competition_end": dates.get("competition_end", ""),
+    }
+
+
+def fetch_tournament_info(url):
+    """Everything app.py reads off a tournament page. Every date is YYYY-MM-DD or "".
+
+    A failing events page fails the whole call, which is what
+    /admin/fetch-tournament-info has always done with it.
+    """
+    return _fetch_tournament(url, tolerate_missing_events=False)
+
+
+def fetch_tournament_details(url):
+    """The same scrape, but a failing events page only empties the event lists.
+
+    ensure_tournament and the calendar refresh have always wrapped their events
+    fetch in their own try/except and stored the tournament regardless; keeping
+    that difference is cheaper than changing when they fail.
+    """
+    return _fetch_tournament(url, tolerate_missing_events=True)

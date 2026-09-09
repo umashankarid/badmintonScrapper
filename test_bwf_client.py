@@ -943,5 +943,269 @@ class TestGetTournamentEvents(unittest.TestCase):
             bwf_client.get_tournament_events("T-1")
 
 
+
+TOURNAMENT_URL = "https://badmintonsweden.tournamentsoftware.com/tournament/T-1"
+
+TOURNAMENT_INFO = {
+    "name": "Vikingaslaget",
+    "location": "Sollentuna",
+    "levels": ["A", "B", "C"],
+    "singles_levels": ["DS B", "HS A"],
+    "doubles_levels": ["DD B", "HD A"],
+    "mixed_levels": ["MD C"],
+    "registration_opens": "2026-01-01",
+    "registration_closes": "2026-02-01",
+    "cancellation_deadline": "2026-02-10",
+    "competition_start": "2026-03-01",
+    "competition_end": "2026-03-02",
+}
+
+
+class TestFetchTournamentInfo(unittest.TestCase):
+    """The tournament page plus its events page, on one session."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_name_location_and_all_five_dates(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(TOURNAMENT_HTML), _resp(EVENTS_HTML)]
+        mock_session_cls.return_value = session
+
+        info = bwf_client.fetch_tournament_info(TOURNAMENT_URL)
+
+        self.assertEqual(info, TOURNAMENT_INFO)
+
+        # Pin request construction: one cookiewall POST, two GETs, no more.
+        mock_session_cls.assert_called_once_with()
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5)
+        self.assertEqual(
+            session.get.call_args_list,
+            [call(TOURNAMENT_URL, timeout=10), call(EVENTS_URL, timeout=10)],
+        )
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_falls_back_to_the_title_without_a_link(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [
+            _resp('<div class="media__title">Vikingaslaget</div>'), _resp(EVENTS_HTML)]
+        mock_session_cls.return_value = session
+        self.assertEqual(bwf_client.fetch_tournament_info(TOURNAMENT_URL)["name"], "Vikingaslaget")
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_missing_timeline_leaves_every_date_empty(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp("<div>nothing here</div>"), _resp(EVENTS_HTML)]
+        mock_session_cls.return_value = session
+
+        info = bwf_client.fetch_tournament_info(TOURNAMENT_URL)
+
+        self.assertEqual(info["name"], "")
+        self.assertEqual(info["location"], "")
+        for field in ("registration_opens", "registration_closes", "cancellation_deadline",
+                      "competition_start", "competition_end"):
+            self.assertEqual(info[field], "")
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_url_without_a_tournament_id_never_asks_for_events(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(TOURNAMENT_HTML)]
+        mock_session_cls.return_value = session
+
+        info = bwf_client.fetch_tournament_info("https://badmintonsweden.tournamentsoftware.com/find")
+
+        self.assertEqual(info["levels"], [])
+        self.assertEqual(info["singles_levels"], [])
+        session.get.assert_called_once_with(
+            "https://badmintonsweden.tournamentsoftware.com/find", timeout=10)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_tournament_page_error_propagates(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.fetch_tournament_info(TOURNAMENT_URL)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_events_page_error_fails_the_whole_call(self, mock_session_cls):
+        """/admin/fetch-tournament-info has always turned this into its 500."""
+        session = MagicMock()
+        session.get.side_effect = [_resp(TOURNAMENT_HTML), Boom("events timed out")]
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.fetch_tournament_info(TOURNAMENT_URL)
+        self.assertEqual(session.get.call_count, 2)
+
+
+class TestFetchTournamentDetails(unittest.TestCase):
+    """Same scrape, but tolerant of a missing events page.
+
+    ensure_tournament and the calendar refresh have always stored a tournament
+    with empty categories when the events page failed, rather than failing.
+    """
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_success_matches_fetch_tournament_info(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(TOURNAMENT_HTML), _resp(EVENTS_HTML)]
+        mock_session_cls.return_value = session
+
+        self.assertEqual(bwf_client.fetch_tournament_details(TOURNAMENT_URL), TOURNAMENT_INFO)
+        self.assertEqual(session.get.call_count, 2)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_events_page_error_only_empties_the_event_lists(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(TOURNAMENT_HTML), Boom("events timed out")]
+        mock_session_cls.return_value = session
+
+        info = bwf_client.fetch_tournament_details(TOURNAMENT_URL)
+
+        self.assertEqual(info["name"], "Vikingaslaget")
+        self.assertEqual(info["competition_start"], "2026-03-01")
+        self.assertEqual(info["levels"], [])
+        self.assertEqual(info["singles_levels"], [])
+        self.assertEqual(info["doubles_levels"], [])
+        self.assertEqual(info["mixed_levels"], [])
+        self.assertEqual(session.get.call_count, 2)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_tournament_page_error_still_propagates(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.fetch_tournament_details(TOURNAMENT_URL)
+
+
+class TestFetchTournamentInfoEndpoint(unittest.TestCase):
+    """/admin/fetch-tournament-info: delegates, and owns no session of its own."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["admin"] = True
+
+    def _post(self):
+        return self.client.post("/admin/fetch-tournament-info", json={"url": TOURNAMENT_URL})
+
+    def test_response_shape_is_unchanged(self):
+        with patch("app.bwf_client.fetch_tournament_info", return_value=TOURNAMENT_INFO) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self._post()
+
+        self.assertEqual(resp.status_code, 200)
+        # location and the grouped class names are not part of this response.
+        self.assertEqual(resp.get_json(), {
+            "success": True,
+            "name": "Vikingaslaget",
+            "levels": ["A", "B", "C"],
+            "registration_opens": "2026-01-01",
+            "registration_closes": "2026-02-01",
+            "cancellation_deadline": "2026-02-10",
+            "competition_start": "2026-03-01",
+            "competition_end": "2026-03-02",
+        })
+        mocked.assert_called_once_with(TOURNAMENT_URL)
+        mock_session_cls.assert_not_called()
+
+    def test_scrape_failure_is_a_500(self):
+        with patch("app.bwf_client.fetch_tournament_info", side_effect=Boom("events timed out")):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(), {"success": False, "error": "events timed out"})
+
+    def test_unauthenticated_request_never_scrapes(self):
+        import app
+        client = app.app.test_client()
+        with patch("app.bwf_client.fetch_tournament_info") as mocked:
+            resp = client.post("/admin/fetch-tournament-info", json={"url": TOURNAMENT_URL})
+        self.assertEqual(resp.status_code, 401)
+        mocked.assert_not_called()
+
+
+class TestEnsureTournamentEndpoint(unittest.TestCase):
+    """/api/ensure-tournament: the client parses, app.py owns every sqlite3 call."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def _db(self, existing_row):
+        conn = MagicMock()
+        cur = conn.cursor.return_value
+        cur.fetchone.return_value = existing_row
+        return conn, cur
+
+    def test_new_tournament_is_scraped_once_and_written_to_the_db(self):
+        conn, cur = self._db(None)
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.fetch_tournament_details",
+                   return_value=TOURNAMENT_INFO) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.post("/api/ensure-tournament", json={"url": TOURNAMENT_URL})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {
+            "success": True, "tournament_id": "Vikingaslaget",
+            "db": "Vikingaslaget", "created": True})
+        mocked.assert_called_once_with(TOURNAMENT_URL)
+        mock_session_cls.assert_not_called()
+
+        sql, params = cur.execute.call_args_list[-1][0]
+        self.assertIn("INSERT INTO tournaments", sql)
+        self.assertEqual(params, (
+            TOURNAMENT_URL, "Vikingaslaget", "Sollentuna",
+            "2026-03-01", "2026-03-02",
+            "2026-01-01", "2026-02-01", "2026-02-10", "2026-03-01", "2026-03-02",
+            json.dumps({
+                "singles_levels": ["DS B", "HS A"],
+                "doubles_levels": ["DD B", "HD A"],
+                "mixed_levels": ["MD C"],
+                "doubles_partner": ["Partner A", "Partner B", "Partner C"],
+                "mixed_partner": ["Partner A", "Partner B", "Partner C"],
+            }),
+            1,
+        ))
+
+    def test_known_tournament_is_never_scraped(self):
+        conn, cur = self._db(("Vikingaslaget",))
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.fetch_tournament_details") as mocked:
+            resp = self.client.post("/api/ensure-tournament", json={"url": TOURNAMENT_URL})
+
+        self.assertEqual(resp.get_json(), {
+            "success": True, "tournament_id": "Vikingaslaget",
+            "db": "Vikingaslaget", "created": False})
+        mocked.assert_not_called()
+
+    def test_a_tournament_with_no_events_is_still_stored(self):
+        """The client swallows an events failure, so this row still gets written."""
+        conn, cur = self._db(None)
+        no_events = dict(TOURNAMENT_INFO, levels=[], singles_levels=[],
+                         doubles_levels=[], mixed_levels=[])
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.fetch_tournament_details", return_value=no_events):
+            resp = self.client.post("/api/ensure-tournament", json={"url": TOURNAMENT_URL})
+
+        self.assertEqual(resp.status_code, 200)
+        params = cur.execute.call_args_list[-1][0][1]
+        self.assertEqual(json.loads(params[10]), {
+            "singles_levels": [], "doubles_levels": [], "mixed_levels": [],
+            "doubles_partner": [], "mixed_partner": []})
+
+    def test_scrape_failure_is_a_500(self):
+        conn, cur = self._db(None)
+        with patch("app.sqlite3.connect", return_value=conn), \
+             patch("app.bwf_client.fetch_tournament_details", side_effect=Boom("refused")):
+            resp = self.client.post("/api/ensure-tournament", json={"url": TOURNAMENT_URL})
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(), {"success": False, "error": "refused"})
+
+
 if __name__ == "__main__":
     unittest.main()

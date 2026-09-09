@@ -1442,76 +1442,17 @@ def fetch_tournament_info():
         return jsonify(success=False, error="URL required"), 400
 
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        # Fetch tournament page
-        resp = s.get(url, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Get tournament name
-        name = ""
-        name_el = soup.select_one(".media__title a")
-        if name_el:
-            name = name_el.get_text(strip=True)
-        if not name:
-            name_el = soup.select_one(".media__title")
-            if name_el:
-                name = name_el.get_text(strip=True)
-
-        # Get timeline dates
-        dates = {}
-        timeline = soup.select_one(".tournament-meta__timeline")
-        if timeline:
-            for li in timeline.find_all("li"):
-                label_el = li.select_one(".list__value")
-                time_el = li.find("time")
-                if label_el and time_el:
-                    label = label_el.get_text(strip=True)
-                    datetime_val = time_el.get("datetime", "")[:10]  # Get YYYY-MM-DD
-                    if "öppnar" in label.lower():
-                        dates["registration_opens"] = datetime_val
-                    elif "stänger" in label.lower():
-                        dates["registration_closes"] = datetime_val
-                    elif "återbud" in label.lower():
-                        dates["cancellation_deadline"] = datetime_val
-                    elif "start" in label.lower():
-                        dates["competition_start"] = datetime_val
-                    elif "slut" in label.lower():
-                        dates["competition_end"] = datetime_val
-
-        # Get levels from events page
-        levels = []
-        # Extract tournament ID from URL
-        import re
-        tid_match = re.search(r'/tournament/([^/]+)', url)
-        if tid_match:
-            tid = tid_match.group(1)
-            events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-            events_soup = BeautifulSoup(events_resp.text, "html.parser")
-            level_set = set()
-            for a in events_soup.select("a"):
-                text = a.get_text(strip=True)
-                if text and len(text) < 50 and any(cat in text for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]):
-                    parts = text.split()
-                    if len(parts) >= 2:
-                        level_set.add(parts[1])
-            levels = sorted(level_set)
+        info = bwf_client.fetch_tournament_info(url)
 
         return jsonify(
             success=True,
-            name=name,
-            levels=levels,
-            registration_opens=dates.get("registration_opens", ""),
-            registration_closes=dates.get("registration_closes", ""),
-            cancellation_deadline=dates.get("cancellation_deadline", ""),
-            competition_start=dates.get("competition_start", ""),
-            competition_end=dates.get("competition_end", "")
+            name=info["name"],
+            levels=info["levels"],
+            registration_opens=info["registration_opens"],
+            registration_closes=info["registration_closes"],
+            cancellation_deadline=info["cancellation_deadline"],
+            competition_start=info["competition_start"],
+            competition_end=info["competition_end"]
         )
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
@@ -1950,76 +1891,29 @@ def get_all_bwf_tournaments():
         def fetch_tournament_details(t):
             """Fetch dates and categories for a single tournament (thread-safe)"""
             try:
-                # Create per-thread session (sharing session across threads is unsafe)
-                ts = ext_requests.Session()
-                ts.headers.update({"User-Agent": "Mozilla/5.0"})
-                ts.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-                    "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-                }, allow_redirects=True, timeout=5)
-                
-                resp_detail = ts.get(t["url"], timeout=10)
-                soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
-                
-                # Extract detailed dates
-                dates = {}
-                timeline = soup_detail.select_one(".tournament-meta__timeline")
-                if timeline:
-                    for li in timeline.find_all("li"):
-                        label_el = li.select_one(".list__value")
-                        time_el = li.find("time")
-                        if label_el and time_el:
-                            label = label_el.get_text(strip=True)
-                            datetime_val = time_el.get("datetime", "")[:10]
-                            if "öppnar" in label.lower():
-                                dates["registration_opens"] = datetime_val
-                            elif "stänger" in label.lower():
-                                dates["registration_closes"] = datetime_val
-                            elif "återbud" in label.lower():
-                                dates["cancellation_deadline"] = datetime_val
-                            elif "start" in label.lower():
-                                dates["competition_start"] = datetime_val
-                            elif "slut" in label.lower():
-                                dates["competition_end"] = datetime_val
-                
-                # Extract event categories
+                # The client builds a session per call, so this stays thread-safe
+                info = bwf_client.fetch_tournament_details(t["url"])
+
+                dates = {
+                    "registration_opens": info["registration_opens"],
+                    "registration_closes": info["registration_closes"],
+                    "cancellation_deadline": info["cancellation_deadline"],
+                    "competition_start": info["competition_start"],
+                    "competition_end": info["competition_end"],
+                }
+
                 categories = {
-                    "singles_levels": [],
-                    "doubles_levels": [],
-                    "mixed_levels": [],
+                    "singles_levels": info["singles_levels"],
+                    "doubles_levels": info["doubles_levels"],
+                    "mixed_levels": info["mixed_levels"],
                     "doubles_partner": [],
                     "mixed_partner": []
                 }
-                tid_match = re.search(r'/tournament/([^/]+)', t["url"])
-                if tid_match:
-                    tid = tid_match.group(1)
-                    try:
-                        events_resp = ts.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-                        events_soup = BeautifulSoup(events_resp.text, "html.parser")
-                        
-                        all_events = set()
-                        for a in events_soup.select("a"):
-                            text = a.get_text(strip=True)
-                            if text and len(text) < 50:
-                                for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
-                                    if cat in text:
-                                        all_events.add(text.strip())
-                                        break
-                        
-                        for event in sorted(all_events):
-                            if event.startswith(("HS", "DS")):
-                                categories["singles_levels"].append(event)
-                            elif event.startswith(("HD", "DD")):
-                                categories["doubles_levels"].append(event)
-                            elif event.startswith("MD"):
-                                categories["mixed_levels"].append(event)
-                        
-                        if categories["doubles_levels"]:
-                            categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
-                        if categories["mixed_levels"]:
-                            categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
-                    except Exception:
-                        pass
-                
+                if categories["doubles_levels"]:
+                    categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+                if categories["mixed_levels"]:
+                    categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+
                 return {"tournament": t, "dates": dates, "categories": categories, "success": True}
             except Exception as e:
                 logger.debug(f"⚠️  Error fetching {t.get('name', 'Unknown')}: {e}")
@@ -2392,98 +2286,33 @@ def ensure_tournament():
         
         # Fetch tournament info from BWF
         logger.info(f"🔍 Fetching tournament info from Badminton Sweden...")
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
+        info = bwf_client.fetch_tournament_details(url)
 
-        resp = s.get(url, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        name = info["name"]
+        location = info["location"]
+        dates = {
+            "registration_opens": info["registration_opens"],
+            "registration_closes": info["registration_closes"],
+            "cancellation_deadline": info["cancellation_deadline"],
+            "competition_start": info["competition_start"],
+            "competition_end": info["competition_end"],
+        }
 
-        name = ""
-        name_el = soup.select_one(".media__title a")
-        if name_el:
-            name = name_el.get_text(strip=True)
-        if not name:
-            name_el = soup.select_one(".media__title")
-            if name_el:
-                name = name_el.get_text(strip=True)
-
-        # Get location
-        location = ""
-        location_el = soup.select_one(".media__subheading")
-        if location_el:
-            location = location_el.get_text(strip=True)
-
-        # Get timeline dates
-        dates = {}
-        timeline = soup.select_one(".tournament-meta__timeline")
-        if timeline:
-            for li in timeline.find_all("li"):
-                label_el = li.select_one(".list__value")
-                time_el = li.find("time")
-                if label_el and time_el:
-                    label = label_el.get_text(strip=True)
-                    datetime_val = time_el.get("datetime", "")[:10]
-                    if "\u00f6ppnar" in label.lower():
-                        dates["registration_opens"] = datetime_val
-                    elif "st\u00e4nger" in label.lower():
-                        dates["registration_closes"] = datetime_val
-                    elif "\u00e5terbud" in label.lower():
-                        dates["cancellation_deadline"] = datetime_val
-                    elif "start" in label.lower():
-                        dates["competition_start"] = datetime_val
-                    elif "slut" in label.lower():
-                        dates["competition_end"] = datetime_val
-
-        # Extract event categories/levels mapped to registration fields
+        # Map event categories to registration fields
         categories = {
-            "singles_levels": [],
-            "doubles_levels": [],
-            "mixed_levels": [],
+            "singles_levels": info["singles_levels"],
+            "doubles_levels": info["doubles_levels"],
+            "mixed_levels": info["mixed_levels"],
             "doubles_partner": [],
             "mixed_partner": []
         }
-        import re
-        tid_match = re.search(r'/tournament/([^/]+)', url)
-        if tid_match:
-            tid = tid_match.group(1)
-            try:
-                events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-                events_soup = BeautifulSoup(events_resp.text, "html.parser")
-                
-                # Extract event categories and map to registration fields
-                all_events = set()
-                for a in events_soup.select("a"):
-                    text = a.get_text(strip=True)
-                    if text and len(text) < 50:
-                        # Check for category codes
-                        for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
-                            if cat in text:
-                                all_events.add(text.strip())
-                                break
-                
-                # Map events to registration fields
-                for event in sorted(all_events):
-                    if event.startswith(("HS", "DS")):
-                        categories["singles_levels"].append(event)
-                    elif event.startswith(("HD", "DD")):
-                        categories["doubles_levels"].append(event)
-                    elif event.startswith("MD"):
-                        categories["mixed_levels"].append(event)
-                
-                # Set partner options (typical pattern)
-                if categories["doubles_levels"]:
-                    categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
-                if categories["mixed_levels"]:
-                    categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
-                
-                logger.debug(f"✅ Extracted categories: {categories}")
-            except Exception as e:
-                logger.debug(f"⚠️  Could not extract categories: {e}")
+
+        # Set partner options (typical pattern)
+        if categories["doubles_levels"]:
+            categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+        if categories["mixed_levels"]:
+            categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+        logger.debug(f"✅ Extracted categories: {categories}")
 
         if not name:
             return jsonify(success=False, error="Could not fetch tournament info"), 500
