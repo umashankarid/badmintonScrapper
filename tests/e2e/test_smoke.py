@@ -33,16 +33,13 @@ ADMIN_PAGES = [
     ("/results.html", "Tournament Results"),
 ]
 
-# Errors a page legitimately produces. Every entry needs a reason; an
-# allowlist that grows without them is how this assertion stops meaning
-# anything.
-ALLOWED = (
-    "favicon.ico",   # no favicon is shipped; the browser always requests one
-)
-
-
-def _unexpected(errors):
-    return [e for e in errors if not any(a in e for a in ALLOWED)]
+# No allowlist here on purpose: there is no favicon route, no <link rel=icon>,
+# and headless Chromium never requests one, so a "favicon.ico" entry would be
+# dead weight -- and test_admin.py already asserts raw errors == [] with no
+# allowlist at all. One rule, applied the same way everywhere: any console
+# error or uncaught exception fails the test. If a page ever legitimately
+# needs to log one, that is the time to add the allowlist back, with a reason
+# attached to the specific entry.
 
 
 def _sign_in_as_admin(page, app_server):
@@ -50,11 +47,16 @@ def _sign_in_as_admin(page, app_server):
 
     The session lives on the browser context, so this only needs to run
     once per test even if that test then visits several admin pages.
+
+    Same networkidle caveat as test_player.sign_in_as: that state was
+    already reached by the page.goto() above, so a same-page fetch() never
+    re-arms it. Wait on the login response, then the redirect it triggers.
     """
     page.goto(app_server)
     page.wait_for_selector("#devbar select")
-    page.select_option("#devbar select", "sbf04959")
-    page.wait_for_load_state("networkidle")
+    with page.expect_response(lambda r: "/api/bwf-login" in r.url):
+        page.select_option("#devbar select", "sbf04959")
+    page.wait_for_url(f"{app_server}/")
 
 
 def test_console_errors_captures_console_error(app_server, page):
@@ -88,7 +90,7 @@ def test_public_page_renders_without_console_errors(app_server, page, path, titl
         page.goto(f"{app_server}{path}")
         page.wait_for_load_state("networkidle")
     assert page.title() == title
-    assert _unexpected(errors) == []
+    assert errors == []
 
 
 @pytest.mark.parametrize("path,title", ADMIN_PAGES)
@@ -98,7 +100,7 @@ def test_admin_page_renders_without_console_errors(app_server, page, path, title
         page.goto(f"{app_server}{path}")
         page.wait_for_load_state("networkidle")
     assert page.title() == title
-    assert _unexpected(errors) == []
+    assert errors == []
 
 
 def test_tournament_page_renders(app_server, page, data_dir):
@@ -109,7 +111,7 @@ def test_tournament_page_renders(app_server, page, data_dir):
         page.goto(f"{app_server}/tournament.html?url={url}")
         page.wait_for_load_state("networkidle")
     assert page.title() == "Tournament"
-    assert _unexpected(errors) == []
+    assert errors == []
 
 
 def test_tournament_detail_page_renders(app_server, page):
@@ -126,4 +128,4 @@ def test_tournament_detail_page_renders(app_server, page):
         page.goto(f"{app_server}/tournament-detail.html?id=DEV-T1")
         page.wait_for_load_state("networkidle")
     assert page.locator(".back-link").first.is_visible()
-    assert _unexpected(errors) == []
+    assert errors == []

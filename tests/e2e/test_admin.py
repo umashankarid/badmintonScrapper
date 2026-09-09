@@ -40,6 +40,12 @@ def test_home_page_lists_only_visible_tournaments(app_server, page, data_dir):
 
     with console_errors(page) as errors:
         sign_in_as(page, app_server, "sbf04959")
+        # sign_in_as only waits for the post-login redirect to land on "/";
+        # unlike every other caller here, this test never does its own
+        # page.goto() afterward, so it still needs to wait for that fresh
+        # document's own checkBwfStatus() -> /api/open-tournaments fetch
+        # to finish before reading the rendered list below.
+        page.wait_for_load_state("networkidle")
 
     body = page.locator("body").inner_text()
     assert visible in body
