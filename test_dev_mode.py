@@ -462,14 +462,25 @@ class TestGuards(unittest.TestCase):
         finally:
             bwf_client._mode = "live"
 
-    def test_bwf_dev_matches_bwf_live_names_and_signatures(self):
-        """A function added to one backend but not the other -- or added
-        with a different signature -- fails here, not in production.
-        Name-only parity is not enough on its own: this project has already
-        shipped a boundary bug where a forwarder's call site quietly dropped
-        an argument the signature declared (bwf_client.get_tournament_events
-        not passing session through to the backend), a class of bug that
-        only a signature comparison, not a name-only one, would catch."""
+    def test_bwf_dev_and_bwf_client_match_bwf_live_names_and_signatures(self):
+        """A function added to bwf_live but missing -- or added with a
+        different signature -- from bwf_dev or bwf_client fails here, not in
+        production.
+
+        This is a signature-only guard: it proves every public bwf_live
+        function has a same-named, same-signature stub in bwf_dev AND a
+        same-named, same-signature forwarder in bwf_client. It deliberately
+        does NOT prove a bwf_client forwarder's *body* passes every argument
+        through correctly -- this project has already shipped exactly that
+        bug (bwf_client.get_tournament_events silently not passing `session`
+        to the backend), and a signature comparison cannot catch it, because
+        the signature was already correct; only the two lines being different
+        was the bug. Catching that class of bug is
+        test_get_tournament_events_accepts_and_ignores_session's job, not
+        this test's. What this test catches is the cheaper, more common
+        mistake: adding a function to bwf_live and bwf_dev and forgetting the
+        bwf_client forwarder entirely, which would otherwise stay green here
+        until an AttributeError at runtime."""
         import bwf_dev
         import bwf_live
 
@@ -480,16 +491,24 @@ class TestGuards(unittest.TestCase):
 
         live_funcs = public_functions(bwf_live)
         dev_funcs = public_functions(bwf_dev)
+        client_funcs = public_functions(bwf_client)
 
-        missing = set(live_funcs) - set(dev_funcs)
-        self.assertEqual(missing, set(), f"bwf_dev is missing stubs for: {missing}")
+        missing_dev = set(live_funcs) - set(dev_funcs)
+        self.assertEqual(missing_dev, set(), f"bwf_dev is missing stubs for: {missing_dev}")
 
-        mismatched = {
-            name: (str(inspect.signature(live_funcs[name])), str(inspect.signature(dev_funcs[name])))
-            for name in live_funcs
-            if str(inspect.signature(live_funcs[name])) != str(inspect.signature(dev_funcs[name]))
-        }
-        self.assertEqual(mismatched, {}, f"bwf_dev signature drift from bwf_live: {mismatched}")
+        missing_client = set(live_funcs) - set(client_funcs)
+        self.assertEqual(missing_client, set(), f"bwf_client is missing forwarders for: {missing_client}")
+
+        def signature_drift(other_funcs):
+            return {
+                name: (str(inspect.signature(live_funcs[name])), str(inspect.signature(other_funcs[name])))
+                for name in live_funcs
+                if name in other_funcs
+                and str(inspect.signature(live_funcs[name])) != str(inspect.signature(other_funcs[name]))
+            }
+
+        self.assertEqual(signature_drift(dev_funcs), {}, "bwf_dev signature drift from bwf_live")
+        self.assertEqual(signature_drift(client_funcs), {}, "bwf_client signature drift from bwf_live")
 
     def test_bwf_live_and_bwf_client_do_not_import_flask_or_sqlite3(self):
         """The boundary must stay swappable behind the mode switch. If
