@@ -82,12 +82,25 @@ def app_server(data_dir):
     def _log_tail_text():
         """The tail, safe to read only once the process has exited: join the
         drain thread first so it isn't still appending to `log_tail` while we
-        iterate it ("deque mutated during iteration") -- on the one path
-        that must report a real startup failure. Once stdout closes the
-        thread's for-loop hits EOF and returns almost immediately.
+        read it -- on the one path that must report a real startup failure.
+        Once stdout closes the thread's for-loop hits EOF and returns almost
+        immediately. join(timeout=5) returns regardless of whether the thread
+        actually finished, so snapshot with list() before joining the bytes:
+        iterating the deque directly races any append still in flight and
+        "deque mutated during iteration" would replace the real error.
         """
         drain_thread.join(timeout=5)
-        return b"".join(log_tail).decode(errors="replace")
+        return b"".join(list(log_tail)).decode(errors="replace")
+
+    def _kill(proc):
+        """Best-effort kill for an error path. wait() after kill() can still
+        raise TimeoutExpired on a wedged child -- never let that swallow the
+        caller's real error."""
+        proc.kill()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
 
     deadline = time.time() + 60
     while time.time() < deadline:
@@ -103,14 +116,21 @@ def app_server(data_dir):
         # against a single-threaded server for the rest of the 60s budget.
         time.sleep(0.3)
     else:
-        proc.kill()
-        proc.wait(timeout=10)
+        _kill(proc)
         raise RuntimeError(f"server did not become ready within 60s:\n{_log_tail_text()}")
 
     # Dev mode is off at boot by design; the tests need the stub backend.
-    resp = requests.post(f"{base}/api/dev-mode", json={"mode": "dev"}, timeout=5)
-    assert resp.ok and resp.json().get("mode") == "dev", (
-        f"failed to switch the server into dev mode: {resp.status_code} {resp.text}")
+    # Kill the child before raising on any failure here (a non-2xx/timeout
+    # response or a bad body) -- otherwise the subprocess and its port leak
+    # forever, and the session-scoped data_dir fixture then deletes the temp
+    # directory out from under a process still holding its SQLite files open.
+    try:
+        resp = requests.post(f"{base}/api/dev-mode", json={"mode": "dev"}, timeout=5)
+        assert resp.ok and resp.json().get("mode") == "dev", (
+            f"failed to switch the server into dev mode: {resp.status_code} {resp.text}")
+    except Exception:
+        _kill(proc)
+        raise
 
     yield base
 
@@ -123,8 +143,26 @@ def app_server(data_dir):
 
 @contextlib.contextmanager
 def console_errors(page):
-    """Collect console errors and uncaught exceptions raised while inside."""
+    """Collect console errors and uncaught exceptions raised while inside.
+
+    Named handlers so they can be removed again: page.on() without a matching
+    remove_listener() keeps them attached (and collecting) after the `with`
+    block exits, letting activity outside the measured window fail an
+    assertion made after the block.
+    """
     found = []
-    page.on("console", lambda m: found.append(m.text) if m.type == "error" else None)
-    page.on("pageerror", lambda e: found.append(str(e)))
-    yield found
+
+    def _on_console(m):
+        if m.type == "error":
+            found.append(m.text)
+
+    def _on_pageerror(e):
+        found.append(str(e))
+
+    page.on("console", _on_console)
+    page.on("pageerror", _on_pageerror)
+    try:
+        yield found
+    finally:
+        page.remove_listener("console", _on_console)
+        page.remove_listener("pageerror", _on_pageerror)
