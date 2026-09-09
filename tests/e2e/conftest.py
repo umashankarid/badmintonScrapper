@@ -5,12 +5,14 @@ the point of these tests is the JavaScript in the templates, and the test
 client never runs any.
 """
 
+import collections
 import contextlib
 import os
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import shutil
 from pathlib import Path
@@ -60,15 +62,27 @@ def app_server(data_dir):
 
     proc = subprocess.Popen(
         [sys.executable, "app.py"], cwd=REPO_ROOT, env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
     base = f"http://127.0.0.1:{port}"
+
+    # Drain the child's output for as long as it lives. Nobody reads it
+    # otherwise, and this app logs a line or more per request -- once that
+    # crosses the OS pipe buffer (a handful of page loads' worth), the next
+    # write blocks the child, and the single-threaded dev server never
+    # handles another request for the rest of the run. Keep a short tail so
+    # a startup failure can still report why.
+    log_tail = collections.deque(maxlen=200)
+    threading.Thread(
+        target=lambda: [log_tail.append(line) for line in proc.stdout],
+        daemon=True,
+    ).start()
 
     deadline = time.time() + 60
     while time.time() < deadline:
         if proc.poll() is not None:
             raise RuntimeError(
-                f"server exited early:\n{proc.stderr.read().decode(errors='replace')}")
+                f"server exited early:\n{b''.join(log_tail).decode(errors='replace')}")
         try:
             if requests.get(f"{base}/api/dev-mode", timeout=1).ok:
                 break
