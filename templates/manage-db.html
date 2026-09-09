@@ -432,6 +432,16 @@
         </div>
         
         <div class="main-content">
+            <!-- Maintenance Section -->
+            <div class="section">
+                <div class="section-title">🧹 Maintenance</div>
+                <div style="padding:15px;">
+                    <button onclick="cleanupOrphaned()" style="padding:10px 20px;background:#f57c00;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9em;">🧹 Clean Orphaned Registrations</button>
+                    <p style="color:#666;font-size:0.85em;margin:8px 0 0;">Removes empty registration records (e.g. left over when a partner was removed). Fixes false "already registered" errors.</p>
+                    <div id="cleanup-result" style="margin-top:10px;font-size:0.9em;"></div>
+                </div>
+            </div>
+
             <!-- Backup & Restore Section -->
             <div class="section">
                 <div class="section-title">💾 Backup & Restore</div>
@@ -490,6 +500,27 @@
         });
         
         // ===== Backup & Restore Functions =====
+        async function cleanupOrphaned() {
+            if (!confirm("Remove all empty/orphaned registration records?")) return;
+            const resultEl = document.getElementById("cleanup-result");
+            resultEl.textContent = "Cleaning...";
+            resultEl.style.color = "#1565c0";
+            try {
+                const res = await fetch("/api/cleanup-orphaned-registrations", {method: "POST"});
+                const data = await res.json();
+                if (data.success) {
+                    resultEl.style.color = "#2e7d32";
+                    resultEl.innerHTML = `✅ ${data.message}` + (data.details && data.details.length ? '<br><small>' + data.details.join('<br>') + '</small>' : '');
+                } else {
+                    resultEl.style.color = "#c62828";
+                    resultEl.textContent = `❌ ${data.error}`;
+                }
+            } catch(e) {
+                resultEl.style.color = "#c62828";
+                resultEl.textContent = `❌ Error: ${e.message}`;
+            }
+        }
+
         async function createBackup() {
             if (!confirm("Create a backup of all databases?")) return;
             try {
