@@ -979,5 +979,53 @@ class TestFixturesDoNotLeakIntoLive(unittest.TestCase):
                          "a dev fixture was served to live mode from the cache")
 
 
+class TestKometOnlyRestriction(unittest.TestCase):
+    """main (2dd92d3) restricts login to Badmintonklubben Komet members. That
+    check was written inline in the old bwf_login; porting it into the extracted
+    flow moved it after bwf_client.login() returns, and required exempting club
+    accounts explicitly, since main relied on them returning earlier.
+
+    The dev personas make this testable without real credentials: two of them
+    belong to another club precisely so partner flows can be exercised."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        bwf_client.set_mode("live")
+        _purge_dev_personas()
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        _purge_dev_personas()
+
+    def _login(self, username):
+        return self.client.post("/api/bwf-login",
+                                json={"login": username, "password": "dev"})
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_komet_member_is_allowed(self):
+        bwf_client.set_mode("dev")
+        resp = self._login("jonas")          # club: BMK Komet
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json()["success"])
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_non_komet_member_is_blocked(self):
+        bwf_client.set_mode("dev")
+        resp = self._login("pia")            # club: Grannklubben
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("Badmintonklubben Komet", resp.get_json()["error"])
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_club_account_is_exempt(self):
+        """The exemption the port had to add: a club account has no club field,
+        so the naive check would lock the admin account out of its own system."""
+        bwf_client.set_mode("dev")
+        resp = self._login("sbf04959")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json()["success"])
+
+
 if __name__ == "__main__":
     unittest.main()
