@@ -246,13 +246,18 @@ def get_player_details(profile_url):
 
 
 def get_player_ranking_by_profile(profile_url):
-    """Ranking dict for a known profile URL -- same flat shape as get_player_details."""
+    """Ranking dict for a known profile URL -- same flat shape as get_player_details.
+
+    Unknown profile returns {}, not {"_fake": True}: app.py's caller does
+    `if ranking_data:` to decide whether a ranking was found, so the empty
+    dict's falsiness is the contract here, not a place to tag "_fake".
+    """
     for p in PLAYERS:
         if p["profile_url"] == profile_url:
             ranking = dict(p["ranking"])
             ranking["_fake"] = True
             return ranking
-    return {"_fake": True}
+    return {}
 
 
 def get_player_profile_by_license(license_id):
@@ -293,14 +298,29 @@ def _categorize_levels(levels):
     }
 
 
+def _level_tokens(levels):
+    """The bare level bwf_live's get_tournament_events extracts from each
+    event string via `text.split()[1]` (e.g. "HS A" -> "A"). Mirrors that
+    exact token pick, quirk included: a prefixed string like "MJT HS U13"
+    yields "HS", not "U13", because that is what live's own parsing does.
+    """
+    tokens = set()
+    for event in levels:
+        parts = event.split()
+        if len(parts) >= 2:
+            tokens.add(parts[1])
+    return sorted(tokens)
+
+
 def get_tournament_events(tournament_id, session=None):
     """session exists only for signature parity with bwf_live; dev mode ignores it."""
     for t in TOURNAMENTS:
         if tournament_id in t["url"]:
             result = _categorize_levels(t["levels"])
+            result["levels"] = _level_tokens(t["levels"])
             result["_fake"] = True
             return result
-    return {"singles_levels": [], "doubles_levels": [], "mixed_levels": [], "_fake": True}
+    return {"singles_levels": [], "doubles_levels": [], "mixed_levels": [], "levels": [], "_fake": True}
 
 
 def _tournament_info(t):
@@ -383,10 +403,15 @@ def get_tournament_player_id(tournament_id, player_name):
 
 
 def get_tournament_player_results(tournament_id, player_id):
+    """Field names match bwf_live exactly: stats rows are category/played/
+    win_loss/sets/points, match rows are round/event/team1/team2/team1_won/
+    score -- these are read straight off by tournament_detail.html."""
     return {
-        "stats": [{"event": "HS A", "won": 2, "lost": 1, "_fake": True}],
-        "matches": [{"event": "HS A", "opponent": "Pia Partner",
-                     "score": "21-15 21-18", "result": "Won", "_fake": True}],
+        "stats": [{"category": "HS A", "played": "3", "win_loss": "2-1",
+                    "sets": "4-2", "points": "45-30", "_fake": True}],
+        "matches": [{"round": "Semifinal", "event": "HS A", "team1": "Adam Adult",
+                     "team2": "Pia Partner", "team1_won": True,
+                     "score": "21-15 21-18", "_fake": True}],
         "_fake": True,
     }
 
@@ -397,8 +422,18 @@ def get_tournament_clubs(tournament_id):
 
 
 def submit_registrations(tournament_name, club_login, club_password):
-    """Pretend the submission worked. Playwright is never launched."""
+    """Pretend the submission worked. Playwright is never launched.
+
+    "submitted" is a list of dicts, not names: bwf_submit's real entries are
+    {"player_name", "license_id", "message"}, and manage-tournaments.html /
+    tournament.html read p.player_name and p.message per entry.
+    """
     logger.info(f"🔀 dev submit for '{tournament_name}' — nothing was sent to Badminton Sweden")
-    return {"success": True, "submitted": [p["player_name"] for p in PLAYERS if p["license_id"]],
-            "failed": [], "message": f"DEV MODE: pretended to submit for '{tournament_name}'",
+    submitted = [
+        {"player_name": p["player_name"], "license_id": p["license_id"],
+         "message": "DEV MODE: pretended to submit", "_fake": True}
+        for p in PLAYERS if p["license_id"]
+    ]
+    return {"success": True, "submitted": submitted, "failed": [],
+            "message": f"DEV MODE: pretended to submit for '{tournament_name}'",
             "_fake": True}

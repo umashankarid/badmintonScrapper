@@ -204,12 +204,47 @@ class TestStubs(unittest.TestCase):
         self.assertIn("submitted", result)
         self.assertTrue(result["_fake"])
 
+    def test_submit_registrations_entries_have_the_fields_the_templates_read(self):
+        """manage-tournaments.html and tournament.html do p.player_name and
+        p.message per entry -- a list of bare names renders 'undefined'."""
+        result = bwf_client.submit_registrations("Dev Open (FAKE)", "sbf04959", "pw")
+        entry = result["submitted"][0]
+        self.assertIsInstance(entry, dict)
+        for key in ("player_name", "license_id", "message"):
+            self.assertIn(key, entry)
+
     def test_get_tournament_events_accepts_and_ignores_session(self):
         """bwf_live's get_tournament_events(tournament_id, session=None) --
         the stub must accept the same call shape."""
         result = bwf_client.get_tournament_events("DEV-T1", session=object())
         self.assertTrue(result["_fake"])
         self.assertIn("HS A", result["singles_levels"])
+
+    def test_get_tournament_events_includes_the_levels_key(self):
+        """bwf_live always returns "levels" (bwf_live.py:591) -- a caller
+        that reads it unconditionally, as _fetch_tournament does, would
+        KeyError without it."""
+        result = bwf_client.get_tournament_events("DEV-T1")
+        self.assertIn("levels", result)
+        self.assertIsInstance(result["levels"], list)
+
+    def test_get_tournament_player_results_matches_live_field_names(self):
+        """tournament_detail.html reads s.category/played/win_loss/sets/points
+        and m.round/event/team1/team2/team1_won/score."""
+        result = bwf_client.get_tournament_player_results("T-1", "P-1")
+        stat = result["stats"][0]
+        for key in ("category", "played", "win_loss", "sets", "points"):
+            self.assertIn(key, stat)
+        match = result["matches"][0]
+        for key in ("round", "event", "team1", "team2", "team1_won", "score"):
+            self.assertIn(key, match)
+
+    def test_get_player_ranking_by_profile_unknown_is_falsy(self):
+        """app.py:2762 does `if ranking_data:` -- {"_fake": True} is truthy
+        and would falsely log a ranking as found."""
+        result = bwf_client.get_player_ranking_by_profile("/player-profile/NOPE")
+        self.assertEqual(result, {})
+        self.assertFalse(result)
 
     def test_get_player_profile_by_license_ranking_is_a_json_string(self):
         """A different shape from get_player_ranking's: singles/doubles/mixed
@@ -225,14 +260,16 @@ class TestStubs(unittest.TestCase):
 
     def test_no_network_library_imported(self):
         """The absence of a network import is what makes a no-network guard
-        meaningful: if bwf_dev ever reaches for requests/urllib/httpx, that's
-        a bug, and this test is the tripwire."""
+        meaningful: if bwf_dev ever reaches for requests/urllib/httpx/
+        playwright (directly or via bwf_submit, which launches a real
+        browser), that's a bug, and this test is the tripwire."""
         import bwf_dev
-        forbidden = {"requests", "urllib", "urllib3", "httpx", "http.client", "socket"}
+        forbidden = {"requests", "urllib", "urllib3", "httpx", "http.client",
+                     "socket", "playwright", "bwf_submit"}
         self.assertFalse(forbidden & set(bwf_dev.__dict__.keys()))
         with open(bwf_dev.__file__, encoding="utf-8") as f:
             source = f.read()
-        for lib in ("requests", "urllib", "httpx"):
+        for lib in ("requests", "urllib", "httpx", "playwright", "bwf_submit"):
             self.assertNotIn(f"import {lib}", source)
 
 
