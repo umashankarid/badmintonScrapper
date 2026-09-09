@@ -12,14 +12,17 @@ def sign_in_as(page, base, username):
     wait_for_load_state("networkidle") used to sit here, but that state was
     already reached by the page.goto() above; once fired for a document, a
     same-page fetch() never re-arms it, so the wait was a no-op racing the
-    login POST. Wait on the actual response, then on the redirect devbar.js
-    performs (window.location.href = "/") once it succeeds.
+    login POST. Arm expect_navigation() *before* selecting the persona: on
+    success devbar.js does `window.location.href = "/"` (devbar.js:91), and
+    checking the URL afterward (page.wait_for_url) is a no-op too -- the page
+    is already there from the goto() above, so it resolves instantly instead
+    of waiting for that reload, and the reload then lands mid-navigation in
+    whatever the caller does next.
     """
     page.goto(f"{base}/")
     page.wait_for_selector("#devbar select")
-    with page.expect_response(lambda r: "/api/bwf-login" in r.url):
+    with page.expect_navigation(url=f"{base}/"):
         page.locator("#devbar select").select_option(username)
-    page.wait_for_url(f"{base}/")
 
 
 def tournament_url(name):

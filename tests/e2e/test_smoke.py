@@ -13,6 +13,7 @@ import pytest
 
 from tests.e2e import seed
 from tests.e2e.conftest import console_errors
+from tests.e2e.test_player import sign_in_as
 
 PUBLIC_PAGES = [
     ("/", "Badminton Tournaments"),
@@ -40,23 +41,6 @@ ADMIN_PAGES = [
 # error or uncaught exception fails the test. If a page ever legitimately
 # needs to log one, that is the time to add the allowlist back, with a reason
 # attached to the specific entry.
-
-
-def _sign_in_as_admin(page, app_server):
-    """Log in through the dev bar's persona picker as the club (admin) account.
-
-    The session lives on the browser context, so this only needs to run
-    once per test even if that test then visits several admin pages.
-
-    Same networkidle caveat as test_player.sign_in_as: that state was
-    already reached by the page.goto() above, so a same-page fetch() never
-    re-arms it. Wait on the login response, then the redirect it triggers.
-    """
-    page.goto(app_server)
-    page.wait_for_selector("#devbar select")
-    with page.expect_response(lambda r: "/api/bwf-login" in r.url):
-        page.select_option("#devbar select", "sbf04959")
-    page.wait_for_url(f"{app_server}/")
 
 
 def test_console_errors_captures_console_error(app_server, page):
@@ -95,7 +79,7 @@ def test_public_page_renders_without_console_errors(app_server, page, path, titl
 
 @pytest.mark.parametrize("path,title", ADMIN_PAGES)
 def test_admin_page_renders_without_console_errors(app_server, page, path, title):
-    _sign_in_as_admin(page, app_server)
+    sign_in_as(page, app_server, "sbf04959")
     with console_errors(page) as errors:
         page.goto(f"{app_server}{path}")
         page.wait_for_load_state("networkidle")
