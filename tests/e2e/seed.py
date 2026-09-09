@@ -109,6 +109,39 @@ def registration(data_dir, tournament, license_id, singles="HS B"):
         (tournament, license_id, singles))
 
 
+def player(data_dir, license_id, name, club="BMK Komet"):
+    """A row in players.db's `players` table -- the one /api/tournament-players
+    LEFT JOINs a registration's license_id against to get a display name.
+    seed.registration() deliberately skips this (that's what makes GHOST-*
+    licences orphans for the cleanup tests), so any test that needs a real
+    name on screen -- not "Unknown" -- seeds it here too.
+
+    Keyed on profile_url, the column that actually carries a UNIQUE
+    constraint on this table (license_id does not): INSERT OR REPLACE on
+    license_id alone would just pile up duplicate rows and break the join
+    into returning one row per registration twice over. The URL shape
+    matches bwf_dev.py's own fixtures, so this coexists cleanly with a row
+    the real login path (_persist_login_profile) writes for the same player.
+    """
+    attempts = 5
+    for attempt in range(attempts):
+        conn = sqlite3.connect(Path(data_dir) / "players.db", timeout=5)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO players (license_id, name, profile_url, club) "
+                "VALUES (?,?,?,?)",
+                (license_id, name, f"/player-profile/{license_id}", club))
+            conn.commit()
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < attempts - 1:
+                time.sleep(0.2 * (attempt + 1))
+                continue
+            raise
+        finally:
+            conn.close()
+
+
 def komet_player(data_dir, license_id, name, groups):
     attempts = 5
     for attempt in range(attempts):
