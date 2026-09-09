@@ -151,7 +151,10 @@ def test_level_3_5_player_is_blocked_from_an_sjt_event(app_server, page, data_di
     rule under test: the SJT check log line and its message both fire.
     """
     name = seed.open_tournament(data_dir, name="Blocked SJT Cup")
-    seed.komet_player(data_dir, "DEV-0003", "Jonas Junior", ["LEVEL 3-5"])
+    # No seed.komet_player() call here: sign_in_as's login overwrites
+    # kometPlayers.groups with the persona's own groups in dev mode
+    # (app.py:_persist_login_profile), so bwf_dev.py's "jonas" persona --
+    # already ["LEVEL 3-5"] -- is the actual source of truth.
     sign_in_as(page, app_server, "jonas")
     page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
     page.wait_for_load_state("networkidle")
@@ -180,7 +183,9 @@ def test_level_6_player_is_allowed_in_an_sjt_event(app_server, page, data_dir):
     isolates the same rule from the other side.
     """
     name = seed.open_tournament(data_dir, name="Allowed SJT Cup")
-    seed.komet_player(data_dir, "DEV-0005", "Sara Sexan", ["LEVEL_6"])
+    # No seed.komet_player() call here either, same reason as the blocked
+    # test above: bwf_dev.py's "sara" persona (["LEVEL_6"]) is the source
+    # of truth once she signs in.
     sign_in_as(page, app_server, "sara")
     page.goto(f"{app_server}/tournament.html?url={tournament_url(name)}")
     page.wait_for_load_state("networkidle")
