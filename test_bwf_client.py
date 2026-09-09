@@ -1911,5 +1911,102 @@ class TestTournamentClubsEndpoint(unittest.TestCase):
         self.assertEqual(resp.get_json(), {"success": False, "error": "refused", "players": []})
 
 
+class TestSubmitRegistrations(unittest.TestCase):
+    """Delegates to Playwright automation via bwf_submit; no HTTP calls of its own.
+
+    Patches bwf_submit.submit_tournament_sync, not bwf_live.submit_tournament_sync:
+    bwf_live.submit_registrations imports it function-locally (so bwf_live stays
+    importable without Playwright installed, which app.py relies on to produce
+    its "Playwright is not installed" message), so bwf_live never holds an
+    attribute named submit_tournament_sync to patch.
+    """
+
+    @patch("bwf_submit.submit_tournament_sync")
+    def test_forwards_to_playwright_submitter(self, mock_submit):
+        mock_submit.side_effect = [{
+            "success": True, "submitted": ["Anna Andersson"],
+            "failed": [], "message": "1 registration submitted",
+        }]
+
+        result = bwf_client.submit_registrations("Vikingaslaget", "sbf04959", "pw")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["submitted"], ["Anna Andersson"])
+        # Pin how the call is forwarded: same three arguments, headless pinned true.
+        mock_submit.assert_called_once_with(
+            tournament_name="Vikingaslaget",
+            club_login="sbf04959",
+            club_password="pw",
+            headless=True,
+        )
+
+    @patch("bwf_submit.submit_tournament_sync")
+    def test_import_error_propagates_when_playwright_missing(self, mock_submit):
+        """app.py's ImportError branch relies on this bubbling up uncaught."""
+        mock_submit.side_effect = ImportError("No module named 'playwright'")
+        with self.assertRaises(ImportError):
+            bwf_client.submit_registrations("Vikingaslaget", "sbf04959", "pw")
+
+    @patch("bwf_submit.submit_tournament_sync")
+    def test_other_exceptions_also_propagate(self, mock_submit):
+        """app.py's generic except Exception branch relies on this too."""
+        mock_submit.side_effect = Boom("browser crashed")
+        with self.assertRaises(Boom):
+            bwf_client.submit_registrations("Vikingaslaget", "sbf04959", "pw")
+
+
+class TestSubmitTournamentEndpoint(unittest.TestCase):
+    """/admin/submit-tournament: delegates to bwf_client, keeps its own status codes."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["admin"] = True
+
+    def _post(self, password="pw"):
+        return self.client.post("/admin/submit-tournament",
+                                 json={"db": "Vikingaslaget", "password": password})
+
+    def test_unauthenticated_request_is_a_401(self):
+        import app
+        client = app.app.test_client()
+        with patch("app.bwf_client.submit_registrations") as mocked:
+            resp = client.post("/admin/submit-tournament",
+                                json={"db": "Vikingaslaget", "password": "pw"})
+        self.assertEqual(resp.status_code, 401)
+        mocked.assert_not_called()
+
+    def test_missing_password_is_a_400(self):
+        resp = self._post(password="")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_successful_submission_forwards_the_result(self):
+        result = {"success": True, "submitted": ["Anna Andersson"], "failed": [],
+                   "message": "1 registration submitted"}
+        with patch("app.bwf_client.submit_registrations", return_value=result) as mocked:
+            resp = self._post()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {
+            "success": True, "message": "1 registration submitted",
+            "submitted": ["Anna Andersson"], "failed": [],
+        })
+        mocked.assert_called_once_with("Vikingaslaget", "sbf04959", "pw")
+
+    def test_import_error_reports_playwright_not_installed(self):
+        with patch("app.bwf_client.submit_registrations",
+                    side_effect=ImportError("No module named 'playwright'")):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn("Playwright is not installed", resp.get_json()["error"])
+
+    def test_other_exception_is_a_500_with_its_message(self):
+        with patch("app.bwf_client.submit_registrations", side_effect=Boom("browser crashed")):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json()["error"], "browser crashed")
+
+
 if __name__ == "__main__":
     unittest.main()

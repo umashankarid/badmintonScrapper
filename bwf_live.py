@@ -890,3 +890,15 @@ def get_tournament_clubs(tournament_id):
             unique_players.append(p)
 
     return unique_players
+
+
+def submit_registrations(tournament_name, club_login, club_password):
+    """File the club's entries on Badminton Sweden. Launches a real browser."""
+    from bwf_submit import submit_tournament_sync
+
+    return submit_tournament_sync(
+        tournament_name=tournament_name,
+        club_login=club_login,
+        club_password=club_password,
+        headless=True,
+    )

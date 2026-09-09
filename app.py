@@ -1449,16 +1449,9 @@ def submit_tournament():
     club_login = "sbf04959"
 
     try:
-        from bwf_submit import submit_tournament_sync
-
         logger.info(f"🏸 Starting BWF submission for tournament: {tournament_name}")
 
-        result = submit_tournament_sync(
-            tournament_name=tournament_name,
-            club_login=club_login,
-            club_password=club_password,
-            headless=True
-        )
+        result = bwf_client.submit_registrations(tournament_name, club_login, club_password)
 
         if result["success"]:
             logger.info(f"✅ BWF submission complete: {result['message']}")

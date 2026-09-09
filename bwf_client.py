@@ -118,3 +118,7 @@ def get_tournament_player_results(tournament_id, player_id):
 
 def get_tournament_clubs(tournament_id):
     return _backend().get_tournament_clubs(tournament_id)
+
+
+def submit_registrations(tournament_name, club_login, club_password):
+    return _backend().submit_registrations(tournament_name, club_login, club_password)
