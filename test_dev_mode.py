@@ -1,5 +1,6 @@
 """Tests for local development mode: state, endpoints and production guards."""
 
+import json
 import os
 import unittest
 from unittest.mock import patch
@@ -155,6 +156,84 @@ class TestFakeData(unittest.TestCase):
         import bwf_dev
         for p in bwf_dev.PLAYERS:
             self.assertTrue(p["_fake"])
+
+
+class TestStubs(unittest.TestCase):
+    """Stubs mirror the live signatures and never touch the network."""
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"DEV_TOOLS": "1"})
+        self.env.start()
+        bwf_client.set_mode("dev")
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        self.env.stop()
+
+    def test_login_accepts_any_password_for_known_persona(self):
+        result = bwf_client.login("jonas", "anything")
+        self.assertEqual(result["player_name"], "Jonas Junior")
+        self.assertTrue(result["_fake"])
+
+    def test_login_rejects_unknown_username(self):
+        self.assertIsNone(bwf_client.login("who-is-this", "anything"))
+
+    def test_login_rejects_empty_password(self):
+        self.assertIsNone(bwf_client.login("jonas", ""))
+
+    def test_search_players_matches_substring(self):
+        results = bwf_client.search_players("Junior")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["license_id"], "DEV-0003")
+
+    def test_get_player_ranking_returns_json_string(self):
+        """Same type trap as live: a JSON string, not a dict."""
+        raw = bwf_client.get_player_ranking("Adam Adult")
+        self.assertIsInstance(raw, str)
+        self.assertEqual(json.loads(raw)["HS"]["points"], "1500")
+
+    def test_fetch_tournament_info_returns_all_date_keys(self):
+        info = bwf_client.fetch_tournament_info("https://dev.local/tournament/DEV-T1")
+        for key in ("registration_opens", "registration_closes", "cancellation_deadline",
+                    "competition_start", "competition_end", "name", "levels"):
+            self.assertIn(key, info)
+
+    def test_submit_registrations_reports_success_without_playwright(self):
+        result = bwf_client.submit_registrations("Dev Open (FAKE)", "sbf04959", "pw")
+        self.assertTrue(result["success"])
+        self.assertIn("submitted", result)
+        self.assertTrue(result["_fake"])
+
+    def test_get_tournament_events_accepts_and_ignores_session(self):
+        """bwf_live's get_tournament_events(tournament_id, session=None) --
+        the stub must accept the same call shape."""
+        result = bwf_client.get_tournament_events("DEV-T1", session=object())
+        self.assertTrue(result["_fake"])
+        self.assertIn("HS A", result["singles_levels"])
+
+    def test_get_player_profile_by_license_ranking_is_a_json_string(self):
+        """A different shape from get_player_ranking's: singles/doubles/mixed
+        buckets with int rank/points, matching bwf_live's
+        _scrape_ranking_from_page output."""
+        profile = bwf_client.get_player_profile_by_license("DEV-0001")
+        ranking = json.loads(profile["ranking"])
+        self.assertEqual(ranking["singles"]["HS"]["points"], 1500)
+        self.assertTrue(profile["_fake"])
+
+    def test_get_player_profile_by_license_unknown_returns_none(self):
+        self.assertIsNone(bwf_client.get_player_profile_by_license("NOPE"))
+
+    def test_no_network_library_imported(self):
+        """The absence of a network import is what makes a no-network guard
+        meaningful: if bwf_dev ever reaches for requests/urllib/httpx, that's
+        a bug, and this test is the tripwire."""
+        import bwf_dev
+        forbidden = {"requests", "urllib", "urllib3", "httpx", "http.client", "socket"}
+        self.assertFalse(forbidden & set(bwf_dev.__dict__.keys()))
+        with open(bwf_dev.__file__, encoding="utf-8") as f:
+            source = f.read()
+        for lib in ("requests", "urllib", "httpx"):
+            self.assertNotIn(f"import {lib}", source)
 
 
 if __name__ == "__main__":

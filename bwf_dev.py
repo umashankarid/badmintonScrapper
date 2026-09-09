@@ -3,8 +3,16 @@ Fake Badminton Sweden data for local development.
 
 Imports no network library, on purpose: if anything here tries to reach the
 internet, that is a bug, and the absence of an import makes it obvious.
+
+Every function mirrors one in bwf_live: same name, same signature, same
+return type. Every stub return value that is a dict (or a list of dicts)
+carries "_fake": True, so a later task can tag these rows in the UI. Plain
+scalars (str, bool) that bwf_live returns un-wrapped stay un-wrapped here
+too, since there is no room in a bare string to carry a flag without
+changing its type.
 """
 
+import json
 import logging
 from datetime import date, timedelta
 
@@ -150,73 +158,247 @@ TOURNAMENTS = [
 ]
 
 
+# --- Player helpers -------------------------------------------------------
+
+def _find_player(needle):
+    needle = (needle or "").strip().lower()
+    if not needle:
+        return None
+    for p in PLAYERS:
+        if needle in (p["username"].lower(), p["license_id"].lower(),
+                      p["player_name"].lower()):
+            return p
+    return None
+
+
+def _nested_ranking_json(ranking):
+    """The {"singles"/"doubles"/"mixed"} int-valued shape bwf_live's
+    _scrape_ranking_from_page produces, JSON-encoded.
+
+    This is a different shape from the flat, string-valued dict that
+    get_player_ranking and get_player_details return: get_player_profile_by_license
+    is the only function that needs it, because it is the only one backed by
+    _scrape_ranking_from_page rather than the inline table walk the other
+    functions use.
+    """
+    nested = {"singles": {}, "doubles": {}, "mixed": {}}
+    for category, values in ranking.items():
+        if category in ("HS", "DS"):
+            bucket = "singles"
+        elif category in ("HD", "DD", "MD"):
+            bucket = "doubles"
+        else:
+            continue
+        rank = values.get("rank", "")
+        points = values.get("points", "")
+        nested[bucket][category] = {
+            "rank": int(rank) if str(rank).isdigit() else None,
+            "points": int(points) if str(points).isdigit() else 0,
+        }
+    return json.dumps(nested)
+
+
 def get_player_license(player_name):
-    raise NotImplementedError("Stub added in Task 12")
+    player = _find_player(player_name)
+    return player["license_id"] if player else ""
 
 
 def get_player_ranking(player_name):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def login(username, password):
-    raise NotImplementedError("Stub added in Task 12")
+    """Returns a JSON string, matching bwf_live -- not a dict."""
+    player = _find_player(player_name)
+    if not player or not player["ranking"]:
+        return ""
+    return json.dumps(player["ranking"])
 
 
 def verify_credentials(username, password):
-    raise NotImplementedError("Stub added in Task 12")
+    return login(username, password) is not None
+
+
+def login(username, password):
+    """Any non-empty password is accepted; the username selects the persona."""
+    if not password:
+        return None
+    player = _find_player(username)
+    if not player:
+        logger.info(f"🔀 dev login rejected for unknown persona: {username}")
+        return None
+    logger.info(f"🔀 dev login as {player['player_name']}")
+    return dict(player)
 
 
 def search_players(query):
-    raise NotImplementedError("Stub added in Task 12")
+    query = (query or "").strip().lower()
+    return [
+        {"name": p["player_name"], "club": p["club"], "license_id": p["license_id"],
+         "profile_url": p["profile_url"], "source": "live", "_fake": True}
+        for p in PLAYERS
+        if query and query in p["player_name"].lower() and p["license_id"]
+    ]
 
 
 def get_player_details(profile_url):
-    raise NotImplementedError("Stub added in Task 12")
+    for p in PLAYERS:
+        if p["profile_url"] == profile_url:
+            return {"gender": p["gender"], "email": p["email"],
+                    "phone": p["phone"], "ranking": p["ranking"], "_fake": True}
+    return {"gender": "", "email": "", "phone": "", "ranking": {}, "_fake": True}
 
 
 def get_player_ranking_by_profile(profile_url):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def get_tournament_events(tournament_id):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def fetch_tournament_info(url):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def fetch_tournament_details(url):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def search_tournaments(start, end, status):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def list_all_tournaments(start_date, end_date):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def get_tournament_medals(tournament_id):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def get_tournament_player_id(tournament_id, player_name):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def get_tournament_player_results(tournament_id, player_id):
-    raise NotImplementedError("Stub added in Task 12")
-
-
-def get_tournament_clubs(tournament_id):
-    raise NotImplementedError("Stub added in Task 12")
+    """Ranking dict for a known profile URL -- same flat shape as get_player_details."""
+    for p in PLAYERS:
+        if p["profile_url"] == profile_url:
+            ranking = dict(p["ranking"])
+            ranking["_fake"] = True
+            return ranking
+    return {"_fake": True}
 
 
 def get_player_profile_by_license(license_id):
-    raise NotImplementedError("Stub added in Task 12")
+    """Note: "ranking" here is a JSON string in the nested singles/doubles/mixed
+    shape -- see _nested_ranking_json. That is a different type *and* a
+    different shape from every other ranking-bearing function in this module."""
+    for p in PLAYERS:
+        if p["license_id"] == license_id:
+            return {
+                "name": p["player_name"], "club": p["club"], "gender": p["gender"],
+                "email": p["email"], "phone": p["phone"], "dob": p["dob"],
+                "age": p["age"], "ranking": _nested_ranking_json(p["ranking"]),
+                "profile_url": p["profile_url"], "_fake": True,
+            }
+    return None
+
+
+# --- Tournament helpers -----------------------------------------------------
+
+def _tournament_id(t):
+    return t["url"].rsplit("/", 1)[-1]
+
+
+def _categorize_levels(levels):
+    """Sort event-class strings into singles/doubles/mixed, the buckets
+    bwf_live's get_tournament_events uses.
+
+    An event string may be prefixed, as in "MJT HS U13", so match on any
+    whitespace-separated token rather than only the first one.
+    """
+    def _has(event, codes):
+        return any(token in codes for token in event.split())
+
+    return {
+        "singles_levels": [e for e in levels if _has(e, ("HS", "DS"))],
+        "doubles_levels": [e for e in levels if _has(e, ("HD", "DD"))],
+        "mixed_levels": [e for e in levels if _has(e, ("MD",))],
+    }
+
+
+def get_tournament_events(tournament_id, session=None):
+    """session exists only for signature parity with bwf_live; dev mode ignores it."""
+    for t in TOURNAMENTS:
+        if tournament_id in t["url"]:
+            result = _categorize_levels(t["levels"])
+            result["_fake"] = True
+            return result
+    return {"singles_levels": [], "doubles_levels": [], "mixed_levels": [], "_fake": True}
+
+
+def _tournament_info(t):
+    info = {
+        "name": t["name"],
+        "location": t["location"],
+        "levels": t["levels"],
+        "registration_opens": t["registration_opens"],
+        "registration_closes": t["registration_closes"],
+        "cancellation_deadline": t["cancellation_deadline"],
+        "competition_start": t["competition_start"],
+        "competition_end": t["competition_end"],
+        "_fake": True,
+    }
+    info.update(_categorize_levels(t["levels"]))
+    return info
+
+
+def fetch_tournament_info(url):
+    """Live propagates a failing events page; dev has no failure to tolerate,
+    so an unknown fixture URL is a hard error here, exactly as a scrape
+    failure would be live."""
+    for t in TOURNAMENTS:
+        if t["url"] == url:
+            return _tournament_info(t)
+    raise ValueError(f"No dev tournament for {url}. Known: {[t['url'] for t in TOURNAMENTS]}")
+
+
+def fetch_tournament_details(url):
+    """Live tolerates a failing events page; dev mirrors that by degrading to
+    an empty-but-valid result for an unknown fixture URL instead of raising."""
+    for t in TOURNAMENTS:
+        if t["url"] == url:
+            return _tournament_info(t)
+    return {
+        "name": "", "location": "", "levels": [],
+        "singles_levels": [], "doubles_levels": [], "mixed_levels": [],
+        "registration_opens": "", "registration_closes": "",
+        "cancellation_deadline": "", "competition_start": "", "competition_end": "",
+        "_fake": True,
+    }
+
+
+def _search_result(t):
+    end = date.fromisoformat(t["date_end"])
+    return {
+        "id": _tournament_id(t),
+        "name": t["name"],
+        "location": t["location"],
+        "date_start": t["date_start"],
+        "date_end": t["date_end"],
+        "status": "Avslutad" if end < date.today() else "Anmälan öppen",
+        "_fake": True,
+    }
+
+
+def search_tournaments(start, end, status):
+    return [_search_result(t) for t in TOURNAMENTS]
+
+
+def _tournament_summary(t):
+    return {"name": t["name"], "url": t["url"], "location": t["location"],
+            "date_start": t["date_start"], "date_end": t["date_end"], "_fake": True}
+
+
+def list_all_tournaments(start_date, end_date):
+    return [_tournament_summary(t) for t in TOURNAMENTS]
+
+
+def get_tournament_medals(tournament_id):
+    return [
+        {"name": "Adam Adult", "event": "HS A", "placement": "Winner", "_fake": True},
+        {"name": "Elin Elit", "event": "DS A", "placement": "Winner", "_fake": True},
+    ]
+
+
+def get_tournament_player_id(tournament_id, player_name):
+    player = _find_player(player_name)
+    return player["license_id"] if player else ""
+
+
+def get_tournament_player_results(tournament_id, player_id):
+    return {
+        "stats": [{"event": "HS A", "won": 2, "lost": 1, "_fake": True}],
+        "matches": [{"event": "HS A", "opponent": "Pia Partner",
+                     "score": "21-15 21-18", "result": "Won", "_fake": True}],
+        "_fake": True,
+    }
+
+
+def get_tournament_clubs(tournament_id):
+    return [{"name": p["player_name"], "club": p["club"], "player_id": p["license_id"],
+             "_fake": True} for p in PLAYERS if p["license_id"]]
 
 
 def submit_registrations(tournament_name, club_login, club_password):
-    raise NotImplementedError("Stub added in Task 12")
+    """Pretend the submission worked. Playwright is never launched."""
+    logger.info(f"🔀 dev submit for '{tournament_name}' — nothing was sent to Badminton Sweden")
+    return {"success": True, "submitted": [p["player_name"] for p in PLAYERS if p["license_id"]],
+            "failed": [], "message": f"DEV MODE: pretended to submit for '{tournament_name}'",
+            "_fake": True}
