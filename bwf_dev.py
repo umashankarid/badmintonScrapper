@@ -9,7 +9,10 @@ return type. Every stub return value that is a dict (or a list of dicts)
 carries "_fake": True, so a later task can tag these rows in the UI. Plain
 scalars (str, bool) that bwf_live returns un-wrapped stay un-wrapped here
 too, since there is no room in a bare string to carry a flag without
-changing its type.
+changing its type. The one exception is get_player_ranking_by_profile: its
+return value is written verbatim into players.ranking by a caller, so tagging
+it would persist a bogus ranking category into the database, not just the UI
+-- see its own docstring.
 """
 
 import json
@@ -248,15 +251,17 @@ def get_player_details(profile_url):
 def get_player_ranking_by_profile(profile_url):
     """Ranking dict for a known profile URL -- same flat shape as get_player_details.
 
-    Unknown profile returns {}, not {"_fake": True}: app.py's caller does
-    `if ranking_data:` to decide whether a ranking was found, so the empty
-    dict's falsiness is the contract here, not a place to tag "_fake".
+    Unlike every sibling stub, this return value is never tagged "_fake":
+    _register_partner (app.py) json.dumps this dict straight into
+    players.ranking, so a "_fake" key here would persist as a bogus ranking
+    category in the database, not just a UI hint. Unknown profile returns
+    {}, not {"_fake": True}: app.py's caller does `if ranking_data:` to
+    decide whether a ranking was found, so the empty dict's falsiness is the
+    contract here too.
     """
     for p in PLAYERS:
         if p["profile_url"] == profile_url:
-            ranking = dict(p["ranking"])
-            ranking["_fake"] = True
-            return ranking
+            return dict(p["ranking"])
     return {}
 
 

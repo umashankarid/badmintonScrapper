@@ -532,5 +532,65 @@ class TestDevLoginPersistsGroups(unittest.TestCase):
         self.assertIsNone(self._groups_in_db())
 
 
+class TestRegisterPartnerRankingIsClean(unittest.TestCase):
+    """The one players.ranking write path a dev-mode change touched
+    (_register_partner, via bwf_client.get_player_ranking_by_profile) had
+    only ever been verified by a throwaway script -- see Task 6 of the final
+    fix wave. Assert what actually lands in the column: the dev fixture's own
+    rank/points, with no "_fake" key smuggled in as a pseudo-category."""
+
+    LICENSE_ID = "DEV-0006"  # Pia Partner
+    TOURNAMENT_NAME = "Fix-Wave Test Cup"
+
+    def setUp(self):
+        import app
+        self.app = app
+        bwf_client.set_mode("live")
+        self._delete()
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+        self._delete()
+
+    def _delete(self):
+        conn = sqlite3.connect(self.app.PLAYERS_DB)
+        conn.execute("DELETE FROM players WHERE license_id = ?", (self.LICENSE_ID,))
+        conn.commit()
+        conn.close()
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute("DELETE FROM tournament_registrations WHERE tournament_name = ? AND license_id = ?",
+                     (self.TOURNAMENT_NAME, self.LICENSE_ID))
+        conn.commit()
+        conn.close()
+
+    def _ranking_in_db(self):
+        conn = sqlite3.connect(self.app.PLAYERS_DB)
+        cur = conn.execute("SELECT ranking FROM players WHERE license_id = ?", (self.LICENSE_ID,))
+        row = cur.fetchone()
+        conn.close()
+        return json.loads(row[0]) if row and row[0] else None
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_register_partner_persists_a_clean_ranking_in_dev_mode(self):
+        bwf_client.set_mode("dev")
+        try:
+            self.app._register_partner(
+                tournament_name=self.TOURNAMENT_NAME,
+                partner_license_id=self.LICENSE_ID,
+                partner_name="Pia Partner",
+                partner_club="Grannklubben",
+                partner_profile_url="/player-profile/DEV-0006",
+            )
+            ranking = self._ranking_in_db()
+            self.assertIsNotNone(ranking, "no ranking was persisted")
+            self.assertNotIn("_fake", ranking)
+            self.assertEqual(ranking, {
+                "DD": {"rank": "300", "points": "800"},
+                "MD": {"rank": "310", "points": "780"},
+            })
+        finally:
+            bwf_client.set_mode("live")
+
+
 if __name__ == "__main__":
     unittest.main()
