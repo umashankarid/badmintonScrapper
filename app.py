@@ -5754,13 +5754,20 @@ def backup_databases():
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     
+    backed_up, timestamp = _do_backup()
+    return jsonify(success=True, backup_id=timestamp, files=backed_up, 
+                   message=f"Backup '{timestamp}' created with {len(backed_up)} databases")
+
+
+def _do_backup(prefix=""):
+    """Create a backup of all databases. Returns (backed_up_files, timestamp)."""
     import shutil
     from datetime import datetime
     
     backup_dir = os.path.join(DATA_DIR, "backups")
     os.makedirs(backup_dir, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = (prefix + datetime.now().strftime("%Y%m%d_%H%M%S"))
     backup_folder = os.path.join(backup_dir, timestamp)
     os.makedirs(backup_folder, exist_ok=True)
     
@@ -5773,11 +5780,53 @@ def backup_databases():
             dst = os.path.join(backup_folder, db_file)
             shutil.copy2(src, dst)
             backed_up.append(db_file)
-            logger.info(f"💾 Backed up {db_file} → {backup_folder}/")
     
     logger.info(f"✅ Backup created: {timestamp} ({len(backed_up)} files)")
-    return jsonify(success=True, backup_id=timestamp, files=backed_up, 
-                   message=f"Backup '{timestamp}' created with {len(backed_up)} databases")
+    return backed_up, timestamp
+
+
+def _cleanup_old_backups(keep_days=10):
+    """Keep only the most recent auto-backups (last keep_days). Manual backups are kept."""
+    import shutil
+    from datetime import datetime
+    
+    backup_dir = os.path.join(DATA_DIR, "backups")
+    if not os.path.exists(backup_dir):
+        return
+    
+    # Only auto-backups have the 'auto_' prefix
+    auto_backups = sorted([d for d in os.listdir(backup_dir) 
+                           if os.path.isdir(os.path.join(backup_dir, d)) and d.startswith("auto_")], reverse=True)
+    
+    # Keep the newest keep_days, delete the rest
+    for old in auto_backups[keep_days:]:
+        try:
+            shutil.rmtree(os.path.join(backup_dir, old))
+            logger.info(f"🗑️ Deleted old auto-backup: {old}")
+        except Exception as e:
+            logger.error(f"Error deleting old backup {old}: {e}")
+
+
+def daily_backup_scheduler():
+    """Run a daily auto-backup, keeping only the last 10 days."""
+    import time
+    from datetime import datetime
+    while True:
+        try:
+            # Check if we already made an auto-backup today
+            backup_dir = os.path.join(DATA_DIR, "backups")
+            today = datetime.now().strftime("%Y%m%d")
+            already_today = False
+            if os.path.exists(backup_dir):
+                already_today = any(d.startswith(f"auto_{today}") for d in os.listdir(backup_dir))
+            
+            if not already_today:
+                _do_backup(prefix="auto_")
+                _cleanup_old_backups(keep_days=10)
+        except Exception as e:
+            logger.error(f"❌ Error in daily backup: {e}")
+        time.sleep(6 * 3600)  # Check every 6 hours (makes 1 backup per day)
+
 
 
 @app.route("/api/database/backups", methods=["GET"])
@@ -6166,4 +6215,5 @@ def get_reminders_sent_status():
 if __name__ == "__main__":
     import threading
     threading.Thread(target=reminder_scheduler, daemon=True).start()
+    threading.Thread(target=daily_backup_scheduler, daemon=True).start()
     app.run(host="0.0.0.0", port=3000, debug=True, use_reloader=False)
