@@ -1900,7 +1900,13 @@ def get_all_bwf_tournaments():
             conn = sqlite3.connect(TOURNAMENTS_DB)
             cur = conn.cursor()
             # Get tournament names that are expired (for cleaning registrations)
-            cur.execute("SELECT tournament_name FROM tournaments WHERE date_start < ?", (today,))
+            # Scoped to the current mode: without this, a refresh in dev mode
+            # deletes real expired tournaments (and their registrations) from
+            # the developer's local database.
+            expire_clause, expire_params = _mode_url_clause()
+            cur.execute(
+                f"SELECT tournament_name FROM tournaments WHERE date_start < ? AND {expire_clause}",
+                (today,) + expire_params)
             expired_names = [row[0] for row in cur.fetchall()]
             
             if expired_names:
@@ -2098,7 +2104,7 @@ def open_tournaments():
                 # Provenance, not current mode: a dev.local fixture stays tagged
                 # after flipping back to live, and a real row synced while dev
                 # mode happened to be on is never mistaken for a fixture.
-                "_fake": row[0].startswith("https://dev.local/")
+                "_fake": row[0].startswith(DEV_FIXTURE_URL_PREFIX)
             })
         
         return jsonify(tournaments=tournaments)
@@ -5364,8 +5370,12 @@ def _drop_session_from_another_mode():
     """
     if not bwf_client.dev_tools_enabled():
         return
-    stamped = session.get("bwf_mode")
-    if stamped and stamped != bwf_client.get_mode():
+    # An unstamped session predates the stamp, and the process always boots in
+    # live mode, so treating it as live is what it actually is. Grandfathering it
+    # instead left a hole: set_dev_mode would report signed_out while the session
+    # survived, so Back returned you to a live-origin session against stub data.
+    stamped = session.get("bwf_mode", "live")
+    if session and stamped != bwf_client.get_mode():
         logger.info(f"🔀 Dropping session for {session.get('bwf_login')} — "
                     f"created in {stamped} mode, server is now {bwf_client.get_mode()}")
         session.clear()

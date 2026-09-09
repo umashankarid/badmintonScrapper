@@ -4,7 +4,9 @@ import inspect
 import json
 import os
 import re
+import shutil
 import sqlite3
+import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
@@ -19,13 +21,24 @@ def _purge_dev_personas():
     players.db in the repo root. Without this, logging in as a persona injects
     a fake child into the BMK Komet roster and into the LEVEL 3-5 group that
     drives tournament visibility and reminder targeting.
+
+    Scoped to the exact ids in bwf_dev.PLAYERS rather than a LIKE pattern, and
+    closed in a finally, so a failure mid-test cannot leave rows behind in a
+    developer's real database.
     """
     import app
+    import bwf_dev
+    ids = [p["license_id"] for p in bwf_dev.PLAYERS if p["license_id"]]
+    if not ids:
+        return
+    marks = ",".join("?" * len(ids))
     conn = sqlite3.connect(app.PLAYERS_DB)
-    conn.execute("DELETE FROM kometPlayers WHERE license_id LIKE 'DEV-%'")
-    conn.execute("DELETE FROM players WHERE license_id LIKE 'DEV-%'")
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(f"DELETE FROM kometPlayers WHERE license_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM players WHERE license_id IN ({marks})", ids)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 class TestModeState(unittest.TestCase):
@@ -569,10 +582,9 @@ class TestDevLoginPersistsGroups(unittest.TestCase):
         self._delete_komet_row()
 
     def _delete_komet_row(self):
-        conn = sqlite3.connect(self.app.PLAYERS_DB)
-        conn.execute("DELETE FROM kometPlayers WHERE license_id = ?", (self.LICENSE_ID,))
-        conn.commit()
-        conn.close()
+        # Shared helper: a persona login writes BOTH players and kometPlayers,
+        # and clearing only the latter left a DEV row in the real database.
+        _purge_dev_personas()
 
     def _groups_in_db(self):
         conn = sqlite3.connect(self.app.PLAYERS_DB)
@@ -668,9 +680,6 @@ class TestRegisterPartnerRankingIsClean(unittest.TestCase):
         finally:
             bwf_client.set_mode("live")
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestDevPersonasEndpoint(unittest.TestCase):
@@ -871,18 +880,19 @@ class TestFixturesDoNotLeakIntoLive(unittest.TestCase):
         app.app.config["TESTING"] = True
         self.client = app.app.test_client()
         bwf_client.set_mode("live")
-        self._reset_rows()
+        # A private tournaments.db: these tests reason about which rows count as
+        # "fetched today", and the developer's real database already holds real
+        # tournaments fetched today. It also keeps the tests from writing there.
+        self._tmpdir = tempfile.mkdtemp()
+        self._db_patch = patch.object(app, "TOURNAMENTS_DB",
+                                      os.path.join(self._tmpdir, "tournaments.db"))
+        self._db_patch.start()
+        app.init_tournaments_db()
 
     def tearDown(self):
         bwf_client.set_mode("live")
-        self._reset_rows()
-
-    def _reset_rows(self):
-        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
-        conn.execute("DELETE FROM tournaments WHERE tournament_url IN (?, ?)",
-                     (self.FIXTURE_URL, self.REAL_URL))
-        conn.commit()
-        conn.close()
+        self._db_patch.stop()
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _insert(self, url, name, start):
         conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
@@ -918,24 +928,56 @@ class TestFixturesDoNotLeakIntoLive(unittest.TestCase):
         self._insert(self.REAL_URL, "Real Cup", future)
         self.assertIn("Real Cup", self._names())
 
-    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
-    def test_fixtures_do_not_satisfy_the_live_cache_check(self):
-        """The bug as hit: a fixture cached today made live mode skip the fetch."""
+    def _insert_cached(self, url, name, days_ahead=30):
+        """A row that looks like it was fetched today, so it counts as cache."""
         conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
         conn.execute(
             "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
             "last_updated) VALUES (?, ?, ?, ?)",
-            ("Dev Open (FAKE)", self.FIXTURE_URL,
-             (date.today() + timedelta(days=30)).isoformat(),
+            (name, url, (date.today() + timedelta(days=days_ahead)).isoformat(),
              datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
         conn.close()
 
-        clause, params = self.app._mode_url_clause()
-        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
-        today = date.today().strftime("%Y-%m-%d")
-        count = conn.execute(
-            f"SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ? AND {clause}",
-            (f"{today}%",) + params).fetchone()[0]
-        conn.close()
-        self.assertEqual(count, 0, "a dev fixture counted as live cache")
+    def _admin_session(self):
+        with self.client.session_transaction() as sess:
+            sess["admin"] = True
+            sess["bwf_mode"] = "live"
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_a_fixture_alone_does_not_count_as_live_cache(self):
+        """The bug as hit in real use: three fixtures written in dev mode counted
+        as "already fetched today", so live mode served them and never called
+        Badminton Sweden at all.
+
+        Asserts the scrape RAN. Removing the mode filter from the cache-count
+        query makes the fixture satisfy the check, the endpoint short-circuits,
+        and this fails -- which the earlier version of this test did not catch.
+        """
+        self._insert_cached(self.FIXTURE_URL, "Dev Open (FAKE)")
+        self._admin_session()
+        with patch("bwf_client.list_all_tournaments", return_value=[]) as scrape:
+            self.client.get("/api/bwf-tournaments-all")
+        self.assertTrue(scrape.called,
+                        "live mode used a dev fixture as cache instead of scraping")
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_a_served_cache_never_includes_fixtures(self):
+        """With a real row making the cache legitimately fresh, the cached read
+        must still exclude fixtures. Removing the mode filter from the cached
+        SELECT fails this.
+        """
+        self._insert_cached(self.REAL_URL, "Real Cup")
+        self._insert_cached(self.FIXTURE_URL, "Dev Open (FAKE)")
+        self._admin_session()
+        with patch("bwf_client.list_all_tournaments", return_value=[]) as scrape:
+            body = self.client.get("/api/bwf-tournaments-all").get_json()
+        self.assertFalse(scrape.called, "expected the cache path, not a scrape")
+        urls = [t.get("url") for t in (body.get("tournaments") or [])]
+        self.assertIn(self.REAL_URL, urls)
+        self.assertNotIn(self.FIXTURE_URL, urls,
+                         "a dev fixture was served to live mode from the cache")
+
+
+if __name__ == "__main__":
+    unittest.main()
