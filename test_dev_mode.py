@@ -101,5 +101,61 @@ class TestModeEndpoints(unittest.TestCase):
         self.assertEqual(bwf_client.get_mode(), "live")
 
 
+class TestFakeData(unittest.TestCase):
+    """Fixtures must exercise the domain rules and must not rot over time."""
+
+    def test_fixture_dates_are_iso_format(self):
+        """Every date is YYYY-MM-DD. This alone doesn't prove the dates are
+        relative to today (a hardcoded date matches the same regex) -- the
+        future/past tests below are what prove that."""
+        import bwf_dev
+        for tournament in bwf_dev.TOURNAMENTS:
+            for key in ("registration_closes", "competition_start", "cancellation_deadline"):
+                value = tournament[key]
+                self.assertRegex(value, r"^\d{4}-\d{2}-\d{2}$", f"{key} is not a date")
+
+    def test_open_tournament_deadline_is_in_the_future(self):
+        import bwf_dev
+        from datetime import date
+        open_t = next(t for t in bwf_dev.TOURNAMENTS if t["fixture"] == "open")
+        self.assertGreater(date.fromisoformat(open_t["registration_closes"]), date.today())
+
+    def test_closed_tournament_deadline_is_in_the_past(self):
+        import bwf_dev
+        from datetime import date
+        closed = next(t for t in bwf_dev.TOURNAMENTS if t["fixture"] == "closed")
+        self.assertLess(date.fromisoformat(closed["registration_closes"]), date.today())
+
+    def test_has_an_sjt_tournament(self):
+        import bwf_dev
+        self.assertTrue(any("SJT" in t["name"].upper() for t in bwf_dev.TOURNAMENTS))
+
+    def test_personas_cover_the_age_rules(self):
+        """An under-13, a junior and an adult must all exist."""
+        import bwf_dev
+        from datetime import date
+        ages = []
+        for p in bwf_dev.PLAYERS:
+            if not p["dob"]:
+                continue
+            born = date.fromisoformat(p["dob"])
+            today = date.today()
+            ages.append(today.year - born.year - ((today.month, today.day) < (born.month, born.day)))
+        self.assertTrue(any(a < 13 for a in ages), "no under-13 persona")
+        self.assertTrue(any(13 <= a < 18 for a in ages), "no junior persona")
+        self.assertTrue(any(a >= 18 for a in ages), "no adult persona")
+
+    def test_personas_cover_the_mjt_sjt_split(self):
+        import bwf_dev
+        groups = {g for p in bwf_dev.PLAYERS for g in p.get("groups", [])}
+        self.assertIn("LEVEL 3-5", groups)
+        self.assertIn("LEVEL_6", groups)
+
+    def test_every_player_is_marked_fake(self):
+        import bwf_dev
+        for p in bwf_dev.PLAYERS:
+            self.assertTrue(p["_fake"])
+
+
 if __name__ == "__main__":
     unittest.main()
