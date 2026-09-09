@@ -1828,5 +1828,88 @@ class TestTournamentPlayerResultsEndpoint(unittest.TestCase):
                          {"success": False, "error": "refused", "stats": [], "matches": []})
 
 
+CLUBS_HTML = """
+<ul>
+  <li><a href="/tournament/T-1/player?player=55">Anna Andersson</a> BMK Komet</li>
+  <li><a href="/tournament/T-1/player?player=55">Anna Andersson</a> BMK Komet</li>
+  <li><a href="/tournament/T-1/player?player=77">Bea Bergstrom</a> IK Pingvin</li>
+  <li>No link here</li>
+</ul>
+"""
+
+CLUBS_URL = "https://badmintonsweden.tournamentsoftware.com/tournament/T-1/Players/GetPlayersContent"
+
+
+class TestTournamentClubs(unittest.TestCase):
+    """Every player/club on a tournament's player list, deduplicated by name."""
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_parses_and_deduplicates_players_by_name(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = [_resp(CLUBS_HTML)]
+        mock_session_cls.return_value = session
+
+        players = bwf_client.get_tournament_clubs("T-1")
+
+        self.assertEqual(players, [
+            {"name": "Anna Andersson", "club": "BMK Komet", "player_id": "55"},
+            {"name": "Bea Bergstrom", "club": "IK Pingvin", "player_id": "77"},
+        ])
+
+        # Pin request construction for every outgoing call.
+        session.headers.update.assert_called_once_with({"User-Agent": "Mozilla/5.0"})
+        session.post.assert_called_once_with(
+            COOKIEWALL_URL, data=COOKIEWALL_DATA, allow_redirects=True, timeout=5)
+        session.get.assert_called_once_with(
+            CLUBS_URL, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_skips_list_items_without_a_link_or_a_short_name(self, mock_session_cls):
+        html = '<ul><li>No link</li><li><a href="/x?player=9">Bo</a> Club</li></ul>'
+        session = MagicMock()
+        session.get.side_effect = [_resp(html)]
+        mock_session_cls.return_value = session
+        # "Bo" is under the 3-character minimum, so it is filtered out too.
+        self.assertEqual(bwf_client.get_tournament_clubs("T-1"), [])
+
+    @patch("bwf_live.ext_requests.Session")
+    def test_network_error_propagates_to_the_caller(self, mock_session_cls):
+        session = MagicMock()
+        session.get.side_effect = Boom("connection refused")
+        mock_session_cls.return_value = session
+        with self.assertRaises(Boom):
+            bwf_client.get_tournament_clubs("T-1")
+
+
+class TestTournamentClubsEndpoint(unittest.TestCase):
+    """/api/tournament-clubs: delegates, and owns no session of its own."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+
+    def test_delegates_and_owns_no_session(self):
+        players = [{"name": "Anna Andersson", "club": "BMK Komet", "player_id": "55"}]
+        with patch("app.bwf_client.get_tournament_clubs", return_value=players) as mocked, \
+             patch("app.ext_requests.Session") as mock_session_cls:
+            resp = self.client.get("/api/tournament-clubs?id=T-1")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True, "players": players})
+        mocked.assert_called_once_with("T-1")
+        mock_session_cls.assert_not_called()
+
+    def test_missing_id_is_a_400(self):
+        resp = self.client.get("/api/tournament-clubs")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_scrape_failure_is_a_500(self):
+        with patch("app.bwf_client.get_tournament_clubs", side_effect=Boom("refused")):
+            resp = self.client.get("/api/tournament-clubs?id=T-1")
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json(), {"success": False, "error": "refused", "players": []})
+
+
 if __name__ == "__main__":
     unittest.main()

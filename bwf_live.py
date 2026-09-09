@@ -842,3 +842,51 @@ def get_tournament_player_results(tournament_id, player_id):
             })
 
     return {"stats": stats, "matches": matches}
+
+
+def get_tournament_clubs(tournament_id):
+    """Every player and club from a tournament's player list, deduplicated by name."""
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    s.post(f"{BASE_URL}/cookiewall/Save", data={
+        "ReturnUrl": "/",
+        "SettingsOpen": "false",
+        "CookieWallCategoryPreferences": "1,2,3"
+    }, allow_redirects=True, timeout=5)
+
+    url = f"{BASE_URL}/tournament/{tournament_id}/Players/GetPlayersContent"
+    resp = s.get(url, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    players = []
+    for item in soup.select("li"):
+        name_el = item.select_one("a")
+        if not name_el:
+            continue
+        name = name_el.get_text(strip=True)
+        if not name or len(name) < 3:
+            continue
+        # Get player ID from href
+        import re as re_mod
+        href = name_el.get("href", "")
+        pid_match = re_mod.search(r"player=(\d+)", href)
+        player_id = pid_match.group(1) if pid_match else ""
+        # Club is the text in the li that's not the player name
+        all_text = [t.strip() for t in item.get_text(separator="|", strip=True).split("|") if t.strip()]
+        club = ""
+        for t in all_text:
+            if t != name and len(t) > 2 and not t.startswith("("):
+                club = t
+                break
+        players.append({"name": name, "club": club, "player_id": player_id})
+
+    # Deduplicate
+    seen = set()
+    unique_players = []
+    for p in players:
+        key = p["name"]
+        if key not in seen:
+            seen.add(key)
+            unique_players.append(p)
+
+    return unique_players
