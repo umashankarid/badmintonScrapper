@@ -73,27 +73,44 @@ def app_server(data_dir):
     # handles another request for the rest of the run. Keep a short tail so
     # a startup failure can still report why.
     log_tail = collections.deque(maxlen=200)
-    threading.Thread(
+    drain_thread = threading.Thread(
         target=lambda: [log_tail.append(line) for line in proc.stdout],
         daemon=True,
-    ).start()
+    )
+    drain_thread.start()
+
+    def _log_tail_text():
+        """The tail, safe to read only once the process has exited: join the
+        drain thread first so it isn't still appending to `log_tail` while we
+        iterate it ("deque mutated during iteration") -- on the one path
+        that must report a real startup failure. Once stdout closes the
+        thread's for-loop hits EOF and returns almost immediately.
+        """
+        drain_thread.join(timeout=5)
+        return b"".join(log_tail).decode(errors="replace")
 
     deadline = time.time() + 60
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(
-                f"server exited early:\n{b''.join(log_tail).decode(errors='replace')}")
+            raise RuntimeError(f"server exited early:\n{_log_tail_text()}")
         try:
             if requests.get(f"{base}/api/dev-mode", timeout=1).ok:
                 break
         except requests.RequestException:
-            time.sleep(0.3)
+            pass
+        # Outside the except: a non-2xx response (.ok is False) raises
+        # nothing, and without this the loop would otherwise spin flat-out
+        # against a single-threaded server for the rest of the 60s budget.
+        time.sleep(0.3)
     else:
         proc.kill()
-        raise RuntimeError("server did not become ready within 60s")
+        proc.wait(timeout=10)
+        raise RuntimeError(f"server did not become ready within 60s:\n{_log_tail_text()}")
 
     # Dev mode is off at boot by design; the tests need the stub backend.
-    requests.post(f"{base}/api/dev-mode", json={"mode": "dev"}, timeout=5)
+    resp = requests.post(f"{base}/api/dev-mode", json={"mode": "dev"}, timeout=5)
+    assert resp.ok and resp.json().get("mode") == "dev", (
+        f"failed to switch the server into dev mode: {resp.status_code} {resp.text}")
 
     yield base
 
