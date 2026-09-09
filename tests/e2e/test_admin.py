@@ -117,7 +117,7 @@ def test_admin_can_hide_a_tournament_from_the_home_page(app_server, page, data_d
         "an unrelated tournament vanished too, or the page failed to render"
 
 
-def test_orphaned_registration_cleanup_runs_from_the_database_page(app_server, page, data_dir):
+def test_orphaned_registration_cleanup_runs_from_the_database_page(isolated_app_server, page, tmp_path):
     """main added this button (f15fa35). An orphan is a registration whose
     licence has no matching player row.
 
@@ -125,15 +125,27 @@ def test_orphaned_registration_cleanup_runs_from_the_database_page(app_server, p
     ghost-player / non-Komet-main -- so a legitimate Komet registration is
     seeded alongside the orphan and asserted to survive: without it, an
     unconditional DELETE with no WHERE clause would pass this test
-    identically to the real, selective cleanup."""
+    identically to the real, selective cleanup.
+
+    Runs against isolated_app_server, not the shared app_server/data_dir:
+    the endpoint this test drives has no tournament scope at all -- it
+    deletes ghost/empty/non-Komet registrations across every tournament in
+    whatever database the server points at. Against the shared session
+    database that would delete rows other tests own, and only survived
+    because test_admin.py happened to sort before test_player.py; under
+    pytest-randomly, -p xdist, --lf, or a -k selection it would not. A
+    private app_server + DATA_DIR for just this test means the unscoped
+    DELETE has nothing to reach but its own rows, regardless of order.
+    """
+    data_dir = tmp_path
     name = seed.open_tournament(data_dir, name="Orphan Cup")
     seed.registration(data_dir, name, "GHOST-1", singles="HS B")
     seed.player(data_dir, "DEV-0002", "Elin Elit")
     seed.registration(data_dir, name, "DEV-0002", singles="DS A")
     assert len(seed.registrations_for(data_dir, name)) == 2
 
-    sign_in_as(page, app_server, "sbf04959")
-    page.goto(f"{app_server}/manage-db.html")
+    sign_in_as(page, isolated_app_server, "sbf04959")
+    page.goto(f"{isolated_app_server}/manage-db.html")
     page.wait_for_load_state("networkidle")
 
     # networkidle after the click would race the fetch() the same way Task 4

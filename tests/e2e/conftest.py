@@ -38,9 +38,14 @@ def data_dir():
     shutil.rmtree(path, ignore_errors=True)
 
 
-@pytest.fixture(scope="session")
-def app_server(data_dir):
-    """Boot app.py in dev mode with the network closed off, yield its URL."""
+def _run_app_server(data_dir):
+    """Boot app.py in dev mode against data_dir with the network closed off,
+    yield its base URL, tear the subprocess down on exit.
+
+    A plain generator rather than a fixture itself, so it can back both the
+    session-scoped app_server fixture (shared by most of the suite) and a
+    function-scoped one for a test that needs its own isolated instance.
+    """
     port = _free_port()
     env = dict(os.environ)
     env.update({
@@ -139,6 +144,29 @@ def app_server(data_dir):
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+
+@pytest.fixture(scope="session")
+def app_server(data_dir):
+    yield from _run_app_server(data_dir)
+
+
+@pytest.fixture
+def isolated_app_server(tmp_path):
+    """A throwaway app_server + DATA_DIR scoped to this one test.
+
+    Some admin endpoints (e.g. /api/cleanup-orphaned-registrations) have no
+    tournament scope -- app.py deletes across every tournament in whatever
+    database the server points at. Against the shared session-scoped
+    app_server/data_dir, a test that exercises one of those would delete
+    rows other tests own, and only survive by luck of file/test ordering
+    (it happened to sort last). tmp_path is pytest's own function-scoped
+    temp-dir fixture -- reusing it here (rather than hand-rolling another
+    tempfile.mkdtemp) means a test requesting both this fixture and tmp_path
+    gets the same directory, so it can seed through seed.py and still know
+    exactly what's in the database an unscoped endpoint might touch.
+    """
+    yield from _run_app_server(tmp_path)
 
 
 @contextlib.contextmanager
