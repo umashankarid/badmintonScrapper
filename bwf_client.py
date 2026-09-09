@@ -58,3 +58,11 @@ def get_player_license(player_name):
 
 def get_player_ranking(player_name):
     return _backend().get_player_ranking(player_name)
+
+
+def login(username, password):
+    return _backend().login(username, password)
+
+
+def verify_credentials(username, password):
+    return _backend().verify_credentials(username, password)

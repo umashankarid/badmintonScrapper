@@ -16,3 +16,11 @@ def get_player_license(player_name):
 
 def get_player_ranking(player_name):
     raise NotImplementedError("Stub added in Task 12")
+
+
+def login(username, password):
+    raise NotImplementedError("Stub added in Task 12")
+
+
+def verify_credentials(username, password):
+    raise NotImplementedError("Stub added in Task 12")

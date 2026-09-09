@@ -598,6 +598,67 @@ def manage_db_page():
 
 
 # --- Badminton Sweden Login ---
+def _persist_login_profile(profile):
+    """Save the just-scraped login profile to players.db, exactly as before."""
+    player_name = profile["player_name"]
+    license_id = profile["license_id"]
+    profile_url = profile["profile_url"]
+    club = profile["club"]
+    gender = profile["gender"]
+    email = profile["email"]
+    phone = profile["phone"]
+    dob = profile["dob"]
+    age = profile["age"]
+    ranking = profile["ranking"]
+
+    # Save player data to players.db (we have ALL fields from login)
+    try:
+        if license_id:
+            from players_scraper import update_player_in_db
+
+            ranking_json = json.dumps(ranking) if ranking else None
+            update_player_in_db(
+                license_id=license_id,
+                name=player_name,
+                profile_url=profile_url,
+                club=club,
+                gender=gender,
+                email=email,
+                phone=phone,
+                dob=dob,
+                age=age,
+                ranking=ranking_json
+            )
+            logger.info(f"✅ Saved full player data for {player_name} ({license_id}) to players.db")
+
+            # If player belongs to Komet, add/update in kometPlayers table
+            if club and "komet" in club.lower():
+                try:
+                    conn_k = sqlite3.connect(PLAYERS_DB)
+                    cur_k = conn_k.cursor()
+                    cur_k.execute("SELECT id, groups FROM kometPlayers WHERE license_id = ?", (license_id,))
+                    existing = cur_k.fetchone()
+                    if existing:
+                        # Update name and email, preserve groups
+                        conn_k.execute(
+                            "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
+                            (player_name, email or None, license_id)
+                        )
+                    else:
+                        # Insert new komet player
+                        conn_k.execute(
+                            "INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
+                            (license_id, player_name, email or None)
+                        )
+                        logger.info(f"✅ Added {player_name} to kometPlayers (auto-detected from login)")
+                    conn_k.commit()
+                    conn_k.close()
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not update kometPlayers: {e}")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not save player data to DB: {e}")
+
+
 @app.route("/api/bwf-login", methods=["POST"])
 def bwf_login():
     data = request.json
@@ -607,234 +668,39 @@ def bwf_login():
         return jsonify(success=False, error="Login and password required"), 400
 
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-
-        # Accept cookies
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/user",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=10)
-
-        # Get login page for verification token
-        resp = s.get("https://badmintonsweden.tournamentsoftware.com/user", timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        token_el = soup.find("input", {"name": "__RequestVerificationToken"})
-        if not token_el:
-            return jsonify(success=False, error="Could not load login page"), 500
-
-        # Submit login
-        logo_el = soup.find("input", {"name": "LogoUrl"})
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/user", data={
-            "__RequestVerificationToken": token_el.get("value", ""),
-            "ReturnUrl": "/",
-            "LogoUrl": logo_el.get("value", "") if logo_el else "",
-            "Login": login,
-            "Password": password
-        }, allow_redirects=True, timeout=10)
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Check if login failed - still on login page
-        login_input = soup.find("input", {"name": "Login"})
-        if login_input:
-            logger.warning(f"⚠️ Login failed for username: {login}")
-            return jsonify(success=False, error="Inloggning misslyckades. Kontrollera att användarnamn och lösenord stämmer med ditt Badminton Sweden-konto.\n\nLogin failed. Please check that your username and password match your Badminton Sweden account."), 401
-
-        # After login, find the profile link in the nav ("Min profil" -> /player-profile/<UUID>)
-        profile_url = ""
-        profile_link = soup.select_one("a[href*='player-profile']")
-        if not profile_link:
-            # Try fetching homepage explicitly
-            resp = s.get("https://badmintonsweden.tournamentsoftware.com/", timeout=10)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            profile_link = soup.select_one("a[href*='player-profile']")
-
-        if profile_link:
-            profile_url = profile_link.get("href", "")
-
-        print(f"[BWF Login] Profile URL found: {profile_url}")
-
-        if not profile_url:
-            # Club account (no player profile) - check if it's a known admin account
-            if login in ("sbf04959", "umashankar1985@gmail.com"):
-                # Club/admin account - proceed without player profile
-                player_name = login
-                name_el = soup.select_one(".masthead__user-title")
-                if name_el:
-                    player_name = name_el.get_text(strip=True)
-                
-                session["bwf_player"] = player_name
-                session["bwf_login"] = login
-                session["bwf_license_id"] = ""
-                session["bwf_club"] = ""
-                session["bwf_gender"] = ""
-                session["bwf_email"] = ""
-                session["bwf_phone"] = ""
-                session["bwf_dob"] = ""
-                session["bwf_age"] = ""
-                session["bwf_ranking"] = {}
-                session["admin"] = True
-                logger.info(f"✅ Club/admin account logged in: {login}")
-                return jsonify(success=True, player_name=player_name, license_id="", club="", gender="", email="", phone="", dob="", age="", ranking={})
-            else:
-                return jsonify(success=False, error="Login succeeded but could not find player profile"), 500
-
-        # Get player name from the masthead (shown after login)
-        player_name = ""
-        license_id = ""
-        club = ""
-
-        name_el = soup.select_one(".masthead__user-title")
-        if name_el:
-            player_name = name_el.get_text(strip=True)
-
-        print(f"[BWF Login] Player name from masthead: {player_name}")
-
-        # Search by last name to get license ID and club, matching by profile URL
-        if player_name and profile_url:
-            search_query = player_name.split()[-1]
-            search_resp = s.get(
-                "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-                params={"Page": 1, "SportID": 2, "Query": search_query},
-                headers={"X-Requested-With": "XMLHttpRequest"},
-                timeout=10
-            )
-            search_soup = BeautifulSoup(search_resp.text, "html.parser")
-
-            for item in search_soup.select("li.list__item"):
-                item_link = item.select_one("a.media__link")
-                if item_link and item_link.get("href", "").lower() == profile_url.lower():
-                    license_el = item.select_one(".media__title-aside")
-                    if license_el:
-                        license_id = license_el.get_text(strip=True).strip("()")
-                    club_el = item.select_one(".media__subheading span.nav-link__value")
-                    if club_el:
-                        club = club_el.get_text(strip=True).split("|")[0].strip()
-                    break
-
-        # Fetch gender, email, phone, date of birth from account settings
-        gender = ""
-        email = ""
-        phone = ""
-        dob = ""
-        age = ""
-        try:
-            settings_resp = s.get("https://badmintonsweden.tournamentsoftware.com/user/account-settings/person", timeout=10)
-            settings_soup = BeautifulSoup(settings_resp.text, "html.parser")
-            for dt in settings_soup.find_all("dt"):
-                dd = dt.find_next_sibling("dd")
-                if not dd:
-                    continue
-                label = dt.get_text(strip=True).rstrip(":")
-                value = dd.get_text(strip=True)
-                if label == "Kön":
-                    gender = "F" if "kvinna" in value.lower() else "M" if "man" in value.lower() else ""
-                elif label == "E-mail":
-                    email = value.replace("(Redigera)", "").strip()
-                elif label == "Telefon (mobil)" and value:
-                    phone = value
-                elif label == "Phone 3" and value and not phone:
-                    phone = value
-                elif "Födelsedatum" in label and value:
-                    dob = value.split(" ")[0]
-                    try:
-                        from datetime import datetime as dt_cls
-                        birth = dt_cls.strptime(dob, "%Y-%m-%d")
-                        today = dt_cls.now()
-                        age = str(today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # Fetch ranking data from player profile
-        ranking = {}
-        try:
-            ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}/ranking", timeout=10)
-            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
-            table = ranking_soup.find("table")
-            if table:
-                for row in table.find_all("tr")[1:]:
-                    th = row.find("th", scope="row")
-                    tds = row.find_all("td")
-                    if th and len(tds) >= 2:
-                        category = th.get_text(strip=True)
-                        if category:
-                            ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
-        except Exception:
-            pass
-
-        print(f"[BWF Login] Final: name={player_name}, license={license_id}, club={club}, gender={gender}, email={email}, phone={phone}")
-        print(f"[BWF Login] Ranking: {ranking}")
-
-        if not player_name:
-            player_name = login
-
-        session["bwf_player"] = player_name
-        session["bwf_login"] = login
-        session["bwf_license_id"] = license_id
-        session["bwf_club"] = club
-        session["bwf_gender"] = gender
-        session["bwf_email"] = email
-        session["bwf_phone"] = phone
-        session["bwf_dob"] = dob
-        session["bwf_age"] = age
-        session["bwf_ranking"] = ranking
-        session["admin"] = is_admin_user(login)
-        
-        # Save player data to players.db (we have ALL fields from login)
-        try:
-            if license_id:
-                from players_scraper import update_player_in_db
-                
-                ranking_json = json.dumps(ranking) if ranking else None
-                update_player_in_db(
-                    license_id=license_id,
-                    name=player_name,
-                    profile_url=profile_url,
-                    club=club,
-                    gender=gender,
-                    email=email,
-                    phone=phone,
-                    dob=dob,
-                    age=age,
-                    ranking=ranking_json
-                )
-                logger.info(f"✅ Saved full player data for {player_name} ({license_id}) to players.db")
-                
-                # If player belongs to Komet, add/update in kometPlayers table
-                if club and "komet" in club.lower():
-                    try:
-                        conn_k = sqlite3.connect(PLAYERS_DB)
-                        cur_k = conn_k.cursor()
-                        cur_k.execute("SELECT id, groups FROM kometPlayers WHERE license_id = ?", (license_id,))
-                        existing = cur_k.fetchone()
-                        if existing:
-                            # Update name and email, preserve groups
-                            conn_k.execute(
-                                "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
-                                (player_name, email or None, license_id)
-                            )
-                        else:
-                            # Insert new komet player
-                            conn_k.execute(
-                                "INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
-                                (license_id, player_name, email or None)
-                            )
-                            logger.info(f"✅ Added {player_name} to kometPlayers (auto-detected from login)")
-                        conn_k.commit()
-                        conn_k.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️  Could not update kometPlayers: {e}")
-        except Exception as e:
-            logger.warning(f"⚠️  Could not save player data to DB: {e}")
-        
-        return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
-
-    except ext_requests.RequestException as e:
+        profile = bwf_client.login(login, password)
+    except Exception as e:
+        logger.error(f"❌ Login error: {e}")
         return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
+
+    if not profile:
+        logger.warning(f"⚠️ Login failed for username: {login}")
+        return jsonify(success=False, error="Inloggning misslyckades. Kontrollera att användarnamn och lösenord stämmer med ditt Badminton Sweden-konto.\n\nLogin failed. Please check that your username and password match your Badminton Sweden account."), 401
+
+    session["bwf_player"] = profile["player_name"]
+    session["bwf_login"] = login
+    session["bwf_license_id"] = profile["license_id"]
+    session["bwf_club"] = profile["club"]
+    session["bwf_gender"] = profile["gender"]
+    session["bwf_email"] = profile["email"]
+    session["bwf_phone"] = profile["phone"]
+    session["bwf_dob"] = profile["dob"]
+    session["bwf_age"] = profile["age"]
+    session["bwf_ranking"] = profile["ranking"]
+    # Club accounts have always been admins outright; ordinary logins are looked up.
+    session["admin"] = True if profile["is_club_account"] else is_admin_user(login)
+
+    _persist_login_profile(profile)
+
+    if profile["is_club_account"]:
+        logger.info(f"✅ Club/admin account logged in: {login}")
+    else:
+        logger.info(f"✅ Login successful: {profile['player_name']}")
+    return jsonify(success=True, player_name=profile["player_name"],
+                   license_id=profile["license_id"], club=profile["club"],
+                   gender=profile["gender"], email=profile["email"],
+                   phone=profile["phone"], dob=profile["dob"],
+                   age=profile["age"], ranking=profile["ranking"])
 
 
 @app.route("/api/bwf-logout", methods=["POST"])
@@ -1251,30 +1117,9 @@ def add_admin():
 
     # Verify user against Badminton Sweden
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/user",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=10)
-        resp = s.get("https://badmintonsweden.tournamentsoftware.com/user", timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        token_el = soup.find("input", {"name": "__RequestVerificationToken"})
-        if not token_el:
-            return jsonify(success=False, error="Could not connect to Badminton Sweden"), 500
-        logo_el = soup.find("input", {"name": "LogoUrl"})
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/user", data={
-            "__RequestVerificationToken": token_el.get("value", ""),
-            "ReturnUrl": "/",
-            "LogoUrl": logo_el.get("value", "") if logo_el else "",
-            "Login": username,
-            "Password": password
-        }, allow_redirects=True, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        if soup.find("input", {"name": "Login"}):
+        if not bwf_client.verify_credentials(username, password):
             return jsonify(success=False, error="Invalid Badminton Sweden credentials"), 401
-    except ext_requests.RequestException as e:
+    except Exception as e:
         return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
 
     # Verified - add as admin
