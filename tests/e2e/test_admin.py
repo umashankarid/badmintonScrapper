@@ -67,8 +67,14 @@ def test_admin_can_hide_a_tournament_from_the_home_page(app_server, page, data_d
     selected_for_view. Unchecking only the target checkbox and saving re-affirms
     every other row's existing state and flips just this one -- safe regardless
     of what other tests seeded earlier in the session.
+
+    stays_visible is a positive control: without it, the final body check
+    would pass identically if the page 500'd or sign-in silently failed and
+    the login screen rendered instead -- neither contains "Hide Me Cup"
+    either. Same pairing as test_home_page_lists_only_visible_tournaments.
     """
     name = seed.open_tournament(data_dir, name="Hide Me Cup")
+    stays_visible = seed.open_tournament(data_dir, name="Stay Visible Cup")
     sign_in_as(page, app_server, "sbf04959")
 
     with page.expect_response(lambda r: "/api/bwf-tournaments-all" in r.url):
@@ -89,15 +95,26 @@ def test_admin_can_hide_a_tournament_from_the_home_page(app_server, page, data_d
 
     page.goto(f"{app_server}/")
     page.wait_for_load_state("networkidle")
-    assert name not in page.locator("body").inner_text()
+    body = page.locator("body").inner_text()
+    assert name not in body
+    assert stays_visible in body, \
+        "an unrelated tournament vanished too, or the page failed to render"
 
 
 def test_orphaned_registration_cleanup_runs_from_the_database_page(app_server, page, data_dir):
     """main added this button (f15fa35). An orphan is a registration whose
-    licence has no matching player row."""
+    licence has no matching player row.
+
+    cleanup_orphaned_registrations (app.py:4272) is selective -- empty /
+    ghost-player / non-Komet-main -- so a legitimate Komet registration is
+    seeded alongside the orphan and asserted to survive: without it, an
+    unconditional DELETE with no WHERE clause would pass this test
+    identically to the real, selective cleanup."""
     name = seed.open_tournament(data_dir, name="Orphan Cup")
     seed.registration(data_dir, name, "GHOST-1", singles="HS B")
-    assert len(seed.registrations_for(data_dir, name)) == 1
+    seed.player(data_dir, "DEV-0002", "Elin Elit")
+    seed.registration(data_dir, name, "DEV-0002", singles="DS A")
+    assert len(seed.registrations_for(data_dir, name)) == 2
 
     sign_in_as(page, app_server, "sbf04959")
     page.goto(f"{app_server}/manage-db.html")
@@ -109,4 +126,6 @@ def test_orphaned_registration_cleanup_runs_from_the_database_page(app_server, p
     with page.expect_response(lambda r: "/api/cleanup-orphaned-registrations" in r.url):
         page.get_by_role("button", name="Clean Orphaned Registrations").click()
 
-    assert seed.registrations_for(data_dir, name) == [], "the orphan survived cleanup"
+    remaining_ids = {r["license_id"] for r in seed.registrations_for(data_dir, name)}
+    assert remaining_ids == {"DEV-0002"}, \
+        "cleanup should remove only the orphan and keep the legitimate registration"
