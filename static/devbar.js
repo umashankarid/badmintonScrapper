@@ -13,6 +13,14 @@
   }
   if (!state.dev_tools) return;
 
+  // Who is signed in, so the switch can warn before signing them out.
+  try {
+    const who = await (await fetch("/api/bwf-status")).json();
+    if (who.logged_in) state.signed_in_as = who.player_name || "the current account";
+  } catch (e) {
+    // Non-fatal: without this the switch just skips its confirmation.
+  }
+
   const bar = document.createElement("div");
   bar.id = "devbar";
   const render = () => {
@@ -32,6 +40,17 @@
     button.textContent = dev ? "Switch to LIVE" : "Switch to DEV";
     button.style.cssText = "padding:2px 10px;cursor:pointer;border-radius:3px;border:1px solid #fff;background:transparent;color:#fff;font:inherit";
     button.onclick = async () => {
+      // A session belongs to the backend that created it, so the server signs
+      // you out on any real mode change. Say so before it happens.
+      if (state.signed_in_as) {
+        const target = dev ? "LIVE" : "DEV";
+        const ok = confirm(
+          `Switching to ${target} will sign you out of ${state.signed_in_as}.\n\n` +
+          `Sessions cannot cross modes: a stub account has no meaning against the ` +
+          `real site, and a real login has none against the stubs.`
+        );
+        if (!ok) return;
+      }
       button.disabled = true;
       const res = await fetch("/api/dev-mode", {
         method: "POST",
@@ -45,7 +64,7 @@
         return;
       }
       state.mode = body.mode;
-      location.reload();
+      window.location.href = body.signed_out ? "/login.html" : "/";
     };
     bar.append(label, button);
     if (dev) addPersonaPicker(bar);

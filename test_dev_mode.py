@@ -703,3 +703,55 @@ class TestDevPersonasEndpoint(unittest.TestCase):
                                 json={"login": target["username"], "password": "dev"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["player_name"], target["player_name"])
+
+
+class TestModeSwitchSignsOut(unittest.TestCase):
+    """A session belongs to the backend that created it, so a mode change ends it."""
+
+    def setUp(self):
+        import app
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        bwf_client.set_mode("live")
+
+    def tearDown(self):
+        bwf_client.set_mode("live")
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_switching_to_dev_clears_a_live_session(self):
+        with self.client.session_transaction() as sess:
+            sess["bwf_login"] = "realuser"
+            sess["bwf_player"] = "Real Person"
+            sess["admin"] = True
+        resp = self.client.post("/api/dev-mode", json={"mode": "dev"})
+        self.assertTrue(resp.get_json()["signed_out"])
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("bwf_login", sess)
+            self.assertNotIn("admin", sess)
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_switching_to_live_clears_a_dev_session(self):
+        """The direction the user hit: a stub persona must not survive into live."""
+        bwf_client.set_mode("dev")
+        self.client.post("/api/bwf-login", json={"login": "mini", "password": "dev"})
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["bwf_login"], "mini")
+        resp = self.client.post("/api/dev-mode", json={"mode": "live"})
+        self.assertTrue(resp.get_json()["signed_out"])
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("bwf_login", sess)
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_posting_the_same_mode_keeps_the_session(self):
+        """Only a real change signs out; a no-op POST must not."""
+        with self.client.session_transaction() as sess:
+            sess["bwf_login"] = "realuser"
+        resp = self.client.post("/api/dev-mode", json={"mode": "live"})
+        self.assertFalse(resp.get_json()["signed_out"])
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["bwf_login"], "realuser")
+
+    @patch.dict(os.environ, {"DEV_TOOLS": "1"})
+    def test_switching_without_a_session_reports_no_sign_out(self):
+        resp = self.client.post("/api/dev-mode", json={"mode": "dev"})
+        self.assertFalse(resp.get_json()["signed_out"])

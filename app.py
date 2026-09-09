@@ -5369,6 +5369,7 @@ def set_dev_mode():
     if not bwf_client.dev_tools_enabled():
         return jsonify(success=False, error="Not found"), 404
 
+    previous = bwf_client.get_mode()
     mode = (request.json or {}).get("mode", "")
     try:
         active = bwf_client.set_mode(mode)
@@ -5376,8 +5377,18 @@ def set_dev_mode():
         logger.warning(f"⚠️  Rejected dev-mode switch: {e}")
         return jsonify(success=False, error=str(e)), 400
 
+    # A session belongs to the backend that created it. Carrying a stub persona
+    # into live mode would mean a fake licence acting against real tournament
+    # data; carrying a real login into dev mode is the same problem inverted.
+    # Any genuine mode change therefore signs the user out, in both directions.
+    signed_out = False
+    if active != previous and session.get("bwf_login"):
+        logger.info(f"🔀 Signing out {session.get('bwf_login')} — mode changed {previous} → {active}")
+        session.clear()
+        signed_out = True
+
     logger.info(f"🔀 Mode switched to {active}")
-    return jsonify(success=True, mode=active)
+    return jsonify(success=True, mode=active, signed_out=signed_out)
 
 
 if __name__ == "__main__":
