@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add/Remove Tournaments</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
-        <span style="font-weight:bold;font-size:0.9em;color:#333;" id="admin-header-name"></span>
-        <button onclick="window.location.href='/'" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;border:none;border-radius:4px;color:white;cursor:pointer;">Logout</button>
+    <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
     </div>
-    <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;margin-bottom:20px;flex-wrap:wrap;">
-        <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Tournaments for Registration</a>
-        <a href="/add-remove-tournaments.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Add/Remove</a>
-        <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Previous Tournaments</a>
-        <a href="/send-email.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Send Email</a>
-        <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Manage</a>
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html" class="is-active">Add/Remove</a>
+        <a href="/results.html">Previous Tournaments</a>
+        <a href="/send-email.html">Send Email</a>
+        <a href="/manage.html">Manage</a>
     </nav>
     <script>
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
@@ -30,65 +31,64 @@
         };
     </script>
 
-    <div style="margin-top:20px;">
-        <h2>Available Tournaments from Badminton Sweden</h2>
-        <p style="color:#666;font-size:0.9em;">Check the tournaments you want to appear in the available tournaments list for the players.</p>
-        
-        <details style="margin:15px 0;padding:12px 15px;background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;">
-            <summary style="cursor:pointer;font-weight:bold;color:#2e7d32;">ℹ️ How Groups Work</summary>
-            <div style="margin-top:10px;font-size:0.9em;color:#333;line-height:1.6;">
-                <table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:0.95em;">
-                    <thead>
-                        <tr style="background:#c8e6c9;">
-                            <th style="padding:8px;border:1px solid #a5d6a7;text-align:left;">Player</th>
-                            <th style="padding:8px;border:1px solid #a5d6a7;text-align:center;">Tournament WITH groups</th>
-                            <th style="padding:8px;border:1px solid #a5d6a7;text-align:center;">Tournament with NO groups</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td style="padding:8px;border:1px solid #c8e6c9;">Player in groups LEVEL_2, JUNIOR</td>
-                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees it if LEVEL_2 or JUNIOR matches</td>
-                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">❌ Hidden</td>
-                        </tr>
-                        <tr style="background:#f1f8e9;">
-                            <td style="padding:8px;border:1px solid #c8e6c9;">Player with no groups</td>
-                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">❌ Hidden</td>
-                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees it</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:8px;border:1px solid #c8e6c9;">Admin</td>
-                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees all</td>
-                            <td style="padding:8px;border:1px solid #c8e6c9;text-align:center;">✅ Sees all</td>
-                        </tr>
-                    </tbody>
-                </table>
+    <h1 class="page-title">Available Tournaments from Badminton Sweden</h1>
+    <p class="muted">Check the tournaments you want to appear in the available tournaments list for the players.</p>
 
-                <p style="margin-top:12px;"><strong>Examples:</strong></p>
-                <ul style="margin:5px 0;">
-                    <li><em>Komet Hösttävling</em> with groups <strong>LEVEL_2, LEVEL_5</strong> → Only players in LEVEL_2 or LEVEL_5 will see it.</li>
-                    <li><em>Vikingaslaget</em> with groups <strong>SENIOR, LEVEL_6</strong> → Only players in SENIOR or LEVEL_6 will see it.</li>
-                    <li><em>Spånga Open</em> with <strong>no groups</strong> → Only players who have no groups assigned will see it.</li>
-                    <li><em>Träningscup</em> with groups <strong>JUNIOR</strong> → Only players in JUNIOR group will see it.</li>
-                </ul>
-                <p style="margin-top:8px;color:#666;font-size:0.85em;">Tip: Hold Ctrl/Cmd to select multiple groups. To deselect all groups, hold Ctrl/Cmd and click the selected group(s).</p>
-            </div>
-        </details>
+    <details class="inset" style="margin:var(--sp-4) 0">
+        <summary><strong>How Groups Work</strong></summary>
+        <table class="table table--stack" style="margin-top:var(--sp-3)">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Tournament WITH groups</th>
+                    <th>Tournament with NO groups</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td data-label="Player">Player in groups LEVEL_2, JUNIOR</td>
+                    <td data-label="Tournament WITH groups">Sees it if LEVEL_2 or JUNIOR matches</td>
+                    <td data-label="Tournament with NO groups">Hidden</td>
+                </tr>
+                <tr>
+                    <td data-label="Player">Player with no groups</td>
+                    <td data-label="Tournament WITH groups">Hidden</td>
+                    <td data-label="Tournament with NO groups">Sees it</td>
+                </tr>
+                <tr>
+                    <td data-label="Player">Admin</td>
+                    <td data-label="Tournament WITH groups">Sees all</td>
+                    <td data-label="Tournament with NO groups">Sees all</td>
+                </tr>
+            </tbody>
+        </table>
 
-        <div style="margin-bottom:15px;">
-            <button onclick="hardRefresh()" style="width:auto;padding:8px 14px;background:#f57c00;font-size:0.85em;">🔄 Hard Refresh from Badminton Sweden</button>
-            <span id="cache-status" style="color:#999;font-size:0.85em;margin-left:10px;"></span>
-        </div>
-        <div id="bwf-tournaments-list"></div>
-        <div style="margin-top:20px;display:flex;gap:10px;">
-            <button id="save-btn" onclick="saveSelection()" style="background:#28a745;padding:12px 24px;font-size:1em;width:auto;">Save Selected Tournaments</button>
-            <button onclick="deselectAll()" style="background:#666;padding:12px 24px;font-size:1em;width:auto;">Deselect All</button>
-        </div>
+        <p style="margin-top:var(--sp-3)"><strong>Examples:</strong></p>
+        <ul>
+            <li><em>Komet Hösttävling</em> with groups <strong>LEVEL_2, LEVEL_5</strong> → Only players in LEVEL_2 or LEVEL_5 will see it.</li>
+            <li><em>Vikingaslaget</em> with groups <strong>SENIOR, LEVEL_6</strong> → Only players in SENIOR or LEVEL_6 will see it.</li>
+            <li><em>Spånga Open</em> with <strong>no groups</strong> → Only players who have no groups assigned will see it.</li>
+            <li><em>Träningscup</em> with groups <strong>JUNIOR</strong> → Only players in JUNIOR group will see it.</li>
+        </ul>
+        <p class="muted">Tip: Hold Ctrl/Cmd to select multiple groups. To deselect all groups, hold Ctrl/Cmd and click the selected group(s).</p>
+    </details>
+
+    <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-4)">
+        <button onclick="hardRefresh()" class="btn btn--secondary">Hard Refresh from Badminton Sweden</button>
+        <span id="cache-status" class="muted"></span>
+    </div>
+
+    <div id="bwf-tournaments-list"></div>
+
+    <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-5)">
+        <button id="save-btn" onclick="saveSelection()" class="btn">Save Selected Tournaments</button>
+        <button onclick="deselectAll()" class="btn btn--secondary">Deselect All</button>
+    </div>
     </div>
 
     <script>
         let allPlayerGroups = [];
-        
+
         async function loadPlayerGroups() {
             try {
                 const res = await fetch("/api/player-groups");
@@ -101,102 +101,96 @@
             await loadPlayerGroups();
             const container = document.getElementById("bwf-tournaments-list");
             const cacheStatus = document.getElementById("cache-status");
-            container.innerHTML = "<p style='color: #999;'>Loading tournaments...</p>";
+            container.innerHTML = "<p class=\"muted\">Loading tournaments...</p>";
             cacheStatus.textContent = force ? "Fetching fresh data..." : "";
-            
+
             try {
                 const url = force ? "/api/bwf-tournaments-all?force=true" : "/api/bwf-tournaments-all";
                 const res = await fetch(url);
                 const data = await res.json();
-                
-                if (data.cached) {
-                    cacheStatus.textContent = "✅ Using today's cached data";
-                } else {
-                    cacheStatus.textContent = "✅ Fresh data loaded";
-                }
-                
+
+                cacheStatus.textContent = data.cached ? "Using today's cached data" : "Fresh data loaded";
+
                 if (!res.ok) {
-                    container.innerHTML = `<p style="color: red;">HTTP Error ${res.status}: ${data.error || 'Failed to load tournaments'}</p>`;
-                    return;
-                }
-                
-                if (!data.success) {
-                    container.innerHTML = `<p style="color: red;">Error: ${data.error || 'Failed to load tournaments'}</p>`;
-                    return;
-                }
-                
-                if (!data.tournaments || !data.tournaments.length) {
-                    container.innerHTML = "<p>No tournaments currently available on Badminton Sweden.<br><small style='color: #999;'>This might mean there are no tournaments scheduled in the near future, or the website is temporarily unavailable.</small></p>";
+                    container.innerHTML = `<p class="banner banner--bad">HTTP Error ${res.status}: ${data.error || 'Failed to load tournaments'}</p>`;
                     return;
                 }
 
-                container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 12px;">` +
-                    data.tournaments.map(t => `
-                        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 15px; background: white; border: 1px solid #e0e0e0; border-radius: 8px;">
-                            <input type="checkbox" class="bwf-tournament-checkbox" 
-                                data-url="${t.url}" 
-                                data-name="${t.name.replace(/"/g, '&quot;')}"
-                                data-location="${(t.location || '').replace(/"/g, '&quot;')}"
-                                data-date-start="${t.date_start || ''}"
-                                data-date-end="${t.date_end || ''}"
-                                data-registration-opens="${t.registration_opens || ''}"
-                                data-registration-closes="${t.registration_closes || ''}"
-                                data-cancellation-deadline="${t.cancellation_deadline || ''}"
-                                data-competition-start="${t.competition_start || ''}"
-                                data-competition-end="${t.competition_end || ''}"
-                                ${t.selected_for_view ? 'checked' : ''} 
-                                style="cursor: pointer; width: 20px; height: 20px;">
-                            <div style="flex: 1;">
-                                <div style="font-weight: bold; color: #1a237e;">${t.name} ${(() => {
-                                    const cats = t.categories || {};
-                                    const allLevels = [...(cats.singles_levels||[]), ...(cats.doubles_levels||[]), ...(cats.mixed_levels||[])];
-                                    const hasJunior = allLevels.some(l => /U\d/.test(l));
-                                    const hasSenior = allLevels.some(l => {
-                                        const level = l.split(' ').pop();
-                                        return ['Elit','A','B','C','D'].includes(level) || /^[A-Z]{2}[ABCD]$/.test(l) || /V\d/.test(l);
-                                    });
-                                    if (hasJunior && hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span><span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#f3e5f5;color:#6a1b9a;margin-left:3px;">Senior</span>';
-                                    if (hasJunior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#fff3e0;color:#e65100;margin-left:5px;">Junior</span>';
-                                    if (hasSenior) return '<span style="font-size:0.7em;padding:2px 6px;border-radius:10px;background:#f3e5f5;color:#6a1b9a;margin-left:5px;">Senior</span>';
-                                    return '';
-                                })()}</div>
-                                <div style="color: #666; font-size: 0.9em;">${t.location} • ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
-                                ${t.registration_closes ? `<div style="color:#e65100;font-size:0.8em;">📝 reg. closes: ${t.registration_closes}</div>` : ''}
-                                ${t.categories && (t.categories.singles_levels || t.categories.doubles_levels || t.categories.mixed_levels) ? `<div style="font-size:0.75em;color:#555;margin-top:3px;">🏸 ${[...(t.categories.singles_levels||[]), ...(t.categories.doubles_levels||[]), ...(t.categories.mixed_levels||[])].join(', ')}</div>` : ''}
-                            </div>
-                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                if (!data.success) {
+                    container.innerHTML = `<p class="banner banner--bad">Error: ${data.error || 'Failed to load tournaments'}</p>`;
+                    return;
+                }
+
+                if (!data.tournaments || !data.tournaments.length) {
+                    container.innerHTML = "<p>No tournaments currently available on Badminton Sweden.<br><small class=\"muted\">This might mean there are no tournaments scheduled in the near future, or the website is temporarily unavailable.</small></p>";
+                    return;
+                }
+
+                container.innerHTML = `<div class="card">` +
+                    data.tournaments.map(t => {
+                        const cats = t.categories || {};
+                        const allLevels = [...(cats.singles_levels||[]), ...(cats.doubles_levels||[]), ...(cats.mixed_levels||[])];
+                        const hasJunior = allLevels.some(l => /U\d/.test(l));
+                        const hasSenior = allLevels.some(l => {
+                            const level = l.split(' ').pop();
+                            return ['Elit','A','B','C','D'].includes(level) || /^[A-Z]{2}[ABCD]$/.test(l) || /V\d/.test(l);
+                        });
+                        let ageBadges = '';
+                        if (hasJunior) ageBadges += ' <span class="badge badge--warn">Junior</span>';
+                        if (hasSenior) ageBadges += ' <span class="badge badge--neutral">Senior</span>';
+                        const safeName = t.name.replace(/"/g, '&quot;');
+
+                        return `
+                        <div class="card__row">
+                            <label class="check-row">
+                                <input type="checkbox" class="bwf-tournament-checkbox"
+                                    data-url="${t.url}"
+                                    data-name="${safeName}"
+                                    data-location="${(t.location || '').replace(/"/g, '&quot;')}"
+                                    data-date-start="${t.date_start || ''}"
+                                    data-date-end="${t.date_end || ''}"
+                                    data-registration-opens="${t.registration_opens || ''}"
+                                    data-registration-closes="${t.registration_closes || ''}"
+                                    data-cancellation-deadline="${t.cancellation_deadline || ''}"
+                                    data-competition-start="${t.competition_start || ''}"
+                                    data-competition-end="${t.competition_end || ''}"
+                                    ${t.selected_for_view ? 'checked' : ''}>
                                 <div>
-                                    <label style="font-size:0.75em;color:#666;margin:0;">Reg. deadline</label>
-                                    <input type="date" class="reg-end-date" 
-                                        data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
-                                        value="${t.admin_reg_end_date || ''}" 
-                                        onchange="saveRegDate(this)"
-                                        style="padding:4px 6px;font-size:0.85em;width:auto;margin:0;">
+                                    <strong>${t.name}</strong>${ageBadges}
+                                    <div class="muted">${t.location} &middot; ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
+                                    ${t.registration_closes ? `<div class="muted">Registration closes ${t.registration_closes}</div>` : ''}
+                                    ${allLevels.length ? `<div class="muted">Categories: ${allLevels.join(', ')}</div>` : ''}
                                 </div>
-                                <div>
-                                    <label style="font-size:0.75em;color:#666;margin:0;">Groups</label>
+                            </label>
+                            <div class="stack" style="max-width:260px;margin-top:var(--sp-3)">
+                                <div class="field">
+                                    <label class="field__label">Reg. deadline</label>
+                                    <input type="date" class="reg-end-date"
+                                        data-tournament-name="${safeName}"
+                                        value="${t.admin_reg_end_date || ''}"
+                                        onchange="saveRegDate(this)">
+                                </div>
+                                <div class="field">
+                                    <label class="field__label">Groups</label>
                                     <select class="tournament-groups" multiple
-                                        data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
-                                        onchange="saveGroups(this)"
-                                        style="padding:2px;font-size:0.8em;width:120px;height:60px;margin:0;">
+                                        data-tournament-name="${safeName}"
+                                        onchange="saveGroups(this)">
                                         ${allPlayerGroups.map(g => `<option value="${g}" ${(t.tournament_groups || []).includes(g) ? 'selected' : ''}>${g}</option>`).join("")}
                                     </select>
                                 </div>
-                                <div style="margin-top:4px;">
-                                    <label style="font-size:0.75em;color:#666;display:flex;align-items:center;gap:4px;cursor:pointer;">
-                                        <input type="checkbox" class="accomm-toggle"
-                                            data-tournament-name="${t.name.replace(/"/g, '&quot;')}"
-                                            ${t.enable_accommodation_transport ? 'checked' : ''}
-                                            onchange="saveAccommSetting(this)">
-                                        🏨🚗 Accommodation & Transport
-                                    </label>
-                                </div>
+                                <label class="check-row">
+                                    <input type="checkbox" class="accomm-toggle"
+                                        data-tournament-name="${safeName}"
+                                        ${t.enable_accommodation_transport ? 'checked' : ''}
+                                        onchange="saveAccommSetting(this)">
+                                    Accommodation &amp; Transport
+                                </label>
                             </div>
                         </div>
-                    `).join("") +
+                    `}).join("") +
                     `</div>`;
             } catch (err) {
-                container.innerHTML = `<p style="color: red;">Error loading tournaments: ${err.message}</p>`;
+                container.innerHTML = `<p class="banner banner--bad">Error loading tournaments: ${err.message}</p>`;
             }
         }
 
@@ -216,14 +210,14 @@
                     competition_end: checkbox.dataset.competitionEnd
                 });
             });
-            
+
             const res = await fetch("/api/bwf-tournament-visibility/save", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({tournaments: selected})
             });
             const data = await res.json();
-            
+
             if (data.success) {
                 alert("Tournaments saved! Selected tournaments will now appear on the homepage.");
             } else {
@@ -291,8 +285,8 @@
         loadTournaments();
     </script>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>
