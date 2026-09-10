@@ -156,14 +156,16 @@ def test_level_3_5_player_is_blocked_from_an_sjt_event(app_server, page, data_di
     page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_load_state("networkidle")
 
-    seen = []
-    page.on("dialog", lambda d: (seen.append(d.message), d.accept()))
     page.wait_for_selector("#register-section", state="visible")
     page.locator("select.singles-level").first.select_option("HS B")  # SJT, not MJT
-    with page.expect_event("dialog"):
-        page.click("#submit-btn")
+    # The refusal is a banner now, not an alert(): waiting for it to become
+    # visible is the same "strictly downstream of /api/add-player's response"
+    # guarantee the old expect_event("dialog") gave, without the modal.
+    page.click("#submit-btn")
+    banner = page.locator("#refusal-banner")
+    banner.wait_for(state="visible")
 
-    assert any("är en SJT-kategori (Nivå 6)" in m for m in seen), \
+    assert "är en SJT-kategori (Nivå 6)" in banner.inner_text(), \
         "block did not fire the SJT/MJT rule -- registration may be broken for a different reason"
     assert seed.registrations_for(data_dir, name) == [], "a LEVEL 3-5 player entered an SJT event"
 
@@ -211,13 +213,12 @@ def test_points_above_the_class_maximum_are_blocked(app_server, page, data_dir):
     page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
     page.wait_for_selector("#register-section", state="visible")
 
-    seen = []
-    page.on("dialog", lambda d: (seen.append(d.message), d.accept()))
     page.locator("select.singles-level").first.select_option("DS A")
-    with page.expect_event("dialog"):
-        page.click("#submit-btn")
+    page.click("#submit-btn")
+    banner = page.locator("#refusal-banner")
+    banner.wait_for(state="visible")
 
-    assert any("exceed maximum" in m for m in seen), \
+    assert "exceed maximum" in banner.inner_text(), \
         "block did not fire the points-maximum rule -- registration may be broken for a different reason"
     assert seed.registrations_for(data_dir, name) == [], \
         "a player above the class maximum was allowed to register"

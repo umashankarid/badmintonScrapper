@@ -12,8 +12,7 @@
     <h1 id="tournament-name" class="page-title">Tournament</h1>
 
     <!-- Warnings banner -->
-    <div id="warnings-banner" style="display:none;margin:15px 0;padding:15px;border-radius:8px;border:2px solid #ff6f00;background:#fff3e0;">
-        <h3 style="color:#e65100;margin:0 0 10px 0;">⚠️ Registration Warnings</h3>
+    <div id="warnings-banner" style="display:none">
         <div id="warnings-list"></div>
     </div>
 
@@ -97,6 +96,8 @@
 
                     <!-- .btn is inline-flex: without a flex parent two buttons
                          collapse to ~4px apart, under the tap-target gap. -->
+                    <div id="refusal-banner" class="banner banner--bad" style="display:none" role="alert"></div>
+
                     <div style="display:flex;flex-direction:column;gap:var(--sp-2)">
                         <button type="submit" id="submit-btn" class="btn btn--block">Register</button>
                         <button type="button" id="cancel-edit-btn" class="btn btn--secondary btn--block" style="display:none;" onclick="cancelEdit()">Cancel</button>
@@ -148,6 +149,8 @@
                     <input type="text" id="admin-mixed-partner" autocomplete="off">
                     <div id="admin-mixed-partner-results" class="search-results"></div>
                 </div>
+                <div id="admin-refusal-banner" class="banner banner--bad" style="display:none" role="alert"></div>
+
                 <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">
                     <button type="submit" id="admin-submit-btn" class="btn">Add Player</button>
                     <button type="button" onclick="cancelAdminEdit()" class="btn btn--secondary">Clear</button>
@@ -308,6 +311,7 @@
                     if (today > registrationCloses) {
                         // Registration closed (after deadline)
                         window.registrationClosed = true;
+                        window.registrationCloseDate = registrationCloses;
                         if (!isAdmin) showRegistrationClosed();
                     }
                 }
@@ -505,7 +509,7 @@
                         }
                     });
                     
-                    // Sort categories: U11→U19, then by type
+                    // Sort categories: U11 to U19, then by type
                     const ageOrder = {'U11': 1, 'U13': 2, 'U15': 3, 'U17': 4, 'U19': 5, 'Elit': 6, 'A': 7, 'B': 8, 'C': 9, 'D': 10};
                     const typeOrder = {'HS': 1, 'DS': 2, 'HD': 3, 'DD': 4, 'MD': 5};
                     const sortedCategories = Object.keys(categories).sort((a, b) => {
@@ -628,11 +632,35 @@
             }
         }
 
+        // A refusal used to be an alert(): it vanished on dismiss and never
+        // said what to do next. It now lands in a banner next to the button
+        // that was pressed. #reg-layout is display:none for admins, so the
+        // admin form carries its own slot -- one shared element would render
+        // every admin-path refusal inside a hidden container, saying nothing.
+        function refusalBanner() {
+            return document.getElementById(isAdmin ? "admin-refusal-banner" : "refusal-banner");
+        }
+
+        function showRefusal(title, detail) {
+            const el = refusalBanner();
+            // Server messages are bilingual and newline-separated; alert()
+            // rendered those breaks, innerHTML would collapse them.
+            el.innerHTML = `<p class="banner__title">${title}</p>` +
+                           (detail ? `<p>${String(detail).replace(/\n+/g, "<br>")}</p>` : "");
+            el.style.display = "block";
+            el.scrollIntoView({block: "center", behavior: "smooth"});
+        }
+
+        function clearRefusal() {
+            refusalBanner().style.display = "none";
+        }
+
         document.getElementById("register-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            clearRefusal();
             
             if (window.registrationClosed) {
-                alert("Registration for this tournament has closed.");
+                showRefusal("Registration has closed", "This tournament stopped accepting entries on " + window.registrationCloseDate + ".");
                 return;
             }
             
@@ -641,7 +669,7 @@
             const mixedLevels = document.querySelector(".mixed-level").value;
 
             if (!singlesLevels && !doublesLevels && !mixedLevels) {
-                alert("Please select at least one category/level.");
+                showRefusal("Pick a category first", "Choose at least one singles, doubles or mixed level above.");
                 return;
             }
 
@@ -649,8 +677,8 @@
             if (document.getElementById("need-accommodation").checked) {
                 const ages = document.getElementById("accommodation-ages").value.trim();
                 if (!ages) {
-                    alert("Please enter the ages of persons needing accommodation.\n\nAnge ålder för personerna som behöver boende.");
                     document.getElementById("accommodation-ages").focus();
+                    showRefusal("Ages missing", "Enter the ages of everyone needing accommodation. / Ange ålder för personerna som behöver boende.");
                     return;
                 }
             }
@@ -720,14 +748,14 @@
                         });
                         const retryResult = await retryRes.json();
                         if (!retryResult.success) {
-                            alert(retryResult.error || "Registration failed");
+                            showRefusal("Registration failed", retryResult.error || "");
                             return;
                         }
                     } else {
                         return;
                     }
                 } else {
-                    alert(result.error || "Registration failed");
+                    showRefusal("Registration failed", result.error || "");
                     return;
                 }
             }
@@ -939,7 +967,7 @@
                         }
                     } else if (valData.hard_block) {
                         // Points above max - NEVER allowed
-                        alert(`${playerName}: ${valData.message}`);
+                        showRefusal(playerName + " cannot be entered", valData.message);
                         return false;
                     } else {
                         // Points below min - warn but allow with permission
@@ -1008,7 +1036,7 @@
                     return confirm(`Partner ${player.name}: ${valData.message}\n\nDoes the partner have dispense (special permission) to play in this category?`);
                 } else if (valData.hard_block) {
                     // Points above max - NEVER allowed
-                    alert(`Partner ${player.name}: ${valData.message}`);
+                    showRefusal(player.name + " cannot be your partner", valData.message);
                     return false;
                 } else {
                     // Points below min - warn but allow with permission
@@ -1034,7 +1062,7 @@
             });
             const result = await res.json();
             if (!result.available) {
-                alert(result.message);
+                showRefusal("Cannot register", result.message);
                 document.getElementById("doubles-partner").value = "";
                 return;
             }
@@ -1071,7 +1099,7 @@
             });
             const result = await res.json();
             if (!result.available) {
-                alert(result.message);
+                showRefusal("Cannot register", result.message);
                 document.getElementById("mixed-partner").value = "";
                 return;
             }
@@ -1108,7 +1136,7 @@
             });
             const result = await res.json();
             if (!result.available) {
-                alert(result.message);
+                showRefusal("Cannot register", result.message);
                 document.getElementById("admin-doubles-partner").value = "";
                 return;
             }
@@ -1145,7 +1173,7 @@
             });
             const result = await res.json();
             if (!result.available) {
-                alert(result.message);
+                showRefusal("Cannot register", result.message);
                 document.getElementById("admin-mixed-partner").value = "";
                 return;
             }
@@ -1305,6 +1333,7 @@
 
         document.getElementById("admin-edit-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            clearRefusal();
             const singlesLevels = document.querySelector(".admin-singles-level").value;
             const doublesLevels = document.querySelector(".admin-doubles-level").value;
             const mixedLevels = document.querySelector(".admin-mixed-level").value;
@@ -2005,17 +2034,17 @@
                         let lines = [];
                         if (types.age.length) {
                             const categories = types.age.map(w => w.event).join(", ");
-                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;font-size:0.9em;">🟠 Must be at least 13 to play ${categories}</div>`);
+                            lines.push(`<div class="banner banner--warn"><p>Must be at least 13 to play ${categories}</p></div>`);
                         }
                         if (types.points_high.length) {
                             const categories = types.points_high.map(w => w.event).join(", ");
-                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;font-size:0.9em;">🔴 Points too high for ${categories} — NOT ALLOWED</div>`);
+                            lines.push(`<div class="banner banner--bad"><p class="banner__title">Not allowed</p><p>Points too high for ${categories}</p></div>`);
                         }
                         if (types.points_low.length) {
                             const categories = types.points_low.map(w => w.event).join(", ");
-                            lines.push(`<div style="margin:4px 0;padding:6px 10px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;font-size:0.9em;">🟠 Points below minimum for ${categories}</div>`);
+                            lines.push(`<div class="banner banner--warn"><p>Points below minimum for ${categories}</p></div>`);
                         }
-                        return `<div style="margin-bottom:10px;"><strong>${name}</strong>${lines.join("")}</div>`;
+                        return `<div style="margin-bottom:var(--sp-3)"><strong>${name}</strong>${lines.join("")}</div>`;
                     }).join("");
                 } else {
                     // Player sees only their own warnings, grouped by type
@@ -2026,15 +2055,15 @@
                     
                     if (ageWarnings.length) {
                         const categories = ageWarnings.map(w => w.event).join(", ");
-                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;">🟠 Must be at least 13 to play ${categories}</div>`);
+                        lines.push(`<div class="banner banner--warn"><p>Must be at least 13 to play ${categories}</p></div>`);
                     }
                     if (pointsHighWarnings.length) {
                         const categories = pointsHighWarnings.map(w => w.event).join(", ");
-                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#ffebee;border-left:4px solid #d32f2f;border-radius:4px;">🔴 Points too high for ${categories} — NOT ALLOWED</div>`);
+                        lines.push(`<div class="banner banner--bad"><p class="banner__title">Not allowed</p><p>Points too high for ${categories}</p></div>`);
                     }
                     if (pointsLowWarnings.length) {
                         const categories = pointsLowWarnings.map(w => w.event).join(", ");
-                        lines.push(`<div style="margin:5px 0;padding:8px 12px;background:#fff3e0;border-left:4px solid #ff9800;border-radius:4px;">🟠 Points below minimum for ${categories}</div>`);
+                        lines.push(`<div class="banner banner--warn"><p>Points below minimum for ${categories}</p></div>`);
                     }
                     
                     list.innerHTML = lines.join("");
