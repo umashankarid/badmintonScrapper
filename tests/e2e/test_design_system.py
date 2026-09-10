@@ -9,6 +9,9 @@ hundred rules depend on are actually defined.
 
 import requests
 
+from tests.e2e import seed
+from tests.e2e.test_player import sign_in_as
+
 
 def test_the_font_is_served_from_this_server(app_server):
     res = requests.get(f"{app_server}/static/fonts/plex-sans-latin.woff2", timeout=10)
@@ -55,3 +58,30 @@ def test_no_page_requests_a_third_party_font(app_server, page):
     page.goto(f"{app_server}/login.html")
     page.wait_for_selector("#login-form")
     assert not external, f"page reached out for a webfont: {external}"
+
+
+def test_tournament_card_is_stacked_on_a_phone_and_sideways_on_a_desktop(
+        app_server, page, data_dir):
+    """The one layout decision on this page: the card turns sideways at
+    768px rather than the list becoming a grid. Assert the flex direction
+    rather than pixel positions -- positions move every time copy changes,
+    the direction is the actual decision."""
+    # groups=["SENIOR"] matches Adam's persona (bwf_dev.py) -- open_tournaments()
+    # (app.py) hides a group-less fixture from any signed-in player who has
+    # groups, so a plain open_tournament() call here would time out on
+    # `.t-card__main` for reasons that have nothing to do with this page's
+    # markup.
+    seed.open_tournament(data_dir, name="Breakpoint Cup", groups=["SENIOR"])
+    sign_in_as(page, app_server, "adam")
+
+    page.set_viewport_size({"width": 375, "height": 800})
+    page.goto(f"{app_server}/")
+    page.wait_for_selector(".t-card__main")
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.t-card__main')).flexDirection"
+    ) == "column"
+
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.wait_for_function(
+        "getComputedStyle(document.querySelector('.t-card__main')).flexDirection === 'row'"
+    )

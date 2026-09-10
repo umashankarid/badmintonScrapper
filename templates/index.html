@@ -4,57 +4,55 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Badminton Tournaments</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-        <div id="bwf-user" style="display:none;align-items:center;gap:8px;">
-            <span id="bwf-player-info" style="font-weight:bold;"></span>
-            <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
+    <div class="page page--list">
+    <div id="bwf-user" class="topbar" style="display:none">
+        <span id="bwf-player-info" style="font-weight:600"></span>
+        <button onclick="bwfLogout()" class="btn btn--secondary">Logout</button>
+    </div>
+    <div id="admin-info" style="display:none;flex-direction:column">
+        <div class="topbar">
+            <span id="admin-player-info" style="font-weight:600"></span>
+            <button onclick="bwfLogout()" class="btn btn--secondary">Logout</button>
         </div>
-        <div id="admin-info" style="display:none;flex-direction:column;width:100%;">
-            <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
-                <span id="admin-player-info" style="font-weight:bold;font-size:0.9em;color:#333;"></span>
-                <button onclick="bwfLogout()" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;">Logout</button>
-            </div>
-            <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;flex-wrap:wrap;">
-                <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Tournaments for Registration</a>
-                <a href="/add-remove-tournaments.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Add/Remove</a>
-                <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Previous Tournaments</a>
-                <a href="/send-email.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Send Email</a>
-                <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Manage</a>
-            </nav>
-        </div>
+        <nav class="admin-nav">
+            <a href="/" class="is-active">Tournaments for Registration</a>
+            <a href="/add-remove-tournaments.html">Add/Remove</a>
+            <a href="/results.html">Previous Tournaments</a>
+            <a href="/send-email.html">Send Email</a>
+            <a href="/manage.html">Manage</a>
+        </nav>
     </div>
 
     <p id="loading-msg" style="display:none;">Loading tournaments with open registration...</p>
-    <div id="login-section" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:90vh;padding:20px;">
-        <div style="background:white;max-width:480px;padding:50px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);position:relative;overflow:hidden;">
-            <!-- Decorative top bar -->
-            <div style="position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg, #0d47a1, #1a237e,#0d47a1);"></div>
-            
-            <h2 style="color:#1a237e;text-align:center;margin-bottom:15px;font-size:1.8em;">BMK Komet</h2>
-            <p style="color:#0d47a1;text-align:center;font-size:0.95em;margin-bottom:30px;font-weight:500;">Tournament Registration System</p>
-            
-            <form id="bwf-login-form" style="margin:0;">
-                <label for="bwf-email" style="color:#1a237e;font-weight:600;display:block;margin-bottom:8px;">Email / Username</label>
-                <input type="text" id="bwf-email" placeholder="Enter your email or username" required style="margin-bottom:15px;">
-                
-                <label for="bwf-password" style="color:#1a237e;font-weight:600;display:block;margin-bottom:8px;">Password</label>
-                <input type="password" id="bwf-password" placeholder="Enter your password" required style="margin-bottom:20px;">
-                
-                <button type="submit" style="background:linear-gradient(135deg, #0d47a1, #1a237e);font-size:1.05em;padding:14px;margin-bottom:15px;">Login</button>
-                <p style="color:#666;font-size:0.8em;text-align:center;margin:0;">Use the same login credentials as your Badminton Sweden account to access tournaments and manage your registrations.</p>
-                <p id="bwf-error" style="color:#d32f2f;display:none;margin-top:15px;text-align:center;background:#ffebee;padding:12px;border-radius:8px;"></p>
-            </form>
-            
-            <div style="border-top:2px solid #eee;padding-top:25px;margin-top:25px;text-align:center;">
-                <p style="color:#666;font-size:0.85em;margin-bottom:8px;">Har du inget konto? / Don't have an account?</p>
-                <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" style="color:#0d47a1;font-size:0.85em;text-decoration:underline;">Skapa konto på Badminton Sweden / Create account on Badminton Sweden →</a>
+    <div id="login-section" style="display:none;flex-direction:column;align-items:center;min-height:80vh;justify-content:center">
+        <div class="card" style="width:100%;max-width:420px">
+            <div class="card__body">
+                <h1 style="text-align:center;margin-bottom:var(--sp-1)">BMK Komet</h1>
+                <p class="muted" style="text-align:center;margin:0 0 var(--sp-5)">Tournament Registration System</p>
+
+                <form id="bwf-login-form">
+                    <div class="field">
+                        <label class="field__label" for="bwf-email">Email / Username</label>
+                        <input type="text" id="bwf-email" required>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="bwf-password">Password</label>
+                        <input type="password" id="bwf-password" required>
+                    </div>
+                    <button type="submit" class="btn btn--block">Login</button>
+                    <p class="muted" style="text-align:center;margin:var(--sp-3) 0 0">Use the same login credentials as your Badminton Sweden account.</p>
+                    <div id="bwf-error" class="banner banner--bad" style="display:none"></div>
+                </form>
+
+                <div class="inset" style="margin-top:var(--sp-5);text-align:center">
+                    <p class="muted" style="margin:0 0 var(--sp-1)">Har du inget konto? / Don't have an account?</p>
+                    <a href="https://badmintonsweden.tournamentsoftware.com/user/Signup" target="_blank" rel="noopener">Skapa konto på Badminton Sweden</a>
+                </div>
             </div>
         </div>
-        
-        <p style="color:#666;text-align:center;margin-top:30px;font-size:0.9em;max-width:480px;">Use the same login credentials as your Badminton Sweden account to access tournaments and manage your registrations.</p>
     </div>
     <div id="tournaments" style="display:none;"></div>
 
@@ -128,7 +126,7 @@
             const tournaments = data.tournaments || [];
             
             if (!tournaments.length) {
-                container.innerHTML = "<p>No tournaments with open registration found.</p>";
+                container.innerHTML = `<div class="card"><div class="card__body muted">No tournaments with open registration found.</div></div>`;
                 return;
             }
 
@@ -165,58 +163,55 @@
                 let badge = "";
                 if (statusData.logged_in && statusData.is_admin) {
                     const count = regCounts[t.url] || 0;
-                    badge = count > 0 ?
-                        `<span style="background:#0d47a1;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">${count} player${count !== 1 ? 's' : ''} registered</span>` :
-                        `<span style="background:#999;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">No registrations</span>`;
+                    badge = count > 0
+                        ? `<span class="badge badge--neutral">${count} registered</span>`
+                        : `<span class="badge badge--neutral">No registrations</span>`;
                 } else if (statusData.logged_in) {
-                    const isRegistered = registeredUrls.has(t.url);
-                    badge = isRegistered ?
-                        `<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Registered</span>` :
-                        `<span style="background:#f0a000;color:white;padding:4px 8px;border-radius:4px;font-size:0.8em;">Not Registered</span>`;
+                    badge = registeredUrls.has(t.url)
+                        ? `<span class="badge badge--ok">Registered</span>`
+                        : `<span class="badge badge--neutral">Not registered</span>`;
                 }
-                
-                // Check if registration closes within 7 days and calculate days left
-                // Use admin_reg_end_date if set, otherwise fall back to registration_closes
-                let urgentStyle = "";
-                let daysCounter = "";
+
+                // Deadline. The old card said this three ways at once -- a
+                // coloured left stripe, a background wash and a banner. One
+                // line of text in --warn says it once.
+                let deadline = "";
                 const regEndDate = t.admin_reg_end_date || t.registration_closes;
                 if (regEndDate) {
-                    const closeDate = new Date(regEndDate);
-                    const today = new Date();
-                    const daysLeft = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
-                    
+                    const daysLeft = Math.ceil(
+                        (new Date(regEndDate) - new Date()) / (1000 * 60 * 60 * 24));
                     if (daysLeft === 0) {
-                        // Last day for registration - orange banner
-                        daysCounter = `<div style="background:#ff6f00;color:white;padding:8px 15px;font-weight:bold;font-size:0.85em;text-align:center;">⚠️ Last day for registration</div>`;
-                        urgentStyle = "border-left:4px solid #ff6f00;";
+                        deadline = `<div class="label" style="color:var(--warn)">Last day to register</div>`;
                     } else if (daysLeft > 0) {
                         const dayWord = daysLeft === 1 ? "day" : "days";
-                        daysCounter = `<div style="background:#0d47a1;color:white;padding:8px 15px;font-weight:bold;font-size:0.85em;text-align:center;">${daysLeft} ${dayWord} left for registration</div>`;
-                        if (daysLeft <= 7) {
-                            urgentStyle = "background: linear-gradient(to right, #fff3e0, #ffffff);border-left:4px solid #ff6f00;";
-                        }
+                        const tone = daysLeft <= 7 ? "var(--warn)" : "var(--muted)";
+                        deadline = `<div class="label" style="color:${tone}">${daysLeft} ${dayWord} left</div>`;
                     }
                 }
-                
-                const fakeTag = t._fake ? ' <span style="background:#c2410c;color:#fff;padding:0 5px;border-radius:3px;font-size:0.75em">FAKE</span>' : "";
+
+                const fakeTag = t._fake ? ` <span class="badge badge--bad">Fake</span>` : "";
                 return `
-                <div class="tournament-card" style="${urgentStyle}padding:0;overflow:hidden;">
-                    ${daysCounter ? `<div style="padding:8px 15px;text-align:center;">${daysCounter}</div>` : ''}
-                    <div style="padding:15px;${daysCounter ? 'padding-top:0;' : ''}">
-                        <h2 style="margin:0 0 8px 0;"><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a>${fakeTag} ${badge}</h2>
-                        <div class="details">
-                            <span class="location">${t.location}</span>
-                            <span class="date">📅 Competition: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
-                            ${t.admin_reg_end_date ? `<span style="color:#e65100;font-weight:500;">📝 Komet registration closes: ${t.admin_reg_end_date}</span>` : ''}
-                            ${t.cancellation_deadline ? `<span style="color:#666;">🔄 Cancellation deadline: ${t.cancellation_deadline}</span>` : ''}
+                <div class="card">
+                    <div class="t-card__main">
+                        <div class="t-card__detail">
+                            <h2 class="card-title"><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a></h2>
+                            <div class="muted" style="margin-top:var(--sp-1)">
+                                ${t.location} &middot; ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}
+                            </div>
+                            ${t.admin_reg_end_date ? `<div class="muted">Komet registration closes ${t.admin_reg_end_date}</div>` : ''}
+                            ${t.cancellation_deadline ? `<div class="muted">Cancellation deadline ${t.cancellation_deadline}</div>` : ''}
                         </div>
-                        ${statusData.logged_in && !statusData.is_admin ? `
-                            <button onclick="toggleReminder('${t.name.replace(/'/g, "\\'")}')" 
-                                id="reminder-btn-${t.name.replace(/[^a-zA-Z0-9]/g, '_')}"
-                                style="margin-top:8px;width:auto;padding:4px 10px;font-size:0.8em;background:${optedOutTournaments.has(t.name) ? '#999' : '#4caf50'};">
-                                ${optedOutTournaments.has(t.name) ? '🔕 Reminders off' : '🔔 Reminders on'}
-                            </button>
-                        ` : ''}
+                        <div class="t-card__action">
+                            ${deadline}
+                            ${badge}${fakeTag}
+                            ${statusData.logged_in && !statusData.is_admin ? `
+                                <button onclick="toggleReminder('${t.name.replace(/'/g, "\\'")}')"
+                                    id="reminder-btn-${t.name.replace(/[^a-zA-Z0-9]/g, '_')}"
+                                    class="btn btn--secondary">
+                                    ${optedOutTournaments.has(t.name) ? 'Reminders off' : 'Reminders on'}
+                                </button>
+                            ` : ''}
+                        </div>
                     </div>
                 </div>
             `}).join("");
@@ -240,9 +235,10 @@
         checkBwfStatus();
         loadTournaments();
     </script>
+    </div>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>
