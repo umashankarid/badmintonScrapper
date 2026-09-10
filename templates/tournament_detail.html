@@ -4,76 +4,70 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tournament Detail</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <style>
-        .back-link { color:#0066cc; text-decoration:none; display:inline-block; margin-bottom:15px; }
-        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; margin:15px 0; }
-        .stat-box { text-align:center; padding:15px; background:#f8f9fa; border-radius:8px; }
-        .stat-box .value { font-size:1.8em; font-weight:700; color:#0066cc; }
-        .stat-box .label { font-size:0.85em; color:#666; }
-        .club-table { width:100%; border-collapse:collapse; margin:15px 0; }
-        .club-table th, .club-table td { padding:8px 12px; text-align:left; border-bottom:1px solid #eee; }
-        .club-table th { background:#f8f9fa; }
-        .club-table tr:hover { background:#f0f8ff; cursor:pointer; }
-        .club-select { width:100%; padding:12px; border:1px solid #ddd; border-radius:6px; font-size:1em; margin:10px 0; }
-        .player-row { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; cursor:pointer; }
-        .player-row:hover { background:#f0f8ff; }
-        .medal-badge { padding:2px 6px; border-radius:4px; font-size:0.75em; font-weight:600; margin-left:4px; }
-        .medal-badge.gold { background:#FFF8DC; color:#B8860B; }
-        .medal-badge.silver { background:#F5F5F5; color:#666; }
-        .medal-badge.bronze { background:#FFF0E0; color:#8B4513; }
-        .match-card { border:1px solid #e0e0e0; border-radius:8px; padding:12px; margin-bottom:8px; }
-        .match-card .round { font-size:0.85em; color:#888; }
-        .won { font-weight:700; color:#28a745; }
-        .lost { color:#666; }
-        .stats-table { width:100%; border-collapse:collapse; margin:10px 0; }
-        .stats-table th, .stats-table td { padding:8px; text-align:left; border-bottom:1px solid #eee; }
-        .stats-table th { background:#f8f9fa; }
-    </style>
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <a href="/results.html" class="back-link">← Back to Results</a>
-    <h1 id="tournament-name">Loading...</h1>
-    <p id="tournament-info" style="color:#666;"></p>
+    <div class="page">
+    <a href="/results.html" class="back-link" style="display:inline-block;margin-bottom:var(--sp-3)">Back to Results</a>
+    <h1 id="tournament-name" class="page-title">Loading...</h1>
+    <p id="tournament-info" class="muted"></p>
 
     <!-- Overview Stats -->
-    <h3>Tournament Overview</h3>
-    <div class="stats-grid" id="overview-stats">
-        <div class="stat-box"><div class="value" id="stat-total-players">-</div><div class="label">Players</div></div>
-        <div class="stat-box"><div class="value" id="stat-total-clubs">-</div><div class="label">Clubs</div></div>
+    <h2 class="card-title" style="margin:var(--sp-5) 0 var(--sp-3)">Tournament Overview</h2>
+    <div id="overview-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--sp-3)">
+        <div class="inset" style="text-align:center">
+            <div style="font-size:28px;font-weight:700;color:var(--blue)" id="stat-total-players">-</div>
+            <div class="label">Players</div>
+        </div>
+        <div class="inset" style="text-align:center">
+            <div style="font-size:28px;font-weight:700;color:var(--blue)" id="stat-total-clubs">-</div>
+            <div class="label">Clubs</div>
+        </div>
     </div>
 
     <!-- Club Table (all clubs with player count) -->
     <div id="club-table-section">
-        <h3>Clubs</h3>
-        <table class="club-table" id="club-table"></table>
+        <h2 class="card-title" style="margin:var(--sp-5) 0 var(--sp-3)">Clubs</h2>
+        <table class="table table--stack" id="club-table"></table>
     </div>
 
     <!-- Club Detail (shown when club selected) -->
     <div id="club-detail" style="display:none;">
-        <a href="#" class="back-link" onclick="hideClubDetail(); return false;">← Back to all clubs</a>
-        <h2 id="club-detail-title"></h2>
-        <h3>Club Stats</h3>
-        <div class="stats-grid">
-            <div class="stat-box"><div class="value" id="stat-club-players">0</div><div class="label">Players</div></div>
-            <div class="stat-box" style="cursor:pointer" onclick="showMedalWinners('1')"><div class="value" style="color:#FFD700" id="stat-gold">0</div><div class="label">🥇 Gold</div></div>
-            <div class="stat-box" style="cursor:pointer" onclick="showMedalWinners('2')"><div class="value" style="color:#C0C0C0" id="stat-silver">0</div><div class="label">🥈 Silver</div></div>
-            <div class="stat-box" style="cursor:pointer" onclick="showMedalWinners('3')"><div class="value" style="color:#CD7F32" id="stat-bronze">0</div><div class="label">🥉 Bronze</div></div>
+        <a href="#" class="back-link" style="display:inline-block;margin-bottom:var(--sp-3)" onclick="hideClubDetail(); return false;">Back to all clubs</a>
+        <h2 class="page-title" id="club-detail-title"></h2>
+        <h3 class="card-title" style="margin:var(--sp-4) 0 var(--sp-3)">Club Stats</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--sp-3)">
+            <div class="inset" style="text-align:center">
+                <div style="font-size:28px;font-weight:700;color:var(--blue)" id="stat-club-players">0</div>
+                <div class="label">Players</div>
+            </div>
+            <div class="inset" style="text-align:center;cursor:pointer" onclick="showMedalWinners('1')">
+                <div style="font-size:28px;font-weight:700;color:var(--blue)" id="stat-gold">0</div>
+                <div class="label">Gold</div>
+            </div>
+            <div class="inset" style="text-align:center;cursor:pointer" onclick="showMedalWinners('2')">
+                <div style="font-size:28px;font-weight:700;color:var(--blue)" id="stat-silver">0</div>
+                <div class="label">Silver</div>
+            </div>
+            <div class="inset" style="text-align:center;cursor:pointer" onclick="showMedalWinners('3')">
+                <div style="font-size:28px;font-weight:700;color:var(--blue)" id="stat-bronze">0</div>
+                <div class="label">Bronze</div>
+            </div>
         </div>
-        <div id="medal-winners" style="display:none;margin-bottom:15px;padding:10px;background:#fffde7;border-radius:8px;">
-            <h4 id="medal-winners-title"></h4>
+        <div id="medal-winners" class="inset" style="display:none;margin:var(--sp-3) 0">
+            <h4 id="medal-winners-title" style="margin:0 0 var(--sp-2)"></h4>
             <div id="medal-winners-list"></div>
         </div>
-        <h3>Players</h3>
-        <div id="club-players"></div>
+        <h3 class="card-title" style="margin:var(--sp-4) 0 var(--sp-3)">Players</h3>
+        <div id="club-players" class="card"></div>
     </div>
 
     <!-- Player Detail (shown when player selected) -->
     <div id="player-detail" style="display:none;">
-        <a href="#" class="back-link" onclick="hidePlayerDetail(); return false;">← Back to club</a>
-        <h2 id="player-name"></h2>
-        <table class="stats-table" id="player-stats"></table>
-        <h3 style="margin-top:20px;">Matches</h3>
+        <a href="#" class="back-link" style="display:inline-block;margin-bottom:var(--sp-3)" onclick="hidePlayerDetail(); return false;">Back to club</a>
+        <h2 class="page-title" id="player-name"></h2>
+        <table class="table table--stack" id="player-stats"></table>
+        <h3 class="card-title" style="margin:var(--sp-5) 0 var(--sp-3)">Matches</h3>
         <div id="player-matches"></div>
     </div>
 
@@ -105,15 +99,15 @@
 
             // Club table
             document.getElementById('club-table').innerHTML =
-                '<tr><th>Club</th><th>Players</th><th>🥇</th><th>🥈</th><th>🥉</th></tr>' +
+                '<thead><tr><th>Club</th><th>Players</th><th>Gold</th><th>Silver</th><th>Bronze</th></tr></thead><tbody>' +
                 clubs.map(c => {
                     const count = allPlayers.filter(p => p.club === c).length;
                     const clubMedals = getMedalsForClub(c);
                     return `<tr onclick="selectClub('${c.replace(/'/g,"\\'")}')">
-                        <td>${c}</td><td>${count}</td>
-                        <td>${clubMedals.gold}</td><td>${clubMedals.silver}</td><td>${clubMedals.bronze}</td>
+                        <td data-label="Club">${c}</td><td data-label="Players">${count}</td>
+                        <td data-label="Gold">${clubMedals.gold}</td><td data-label="Silver">${clubMedals.silver}</td><td data-label="Bronze">${clubMedals.bronze}</td>
                     </tr>`;
-                }).join('');
+                }).join('') + '</tbody>';
         }
 
         function getMedalsForClub(club) {
@@ -154,11 +148,11 @@
             document.getElementById('club-players').innerHTML = players.map(p => {
                 const playerMedals = allMedals.filter(m => normalizeName(m.name) === normalizeName(p.name));
                 const badges = playerMedals.map(m => {
-                    const cls = m.placement === '1' ? 'gold' : m.placement === '2' ? 'silver' : 'bronze';
-                    const icon = m.placement === '1' ? '🥇' : m.placement === '2' ? '🥈' : '🥉';
-                    return `<span class="medal-badge ${cls}">${icon} ${m.event}</span>`;
-                }).join('');
-                return `<div class="player-row" onclick="showPlayer('${p.player_id || ''}', '${p.name.replace(/'/g,"\\'")}')">
+                    const cls = m.placement === '1' ? 'badge--ok' : m.placement === '2' ? 'badge--warn' : 'badge--neutral';
+                    const label = m.placement === '1' ? 'Gold' : m.placement === '2' ? 'Silver' : 'Bronze';
+                    return `<span class="badge ${cls}">${label} &middot; ${m.event}</span>`;
+                }).join(' ');
+                return `<div class="card__row" style="display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2);flex-wrap:wrap;cursor:pointer" onclick="showPlayer('${p.player_id || ''}', '${p.name.replace(/'/g,"\\'")}')">
                     <span>${p.name}</span>
                     <div>${badges}</div>
                 </div>`;
@@ -168,23 +162,23 @@
         function hideClubDetail() {
             document.getElementById('club-detail').style.display = 'none';
             document.getElementById('club-table-section').style.display = '';
-            document.getElementById('overview-stats').style.display = '';
+            document.getElementById('overview-stats').style.display = 'grid';
         }
 
         let currentClub = '';
 
         function showMedalWinners(placement) {
-            const icon = placement === '1' ? '🥇 Gold' : placement === '2' ? '🥈 Silver' : '🥉 Bronze';
+            const label = placement === '1' ? 'Gold' : placement === '2' ? 'Silver' : 'Bronze';
             const clubPlayerNames = allPlayers.filter(p => p.club === currentClub).map(p => normalizeName(p.name));
             const winners = allMedals.filter(m => {
                 const matchPlacement = placement === '3' ? m.placement.startsWith('3') : m.placement === placement;
                 return matchPlacement && clubPlayerNames.includes(normalizeName(m.name));
             });
 
-            document.getElementById('medal-winners-title').textContent = `${icon} Winners (${winners.length})`;
+            document.getElementById('medal-winners-title').textContent = `${label} Winners (${winners.length})`;
             document.getElementById('medal-winners-list').innerHTML = winners.map(w =>
-                `<div style="padding:4px 0;">${w.name} — <em>${w.event}</em></div>`
-            ).join('') || '<p>None</p>';
+                `<div style="padding:var(--sp-1) 0;">${w.name} — <em>${w.event}</em></div>`
+            ).join('') || '<p class="muted">None</p>';
             document.getElementById('medal-winners').style.display = '';
         }
 
@@ -212,17 +206,21 @@
             if (!data.success) return;
 
             document.getElementById('player-stats').innerHTML =
-                '<thead><tr><th></th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr></thead><tbody>' +
-                data.stats.map(s => `<tr><td><strong>${s.category}</strong></td><td>${s.played}</td><td>${s.win_loss}</td><td>${s.sets}</td><td>${s.points}</td></tr>`).join('') + '</tbody>';
+                '<thead><tr><th>Category</th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr></thead><tbody>' +
+                data.stats.map(s => `<tr><td data-label="Category"><strong>${s.category}</strong></td><td data-label="Played">${s.played}</td><td data-label="W-L">${s.win_loss}</td><td data-label="Sets">${s.sets}</td><td data-label="Points">${s.points}</td></tr>`).join('') + '</tbody>';
 
             document.getElementById('player-matches').innerHTML = data.matches.map(m => `
-                <div class="match-card">
-                    <div class="round">${m.round} · ${m.event}</div>
-                    <div><span class="${m.team1_won ? 'won' : 'lost'}">${m.team1} ${m.team1_won ? '✓' : ''}</span></div>
-                    <div><span class="${!m.team1_won ? 'won' : 'lost'}">${m.team2} ${!m.team1_won ? '✓' : ''}</span></div>
-                    ${m.score ? `<div style="font-weight:700;color:#0066cc;margin-top:4px;">${m.score}</div>` : ''}
+                <div class="card">
+                    <div class="card__body">
+                        <div class="muted">${m.round} · ${m.event}</div>
+                        <div class="stack">
+                            <div>${m.team1} <span class="badge ${m.team1_won ? 'badge--ok' : 'badge--neutral'}">${m.team1_won ? 'Won' : 'Lost'}</span></div>
+                            <div>${m.team2} <span class="badge ${!m.team1_won ? 'badge--ok' : 'badge--neutral'}">${!m.team1_won ? 'Won' : 'Lost'}</span></div>
+                        </div>
+                        ${m.score ? `<div style="font-weight:700;color:var(--blue);margin-top:var(--sp-2)">${m.score}</div>` : ''}
+                    </div>
                 </div>
-            `).join('') || '<p>No match details available</p>';
+            `).join('') || '<p class="muted">No match details available</p>';
         }
 
         function hidePlayerDetail() {
@@ -233,9 +231,10 @@
 
         loadData();
     </script>
+    </div>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>
