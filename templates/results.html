@@ -12,7 +12,8 @@
         <span id="admin-header-name" style="font-weight:600"></span>
         <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
     </div>
-    <nav class="admin-nav">
+    <button type="button" class="btn btn--secondary admin-nav__toggle" aria-expanded="false" aria-controls="admin-nav" onclick="const n=this.nextElementSibling;const o=n.classList.toggle('is-open');this.setAttribute('aria-expanded',o)">Menu</button>
+        <nav class="admin-nav" id="admin-nav">
         <a href="/">Tournaments for Registration</a>
         <a href="/add-remove-tournaments.html">Add/Remove</a>
         <a href="/results.html" class="is-active">Previous Tournaments</a>

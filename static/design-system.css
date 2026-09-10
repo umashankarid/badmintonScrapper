@@ -413,6 +413,31 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 }
 .admin-nav a:hover { color: var(--ink); text-decoration: none; }
 .admin-nav a.is-active { color: var(--blue); border-bottom-color: var(--blue); }
+/* Five tabs do not fit a phone in one row and wrapping them reads as two
+   unrelated rows. Below 768 the row collapses behind a Menu button and opens
+   as a vertical list; the button does not exist at desktop widths. */
+.admin-nav__toggle { display: none; }
+@media (max-width: 767.98px) {
+    .admin-nav__toggle { display: inline-flex; margin-bottom: var(--sp-3); }
+    .admin-nav {
+        display: none;
+        flex-direction: column;
+        gap: 0;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: var(--r-card);
+        overflow: hidden;
+    }
+    .admin-nav.is-open { display: flex; }
+    .admin-nav a {
+        padding: 12px var(--sp-4);
+        min-height: 44px;
+        border-bottom: 1px solid var(--line);
+        margin: 0;
+    }
+    .admin-nav a:last-child { border-bottom: none; }
+    .admin-nav a.is-active { background: var(--tint); border-bottom-color: var(--line); }
+}
 
 /* Row of action buttons above a tab-panel switcher (Task 4). Reused by
    manage-komet-players.html's identical .tabs/.tab-btn/.tab-content markup. */
