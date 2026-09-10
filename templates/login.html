@@ -4,17 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <h1>Login</h1>
-    <p style="color:#555;font-size:0.9em;">Use the same login credentials as your Badminton Sweden account to access tournaments and manage your registrations.</p>
-    <form id="login-form">
-        <input type="text" id="login" placeholder="Email / Username" required>
-        <input type="password" id="password" placeholder="Password" required>
-        <button type="submit">Login</button>
-    </form>
-    <p id="error" style="color:red;display:none;"></p>
+    <div class="page page--form">
+        <h1>Login</h1>
+        <div class="card">
+            <div class="card__body">
+                <p class="muted" style="margin-top:0">Use the same login credentials as your Badminton Sweden account to access tournaments and manage your registrations.</p>
+                <form id="login-form">
+                    <div class="field">
+                        <label class="field__label" for="login">Email / Username</label>
+                        <input type="text" id="login" required>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="password">Password</label>
+                        <input type="password" id="password" required>
+                    </div>
+                    <button type="submit" class="btn btn--block">Login</button>
+                </form>
+                <div id="error" class="banner banner--bad" style="display:none"></div>
+            </div>
+        </div>
+    </div>
 
     <script>
         document.getElementById("login-form").addEventListener("submit", async (e) => {
@@ -38,8 +50,8 @@
         });
     </script>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>

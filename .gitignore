@@ -8,3 +8,4 @@ __pycache__/
 data-local/
 backups/
 docs/superpowers/
+.superpowers/
