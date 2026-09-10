@@ -362,7 +362,7 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 /* ---------- registration layout (Task 8) ---------- */
 
 .reg-layout { display: flex; flex-direction: column; gap: var(--sp-4); }
-.reg-layout__aside { background: var(--tint); border: 1px solid #dde8fa; border-radius: var(--r-card); padding: var(--sp-4); }
+.reg-layout__aside { background: var(--tint); border: 1px solid var(--line); border-radius: var(--r-card); padding: var(--sp-4); }
 
 /* The deadline line, ruled off from the identity above it. A tournament need
    not have a deadline, and an empty div would still paint the hairline. */
