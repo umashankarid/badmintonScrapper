@@ -128,12 +128,16 @@ a.card:hover { border-color: var(--blue); }
 
 .inset { background: var(--tint); border-radius: var(--r-inner); padding: var(--sp-3); }
 
-/* --muted on --tint is 4.47:1, under the floor. Every tinted surface darkens
-   its own muted text rather than each template remembering to. .label sets
-   the same --muted color under a different class name (Task 11 fix round 1
-   -- manage-db.html's stat captions and tournament_detail.html's inherited
-   the same gap), so it needs the same override. */
-.inset .muted, .inset .label, .reg-layout__aside .muted { color: var(--on-tint); }
+/* --muted is 4.47:1 on --tint, just under the floor. Rather than chase every
+   component that reaches for it (Task 11 fix round 1 chased .muted and
+   .label by name and missed .field__label the same day), rebind the token
+   inside tinted containers: anything using var(--muted) in here resolves to
+   the accessible value. Covers every current and future consumer -- .muted,
+   .label, .field__label -- with one rule and no list to maintain.
+   (.badge--neutral and input[readonly] already reference --on-tint
+   directly rather than --muted, so this rule doesn't touch them either
+   way.) */
+.inset, .reg-layout__aside { --muted: var(--on-tint); }
 
 /* ---------- button ---------- */
 
