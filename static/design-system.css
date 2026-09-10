@@ -23,6 +23,7 @@
     --muted: #63748c;
     --faint: #8b9bb0;
     --tint: #f4f8ff;
+    --on-tint: #4a5a70;    /* --muted on --tint is 4.47:1, just under the floor; this is 6.6:1 */
     --line: #e4ecf7;
     --field-line: #d6e0f0;
     --bg: #f7f9fc;
@@ -95,6 +96,22 @@ h1, h2, h3 { margin: 0; line-height: 1.3; }
 .muted { color: var(--muted); }
 .stack > * + * { margin-top: var(--sp-3); }
 
+/* Visually hidden but still announced -- for a control whose purpose is
+   already legible on-screen (a compact filter-bar row where a visible
+   caption would break the single-line layout) but still needs a real
+   <label>, not a bare aria-label, for assistive tech. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* ---------- card ---------- */
 
 .card { background: #fff; border: 1px solid var(--line); border-radius: var(--r-card); }
@@ -158,7 +175,7 @@ select, textarea {
 }
 textarea { min-height: 120px; resize: vertical; }
 
-input[readonly] { background: var(--tint); color: var(--muted); }
+input[readonly] { background: var(--tint); color: var(--on-tint); }
 
 input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 
@@ -233,7 +250,7 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .badge--ok      { background: #e8f5ef; color: #0b5c3e; }
 .badge--warn    { background: #fdf1e2; color: #7a4a10; }
 .badge--bad     { background: #fdeceb; color: #8f2018; }
-.badge--neutral { background: var(--tint); color: #4a5a70; }
+.badge--neutral { background: var(--tint); color: var(--on-tint); }
 
 /* ---------- table ---------- */
 

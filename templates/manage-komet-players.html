@@ -75,7 +75,9 @@
 
             <div class="stack">
                 <div style="display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;">
+                    <label for="search-input" class="sr-only">Search players</label>
                     <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="flex:1;">
+                    <label for="group-filter" class="sr-only">Filter by group</label>
                     <select id="group-filter" onchange="applyFilter()" style="width:auto;">
                         <option value="">All Groups</option>
                     </select>
