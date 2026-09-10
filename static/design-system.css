@@ -251,6 +251,16 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .badge--warn    { background: #fdf1e2; color: #7a4a10; }
 .badge--bad     { background: #fdeceb; color: #8f2018; }
 .badge--neutral { background: var(--tint); color: var(--on-tint); }
+.badge + .badge { margin-left: var(--sp-1); }
+
+/* Stat box value (Task 7). Used across several detail pages -- Tasks 10 and
+   11 still have their own .stat-box/.stat-number rules to migrate onto this. */
+.stat-value {
+    font-size: var(--fs-page);
+    font-weight: 700;
+    color: var(--blue);
+    line-height: 1.2;
+}
 
 /* ---------- table ---------- */
 
