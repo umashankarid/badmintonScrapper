@@ -261,6 +261,15 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .admin-nav a:hover { color: var(--ink); text-decoration: none; }
 .admin-nav a.is-active { color: var(--blue); border-bottom-color: var(--blue); }
 
+/* Row of action buttons above a tab-panel switcher (Task 4). Reused by
+   manage-komet-players.html's identical .tabs/.tab-btn/.tab-content markup. */
+.tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-5);
+}
+
 /* ---------- tournament list card (Task 2) ---------- */
 
 .t-card__main { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }

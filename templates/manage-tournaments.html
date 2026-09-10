@@ -145,7 +145,7 @@
                     <div class="card__body">
                         <strong>${t.name}</strong>
                         <div class="muted" style="margin-top:var(--sp-1)">Competition: ${t.competition_date || "N/A"} | Reg closes: ${t.final_registration_date || "N/A"}</div>
-                        <div style="margin-top:var(--sp-3)">
+                        <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)">
                             <button onclick="window.location.href='/tournament.html?db=${t.db}'" class="btn btn--secondary">View</button>
                             <button onclick="editTournament('${t.db}')" class="btn btn--secondary">Edit</button>
                             <button onclick="downloadPlayerData('${t.db}')" class="btn btn--secondary">Download CSV</button>
@@ -233,8 +233,8 @@
                         <h3>Submitting to Badminton Sweden...</h3>
                         <p id="submit-status">Logging in and processing registrations. This may take a few minutes.</p>
                         <div id="submit-progress">
-                            <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
-                                <div id="progress-bar" style="width:0%;height:100%;background:#28a745;transition:width 0.3s;"></div>
+                            <div style="background:var(--line);border-radius:var(--r-inner);height:8px;overflow:hidden;">
+                                <div id="progress-bar" style="width:0%;height:100%;background:var(--ok);transition:width 0.3s;"></div>
                             </div>
                         </div>
                         <div id="submit-results" style="display:none;"></div>
