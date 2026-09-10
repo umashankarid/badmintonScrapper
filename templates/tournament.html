@@ -13,6 +13,7 @@
 
     <!-- Warnings banner -->
     <div id="warnings-banner" style="display:none">
+        <h2 class="label" style="margin:0 0 var(--sp-2)">Registration problems</h2>
         <div id="warnings-list"></div>
     </div>
 
@@ -643,11 +644,13 @@
 
         function showRefusal(title, detail) {
             const el = refusalBanner();
+            // Reveal first, then write: a role="alert" region mutated while
+            // it is still display:none is commonly not announced at all.
+            el.style.display = "block";
             // Server messages are bilingual and newline-separated; alert()
             // rendered those breaks, innerHTML would collapse them.
             el.innerHTML = `<p class="banner__title">${title}</p>` +
                            (detail ? `<p>${String(detail).replace(/\n+/g, "<br>")}</p>` : "");
-            el.style.display = "block";
             el.scrollIntoView({block: "center", behavior: "smooth"});
         }
 
@@ -913,7 +916,7 @@
                     }
                 } else if (data.hard_block) {
                     // Points above max - NEVER allowed
-                    alert(data.message);
+                    showRefusal("Cannot register", data.message);
                     changedSelect.value = "";
                 } else {
                     // Points below min - warn but allow with permission
@@ -1047,6 +1050,8 @@
         }
 
         setupLiveSearch("doubles-partner", "doubles-partner-results", async (player) => {
+            // A refusal about the previous candidate must not outlive them.
+            clearRefusal();
             // Validate partner is not already playing doubles with someone else
             const playerName = loggedInPlayer ? loggedInPlayer.player_name : "";
             const res = await fetch("/api/validate-partner", {
@@ -1084,6 +1089,8 @@
         });
 
         setupLiveSearch("mixed-partner", "mixed-partner-results", async (player) => {
+            // A refusal about the previous candidate must not outlive them.
+            clearRefusal();
             // Validate partner is not already playing mixed with someone else
             const playerName = loggedInPlayer ? loggedInPlayer.player_name : "";
             const res = await fetch("/api/validate-partner", {
@@ -1121,6 +1128,8 @@
         });
 
         setupLiveSearch("admin-doubles-partner", "admin-doubles-partner-results", async (player) => {
+            // A refusal about the previous candidate must not outlive them.
+            clearRefusal();
             // Validate partner is not already playing doubles with someone else
             const playerName = document.getElementById("admin-edit-name").value;
             const res = await fetch("/api/validate-partner", {
@@ -1158,6 +1167,8 @@
         });
 
         setupLiveSearch("admin-mixed-partner", "admin-mixed-partner-results", async (player) => {
+            // A refusal about the previous candidate must not outlive them.
+            clearRefusal();
             // Validate partner is not already playing mixed with someone else
             const playerName = document.getElementById("admin-edit-name").value;
             const res = await fetch("/api/validate-partner", {
@@ -1407,14 +1418,14 @@
                         });
                         const retryResult = await retryRes.json();
                         if (!retryResult.success) {
-                            alert(retryResult.error || "Operation failed");
+                            showRefusal("Registration failed", retryResult.error || "");
                             return;
                         }
                     } else {
                         return;
                     }
                 } else {
-                    alert(result.error || "Operation failed");
+                    showRefusal("Registration failed", result.error || "");
                     return;
                 }
             }
