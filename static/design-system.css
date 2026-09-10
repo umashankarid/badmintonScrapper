@@ -129,8 +129,11 @@ a.card:hover { border-color: var(--blue); }
 .inset { background: var(--tint); border-radius: var(--r-inner); padding: var(--sp-3); }
 
 /* --muted on --tint is 4.47:1, under the floor. Every tinted surface darkens
-   its own muted text rather than each template remembering to. */
-.inset .muted, .reg-layout__aside .muted { color: var(--on-tint); }
+   its own muted text rather than each template remembering to. .label sets
+   the same --muted color under a different class name (Task 11 fix round 1
+   -- manage-db.html's stat captions and tournament_detail.html's inherited
+   the same gap), so it needs the same override. */
+.inset .muted, .inset .label, .reg-layout__aside .muted { color: var(--on-tint); }
 
 /* ---------- button ---------- */
 
