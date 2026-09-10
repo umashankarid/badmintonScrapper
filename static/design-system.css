@@ -179,6 +179,22 @@ select, textarea {
 }
 textarea { min-height: 120px; resize: vertical; }
 
+/* A contenteditable field (send-email.html's rich-text message body, Task
+   10) styled to read as the same control as a plain textarea -- same
+   border, radius and padding -- with its execCommand toolbar sitting above
+   it rather than inside it. */
+.rich-editor {
+    min-height: 120px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--field-line);
+    border-radius: var(--r-inner);
+    background: #fff;
+    color: var(--ink);
+    font: inherit;
+}
+
 input[readonly] { background: var(--tint); color: var(--on-tint); }
 
 input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }

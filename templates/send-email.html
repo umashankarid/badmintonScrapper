@@ -77,8 +77,30 @@
                 </div>
 
                 <div class="field">
-                    <label class="field__label" for="email-body">Message</label>
-                    <textarea id="email-body" rows="10" placeholder="Write your message here..."></textarea>
+                    <span class="field__label" id="email-body-label">Message</span>
+                    <div style="display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-2);">
+                        <button type="button" onclick="execCmd('bold')" title="Bold" class="btn btn--secondary"><strong>B</strong></button>
+                        <button type="button" onclick="execCmd('italic')" title="Italic" class="btn btn--secondary"><em>I</em></button>
+                        <button type="button" onclick="execCmd('underline')" title="Underline" class="btn btn--secondary"><u>U</u></button>
+                        <select onchange="execCmdVal('fontSize', this.value); this.value='';" style="width:auto;">
+                            <option value="">Size</option>
+                            <option value="1">Small</option>
+                            <option value="3">Normal</option>
+                            <option value="5">Large</option>
+                            <option value="7">Huge</option>
+                        </select>
+                        <select onchange="execCmdVal('foreColor', this.value); this.value='';" style="width:auto;">
+                            <option value="">Color</option>
+                            <option value="#0f2544" style="color:var(--ink);">Black</option>
+                            <option value="#b42318" style="color:var(--bad);">Red</option>
+                            <option value="#1d4ed8" style="color:var(--blue);">Blue</option>
+                            <option value="#0f7a52" style="color:var(--ok);">Green</option>
+                            <option value="#b45309" style="color:var(--warn);">Orange</option>
+                        </select>
+                        <button type="button" onclick="execCmd('insertUnorderedList')" title="Bullet list" class="btn btn--secondary">&bull;</button>
+                        <button type="button" onclick="execCmd('insertOrderedList')" title="Numbered list" class="btn btn--secondary">1.</button>
+                    </div>
+                    <div id="email-body" class="rich-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="email-body-label" data-placeholder="Write your message here..."></div>
                 </div>
 
                 <div class="field">
@@ -99,12 +121,34 @@
     </div>
 
     <script>
+        // Rich text editor functions
+        function execCmd(cmd) {
+            document.execCommand(cmd, false, null);
+            document.getElementById("email-body").focus();
+        }
+        function execCmdVal(cmd, val) {
+            if (val) document.execCommand(cmd, false, val);
+            document.getElementById("email-body").focus();
+        }
         function getEmailBody() {
-            return document.getElementById("email-body").value.trim();
+            const el = document.getElementById("email-body");
+            return el.innerHTML.trim();
         }
         function getEmailBodyText() {
-            return getEmailBody();
+            const el = document.getElementById("email-body");
+            return el.innerText.trim();
         }
+
+        // Placeholder behavior for contenteditable
+        document.addEventListener("DOMContentLoaded", () => {
+            const editor = document.getElementById("email-body");
+            editor.addEventListener("focus", () => {
+                if (editor.innerHTML === "" || editor.innerHTML === "<br>") editor.innerHTML = "";
+            });
+            editor.addEventListener("blur", () => {
+                if (editor.innerText.trim() === "") editor.innerHTML = "";
+            });
+        });
 
         function showLoadOption() {
             document.getElementById("tournament-option").style.display = "none";
