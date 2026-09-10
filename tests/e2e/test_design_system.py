@@ -7,10 +7,15 @@ arrives, that it arrives from this server, and that the token values a
 hundred rules depend on are actually defined.
 """
 
+import re
+from pathlib import Path
+
 import requests
 
 from tests.e2e import seed
 from tests.e2e.test_player import sign_in_as
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_the_font_is_served_from_this_server(app_server):
@@ -30,13 +35,34 @@ def test_the_stylesheet_defines_the_tokens_every_rule_depends_on(app_server):
             f"{token} is missing or is not {value}"
 
 
-def test_the_stylesheet_has_no_banned_effects(app_server):
+BANNED_EFFECTS = [
+    ("a gradient", re.compile(r"gradient\s*\(")),
+    ("a shadow", re.compile(r"(?:box|text|drop)-shadow\s*[:(]")),
+    ("a border accent stripe", re.compile(r"border-(?:left|right)(?:-(?:width|color|style))?\s*:")),
+]
+
+
+def test_no_stylesheet_or_template_has_a_banned_effect():
     """Gradients, shadows and left-stripe accents are banned by the spec.
-    They are the three things the old stylesheet leaned on hardest, so this
-    guards against them creeping back during a later migration."""
-    css = requests.get(f"{app_server}/static/design-system.css", timeout=10).text
-    assert "gradient" not in css, "a gradient came back"
-    assert "box-shadow" not in css, "a box-shadow came back"
+    They are the three things the old design leaned on hardest.
+
+    Two things this used to miss and no longer does. It named left-stripe
+    accents in its own docstring and never checked for one -- the pattern
+    this redesign removed the most of. And it read only the stylesheet, so
+    any of the surviving inline style= attributes could have carried a
+    gradient past it. Matching on the declaration (a colon or an opening
+    paren after the property) rather than the bare word is what lets the
+    prose in these comments say "box-shadow" without tripping the guard.
+    """
+    targets = [REPO_ROOT / "static" / "design-system.css"]
+    targets += sorted((REPO_ROOT / "templates").glob("*.html"))
+    offenders = {}
+    for path in targets:
+        text = path.read_text(encoding="utf-8")
+        for label, pattern in BANNED_EFFECTS:
+            if pattern.search(text):
+                offenders.setdefault(path.name, []).append(label)
+    assert not offenders, f"banned effects came back: {offenders}"
 
 
 def test_login_page_uses_the_design_system(app_server, page):
@@ -47,10 +73,15 @@ def test_login_page_uses_the_design_system(app_server, page):
     assert "IBM Plex Sans" in family, f"body font is {family!r}"
 
 
-def test_no_page_requests_a_third_party_font(app_server, page):
+def test_the_login_page_requests_no_third_party_font(app_server, page):
     """The e2e server runs behind a dead proxy, so an external font request
     would fail rather than hang -- but it would fail silently and leave the
-    page in the fallback face. Catch the request itself."""
+    page in the fallback face. Catch the request itself.
+
+    Renamed: this was called test_no_page_requests_a_third_party_font and
+    visited exactly one page. It is the runtime half of the pair; the
+    static scan below is the half that actually covers every page.
+    """
     external = []
     page.on("request", lambda r: external.append(r.url)
             if "fonts.googleapis.com" in r.url or "fonts.gstatic.com" in r.url
@@ -58,6 +89,28 @@ def test_no_page_requests_a_third_party_font(app_server, page):
     page.goto(f"{app_server}/login.html")
     page.wait_for_selector("#login-form")
     assert not external, f"page reached out for a webfont: {external}"
+
+
+def test_no_template_links_a_third_party_font():
+    """Every page, not just the one the browser test happens to visit."""
+    offenders = [
+        p.name for p in (REPO_ROOT / "templates").glob("*.html")
+        if "fonts.googleapis.com" in p.read_text(encoding="utf-8")
+        or "fonts.gstatic.com" in p.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"templates link an external webfont: {offenders}"
+
+
+def test_every_template_links_the_design_system():
+    """Nothing else covers this. A template that links no stylesheet at all
+    renders as unstyled markup and every other assertion here still passes --
+    the token test reads the CSS directly, the font test visits one page, and
+    the smoke tests only check the title and the console."""
+    offenders = [
+        p.name for p in (REPO_ROOT / "templates").glob("*.html")
+        if "/static/design-system.css" not in p.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"templates not linking the design system: {offenders}"
 
 
 def test_tournament_card_is_stacked_on_a_phone_and_sideways_on_a_desktop(
@@ -108,11 +161,6 @@ def test_registration_form_stays_one_column_at_every_width(
     doubles = page.locator("select.doubles-level").first.bounding_box()
     assert doubles["y"] >= singles["y"] + singles["height"], \
         "the level pickers are side by side; the form went two-column"
-
-
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_no_template_references_the_old_stylesheet():
@@ -169,7 +217,11 @@ def test_templates_carry_almost_no_inline_styles():
     tournament.html + manage-tournaments.html) and now live once each as
     .modal-overlay / .progress-track / .progress-bar in
     static/design-system.css -- fix round 1 folded those two duplicate
-    pairs in, which is why the budget dropped from 225 to 223.
+    pairs in, which is why the budget dropped from 225 to 223. The final
+    review round then took it to 222: two more went (the BWF picker row's
+    max-width wrapper became .pick-row__controls, and manage-db's per-cell
+    word-break became .table--clip) against one added (manage-admins.html's
+    topbar name, copied verbatim from the other admin pages).
     """
     from collections import Counter
     counts = Counter()
@@ -178,7 +230,7 @@ def test_templates_carry_almost_no_inline_styles():
         if n:
             counts[p.name] = n
     total = sum(counts.values())
-    assert total <= 223, (
-        f"{total} inline style= attributes across templates, budget is 223: "
+    assert total <= 222, (
+        f"{total} inline style= attributes across templates, budget is 222: "
         f"{dict(counts.most_common())}. Put appearance in "
         "static/design-system.css.")

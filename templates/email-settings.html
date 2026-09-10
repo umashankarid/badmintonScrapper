@@ -23,7 +23,6 @@
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
             const el = document.getElementById("admin-header-name");
             if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
-            if(!d.is_admin) window.location.href = "/";
         });
         document.querySelector('[onclick*="location"]').onclick = async () => {
             await fetch("/api/bwf-logout", {method:"POST"});
@@ -249,7 +248,7 @@
                 });
 
                 container.innerHTML = `
-                    <table class="table table--stack">
+                    <table class="table table--stack table--clip">
                         <thead><tr><th>Event</th><th>Recipient</th><th>Subject</th><th>Reason</th><th>Time</th></tr></thead>
                         <tbody>
                             ${data.events.map(e => {

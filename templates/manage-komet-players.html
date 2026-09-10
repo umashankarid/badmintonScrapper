@@ -23,7 +23,6 @@
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
             const el = document.getElementById("admin-header-name");
             if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
-            if(!d.is_admin) window.location.href = "/";
         });
         document.querySelector('[onclick*="location"]').onclick = async () => {
             await fetch("/api/bwf-logout", {method:"POST"});

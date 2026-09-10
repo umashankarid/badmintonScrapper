@@ -23,7 +23,6 @@
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
             const el = document.getElementById("admin-header-name");
             if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
-            if(!d.is_admin) window.location.href = "/";
         });
         document.querySelector('[onclick*="location"]').onclick = async () => {
             await fetch("/api/bwf-logout", {method:"POST"});
@@ -35,9 +34,11 @@
 
     <!-- Tab buttons -->
     <div class="tabs">
-        <button class="btn btn--secondary" onclick="switchTab('registrations')">View Registrations</button>
-        <button class="btn btn--secondary" onclick="switchTab('add-remove')">Add/Remove Tournaments</button>
-        <button class="btn btn--secondary" onclick="window.location.href='/manage-db.html'">Manage DB</button>
+        <button class="tab-btn active" onclick="switchTab('registrations')">View Registrations</button>
+        <button class="tab-btn" onclick="switchTab('add-remove')">Add/Remove Tournaments</button>
+        <!-- Not a tab: this one navigates away. Right-aligned and styled as a
+             link so it does not read as a peer of the two panel toggles. -->
+        <a class="tabs__aside" href="/manage-db.html">Manage DB &rarr;</a>
     </div>
 
     <!-- Tab 1: View Registrations -->
@@ -120,6 +121,10 @@
         function switchTab(tabName) {
             document.getElementById('registrations-tab').style.display = tabName === 'registrations' ? 'block' : 'none';
             document.getElementById('add-remove-tab').style.display = tabName === 'add-remove' ? 'block' : 'none';
+            // Panels are toggled inline (they carry inline display), but the
+            // bar itself has to say which one is showing.
+            const tabs = document.querySelectorAll('.tab-btn');
+            tabs.forEach((b, i) => b.classList.toggle('active', i === (tabName === 'registrations' ? 0 : 1)));
 
             if (tabName === 'add-remove') {
                 loadBWFTournaments();
@@ -480,7 +485,7 @@
 
                 container.innerHTML = `<div class="stack">` +
                     data.tournaments.map(t => `
-                        <label class="check-row">
+                        <label class="check-row check-row--top">
                             <input type="checkbox" class="bwf-tournament-checkbox"
                                 data-url="${t.url}"
                                 data-name="${t.name.replace(/"/g, '&quot;')}"

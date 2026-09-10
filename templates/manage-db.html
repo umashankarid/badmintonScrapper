@@ -23,7 +23,6 @@
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
             const el = document.getElementById("admin-header-name");
             if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
-            if(!d.is_admin) window.location.href = "/";
         });
         document.querySelector('[onclick*="location"]').onclick = async () => {
             await fetch("/api/bwf-logout", {method:"POST"});
@@ -326,7 +325,7 @@
         }
 
         function displayTableData(data) {
-            let html = '<table class="table table--stack"><thead><tr>';
+            let html = '<table class="table table--stack table--clip"><thead><tr>';
 
             // Add column headers
             for (const col of data.columns) {
@@ -338,13 +337,19 @@
             for (const row of data.rows) {
                 html += '<tr>';
                 for (const col of data.columns) {
-                    let value = row[col];
+                    const raw = row[col];
+                    let value = raw;
                     if (value === null || value === undefined) {
                         value = '<em class="muted">NULL</em>';
                     } else if (typeof value === 'object') {
                         value = '<code>' + JSON.stringify(value) + '</code>';
                     }
-                    html += `<td data-label="${col}" style="word-break:break-word;max-width:300px">${value}</td>`;
+                    // .table--clip trims a long cell to one line so a single
+                    // wide value cannot widen the table past .page. The full
+                    // value stays reachable on hover, which the old
+                    // word-break:break-word gave by wrapping instead.
+                    const title = raw == null ? '' : String(raw).replace(/"/g, '&quot;');
+                    html += `<td data-label="${col}" title="${title}">${value}</td>`;
                 }
                 html += '</tr>';
             }

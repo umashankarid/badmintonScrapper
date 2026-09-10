@@ -647,10 +647,25 @@
             // Reveal first, then write: a role="alert" region mutated while
             // it is still display:none is commonly not announced at all.
             el.style.display = "block";
-            // Server messages are bilingual and newline-separated; alert()
-            // rendered those breaks, innerHTML would collapse them.
-            el.innerHTML = `<p class="banner__title">${title}</p>` +
-                           (detail ? `<p>${String(detail).replace(/\n+/g, "<br>")}</p>` : "");
+            // The title carries a player name straight from the partner-search
+            // API and the detail is a server string. The alert() this replaced
+            // was inherently text-safe; build nodes so neither value ever
+            // reaches the HTML parser.
+            el.textContent = "";
+            const heading = document.createElement("p");
+            heading.className = "banner__title";
+            heading.textContent = title;
+            el.appendChild(heading);
+            if (detail) {
+                // Server messages are bilingual and newline-separated; alert()
+                // rendered those breaks, so keep them as real <br> elements.
+                const body = document.createElement("p");
+                String(detail).split(/\n+/).forEach((line, i) => {
+                    if (i) body.appendChild(document.createElement("br"));
+                    body.appendChild(document.createTextNode(line));
+                });
+                el.appendChild(body);
+            }
             el.scrollIntoView({block: "center", behavior: "smooth"});
         }
 

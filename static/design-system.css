@@ -121,7 +121,9 @@ h3 { font-size: var(--fs-body); font-weight: 700; }
 
 .card { background: #fff; border: 1px solid var(--line); border-radius: var(--r-card); }
 .card + .card { margin-top: var(--sp-3); }
-a.card:hover { border-color: var(--blue); }
+/* text-decoration propagates into descendants, so the base a:hover rule
+   would underline a whole hub tile -- heading, description and all. */
+a.card:hover { border-color: var(--blue); text-decoration: none; }
 .card__body { padding: var(--sp-4); }
 .card__row { padding: var(--sp-4); border-bottom: 1px solid var(--line); }
 .card__row:last-child { border-bottom: none; }
@@ -247,6 +249,12 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 }
 .check-row input { flex: none; }
 
+/* When the label runs to several lines, centring puts the box beside the
+   second line instead of the name it ticks. The nudge lines it up with the
+   cap height of the first line rather than its box top. */
+.check-row--top { align-items: flex-start; }
+.check-row--top input { margin-top: 3px; }
+
 /* The dev bar sets its own inline styles but not min-height, so the 44px
    rule above would inflate it into the page. It is chrome, not content --
    and it must stay visually unlike the app so nobody mistakes fake data for
@@ -288,8 +296,12 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     padding: var(--sp-3) var(--sp-4);
     margin: var(--sp-3) 0;
 }
-.banner__title { font-weight: 700; margin: 0 0 var(--sp-1); }
+/* Every .banner__title in the tree is a <p>, so a bare .banner__title
+   (0,1,0) loses to .banner p (0,1,1) and the gap under the title never
+   rendered. Scoped selector outranks it without giving the other
+   paragraphs their default margins back. */
 .banner p { margin: 0; }
+.banner .banner__title { font-weight: 700; margin: 0 0 var(--sp-1); }
 .banner + .banner { margin-top: var(--sp-2); }
 .banner--warn { background: #fff8ee; border-color: #f0dcc0; color: #7a4a10; }
 .banner--bad  { background: #fdf3f2; border-color: #f3d3d0; color: #8f2018; }
@@ -339,6 +351,19 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 }
 .table td { padding: 12px; border-bottom: 1px solid #f0f5fc; }
 .table tr:last-child td { border-bottom: none; }
+
+/* A Brevo bounce reason or a raw database cell can run to hundreds of
+   characters. .table sets no table-layout, so one long value widens the
+   table past .page and puts the whole desktop page into horizontal
+   scroll -- the failure this redesign set out to remove. One answer for
+   every wide-value table; the mobile stack undoes it (see below), where a
+   cell is a full-width block and wrapping is what you want. */
+.table--clip td {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* ---------- chrome ---------- */
 
@@ -405,6 +430,17 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
+/* A link out to another page sitting in a tab bar. Right-aligned and left as
+   a link so it never reads as a third panel toggle. */
+.tabs__aside {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 var(--sp-2);
+    font-weight: 600;
+}
+
 /* ---------- tournament list card (Task 2) ---------- */
 
 .t-card__main { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
@@ -419,6 +455,12 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
    not have a deadline, and an empty div would still paint the hairline. */
 .aside-rule { border-top: 1px solid var(--line); margin-top: var(--sp-3); padding-top: var(--sp-3); }
 .aside-rule:empty { display: none; }
+
+/* ---------- BWF tournament picker row (add-remove-tournaments) ---------- */
+
+.pick-row { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pick-row > .check-row { flex: 1; min-width: 0; }
+.pick-row__controls { max-width: 260px; }
 
 /* ============================================================
    >= 768px
@@ -440,13 +482,24 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     .reg-layout { flex-direction: row-reverse; align-items: flex-start; justify-content: flex-end; }
     .reg-layout__form { flex: 1; max-width: var(--form-max); }
     .reg-layout__aside { flex: none; width: 240px; position: sticky; top: var(--sp-4); }
+
+    /* Tournament picker row turns sideways: tick + details left, the three
+       per-tournament controls in a fixed column on the right. Stacked, each
+       row was ~400px tall and used a third of a 1280px page. */
+    .pick-row { flex-direction: row; align-items: flex-start; gap: var(--sp-5); }
+    .pick-row__controls { flex: none; width: 260px; }
 }
 
 /* ============================================================
    < 768px -- tables stack instead of scrolling sideways
    ============================================================ */
 
-@media (max-width: 768px) {
+/* 767.98, not 768: a max-width:768px query and the min-width:768px one
+   above are both true at exactly 768px -- iPad portrait and a half-screen
+   laptop -- so the table stacked while the card beside it stayed sideways.
+   (The 480px query below has no min-width counterpart, so it cannot
+   collide the same way.) */
+@media (max-width: 767.98px) {
     /* Horizontal scroll pushes the delete action off-screen, and admins do
        use phones. One block per row instead, with each cell labelled from
        its data-label attribute. */
@@ -460,6 +513,9 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     .table--stack tr { display: block; padding: var(--sp-3); border-bottom: 1px solid #f0f5fc; }
     .table--stack tr:last-child { border-bottom: none; }
     .table--stack td { display: block; padding: 0; border: none; }
+    /* Clipping is a desktop table-width defence; stacked, the cell owns the
+       full width and an ellipsis would hide text for no gain. */
+    .table--clip.table--stack td { max-width: none; overflow: visible; white-space: normal; }
     .table--stack td + td { margin-top: var(--sp-1); }
     .table--stack td[data-label]::before {
         content: attr(data-label) " ";

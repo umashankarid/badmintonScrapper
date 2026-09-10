@@ -8,6 +8,10 @@
 </head>
 <body>
     <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
+    </div>
     <nav class="admin-nav">
         <a href="/">Tournaments for Registration</a>
         <a href="/add-remove-tournaments.html">Add/Remove</a>
@@ -15,6 +19,16 @@
         <a href="/send-email.html">Send Email</a>
         <a href="/manage.html">Manage</a>
     </nav>
+    <script>
+        fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
+            const el = document.getElementById("admin-header-name");
+            if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
+        });
+        document.querySelector('[onclick*="location"]').onclick = async () => {
+            await fetch("/api/bwf-logout", {method:"POST"});
+            window.location.href = "/";
+        };
+    </script>
 
     <h1 class="page-title">Manage Admins</h1>
 

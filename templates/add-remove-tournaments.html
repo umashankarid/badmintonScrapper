@@ -147,8 +147,8 @@
                         const hasCategories = allLevels.length > 0;
 
                         return `
-                        <div class="card__row">
-                            <label class="check-row">
+                        <div class="card__row pick-row">
+                            <label class="check-row check-row--top">
                                 <input type="checkbox" class="bwf-tournament-checkbox"
                                     data-url="${t.url}"
                                     data-name="${safeName}"
@@ -168,7 +168,7 @@
                                     ${hasCategories ? `<div class="muted">Categories: ${allLevels.join(', ')}</div>` : ''}
                                 </div>
                             </label>
-                            <div class="stack" style="max-width:260px;margin-top:var(--sp-3)">
+                            <div class="stack pick-row__controls">
                                 <div class="field">
                                     <label class="field__label">Reg. deadline</label>
                                     <input type="date" class="reg-end-date"
