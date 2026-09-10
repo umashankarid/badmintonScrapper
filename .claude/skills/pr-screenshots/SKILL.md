@@ -15,6 +15,12 @@ app running in a real browser, using the same harness the browser suite uses:
 `tests/e2e/conftest.py`'s subprocess server, dev mode, a throwaway `DATA_DIR`,
 and the network pointed at a dead proxy.
 
+Two scripts, both run with the project venv — system `python` has no pytest and
+`shoot.py` imports the test harness:
+
+- `shoot.py` — decides which pages changed and renders them.
+- `publish.py` — uploads the PNGs and rewrites the PR body.
+
 ## What to accomplish
 
 1. **Confirm there is a PR.** `gh pr view --json number,baseRefName`. If there
@@ -24,7 +30,7 @@ and the network pointed at a dead proxy.
 
    ```bash
    .venv/Scripts/python.exe .claude/skills/pr-screenshots/shoot.py \
-       --out .pr-shots --base <merge-base with the PR's base branch>
+       --out .pr-shots --base "$(git merge-base origin/<baseRefName> HEAD)"
    ```
 
    It works out which pages changed by diffing `<base>...HEAD`:
@@ -35,7 +41,7 @@ and the network pointed at a dead proxy.
    Every page is shot at **375×812 and 1280×900**. That is not configurable and
    should not become configurable — this project's standing rule is that desktop
    and mobile are decided together, so a screenshot set showing one is worse
-   than none.
+   than none. A full run of all 13 pages takes about four minutes.
 
 3. **Look at the PNGs before uploading.** Read a representative few. You are
    checking they rendered — content present, no error page, no half-loaded
@@ -44,53 +50,48 @@ and the network pointed at a dead proxy.
    Do not upload a partial set** — a reviewer who sees eight of eleven screens
    assumes the other three were fine.
 
-4. **Ensure the `pr-screenshots` branch exists.** Once per repo, without ever
-   checking it out:
+4. **Publish.**
 
    ```bash
-   EMPTY=$(git hash-object -t tree /dev/null)
-   COMMIT=$(git commit-tree $EMPTY -m "PR screenshots")
-   git push origin $COMMIT:refs/heads/pr-screenshots
+   .venv/Scripts/python.exe .claude/skills/pr-screenshots/publish.py \
+       --shots .pr-shots --pr <number>
    ```
 
-5. **Upload** each PNG to `pr/<pr#>/<name>.png` on that branch via the Contents
-   API. Overwriting needs the existing blob's `sha`:
+   This creates the `pr-screenshots` branch if it is missing (from the empty
+   tree, by hash — it is never checked out), uploads each PNG to
+   `pr/<pr#>/<name>.png` via the Contents API passing the existing blob `sha`
+   when overwriting, and rewrites the PR body between
+   `<!-- pr-screenshots:start -->` / `<!-- pr-screenshots:end -->`. Re-runs
+   replace that block; they never append a second one. A body with no markers
+   gets the block inserted above the "Generated with" trailer.
 
-   ```bash
-   SHA=$(gh api "repos/$OWNER/$REPO/contents/pr/$PR/$NAME?ref=pr-screenshots" \
-         --jq .sha 2>/dev/null)
-   gh api -X PUT "repos/$OWNER/$REPO/contents/pr/$PR/$NAME" \
-     -f message="Screenshot $NAME for #$PR" \
-     -f branch=pr-screenshots \
-     -f content="$(base64 -w0 .pr-shots/$NAME)" \
-     ${SHA:+-f sha=$SHA}
-   ```
+   The section is one `###` per page in `shoot.py`'s order, a two-column table
+   of mobile and desktop, and a labelled row per persona on pages that are shot
+   as both player and admin.
 
-6. **Edit the PR body**, replacing everything between the markers rather than
-   appending — re-running must update the set, not stack a second copy:
+5. **Verify** — `gh pr view <n> --json body --jq .body | grep -c pr-screenshots:`
+   must print `2`, and
+   `gh api "repos/<owner>/<repo>/contents/pr/<n>?ref=pr-screenshots" --jq length`
+   must match the number of PNGs. Then `rm -rf .pr-shots`.
 
-   ```markdown
-   <!-- pr-screenshots:start -->
-   ## Screenshots
+## Why publish.py exists
 
-   Rendered from the dev-mode fixtures, so tournament names are seeded and a
-   `FAKE` badge marks fixture data. Both viewports for every changed page.
+The obvious one-liner, `gh api -X PUT ... -f content="$(base64 -w0 file)"`,
+fails on Windows three separate ways, and each failure is silent enough to look
+like an auth problem:
 
-   ### Tournament list
-   | Mobile (375) | Desktop (1280) |
-   |---|---|
-   | <img src="https://github.com/OWNER/REPO/raw/pr-screenshots/pr/N/index-player-mobile.png" width="375"> | <img src="https://github.com/OWNER/REPO/raw/pr-screenshots/pr/N/index-player-desktop.png" width="600"> |
-   <!-- pr-screenshots:end -->
-   ```
+- a base64 PNG is ~50 KB and Windows caps a command line at ~32 KB, so `-f`
+  cannot carry it — the body must go through `--input <file>`;
+- `gh` is a Windows binary and cannot see Git Bash's `/tmp`, so that file must
+  live under the repo;
+- Git Bash rewrites arguments that look like paths (`repos/owner/...`) into
+  filesystem paths unless `MSYS_NO_PATHCONV=1` is set;
+- Python's `subprocess.run(text=True)` decodes with the console codepage,
+  cp1252 on Windows — a PR body containing an emoji or an `ä` raises inside
+  the reader thread and `.stdout` silently comes back `None`. The wrapper
+  forces `encoding="utf-8"`.
 
-   One `###` section per page, in the order `shoot.py` printed them. Use the
-   human title it printed, not the filename. A page with both a player and an
-   admin view gets a row each, labelled.
-
-   Read the current body first (`gh pr view --json body`), splice between the
-   markers, and write it back with `gh pr edit --body-file`.
-
-7. **Clean up** `.pr-shots/` when done.
+`publish.py` handles all four. Do not replace it with the one-liner.
 
 ## Adding a page
 
@@ -116,4 +117,4 @@ open tournament, one past tournament, one Komet player and one registration.
 - The dev bar is hidden before each shot — it is a `DEV_TOOLS`-only overlay that
   covers the top of the page and is not the UI under review. Fixture markers
   like the `FAKE` badge are left alone: doctoring them would misrepresent what
-  the code renders. Say in the PR body that the data is seeded instead.
+  the code renders. The PR body says the data is seeded instead.
