@@ -139,6 +139,25 @@ a.card:hover { border-color: var(--blue); }
    way.) */
 .inset, .reg-layout__aside { --muted: var(--on-tint); }
 
+/* ---------- modal / progress ---------- */
+
+/* The full-viewport backdrop behind an edit or table-viewer dialog. Shared
+   structure only -- display:none stays inline because the scripts toggle
+   it (manage-db.html's viewTable()/closeTableModal(), manage-tournaments
+   .html's editTournament()/closeEditModal()), and each caller keeps its
+   own background opacity and z-index inline since neither is a token
+   today. */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow-y: auto; }
+
+/* The "Submit to BWF" progress bar (tournament.html and
+   manage-tournaments.html build the same two-div track/bar pair via
+   innerHTML). width:0% stays inline on .progress-bar -- submitToBWF() /
+   submitTournament() animate it to 100% by setting .style.width directly.
+   The fill colour also stays inline: the two callers intentionally use
+   different tokens (--ok vs --blue). */
+.progress-track { background: var(--line); border-radius: var(--r-inner); height: 8px; overflow: hidden; margin: var(--sp-4) 0; }
+.progress-bar { height: 100%; transition: width 0.3s; }
+
 /* ---------- button ---------- */
 
 .btn {

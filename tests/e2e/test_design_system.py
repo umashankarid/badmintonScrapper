@@ -147,23 +147,38 @@ def test_no_template_uses_emoji_as_an_icon():
 
 
 def test_templates_carry_almost_no_inline_styles():
-    """Inline style= attributes are how the old design drifted. A handful
-    survive on purpose: display toggles the scripts drive, a few one-off
-    spacing nudges reaching for var(--sp-*) tokens, and flex/gap wrappers
-    that exist to meet the >=8px tap-target floor. All three are accepted
-    carve-outs, reviewed repeatedly during this migration.
+    """Inline style= attributes are how the old design drifted, so this is a
+    ratchet: the count may fall, it must never rise. If a future change
+    legitimately needs one more, raise the number in the same commit and say
+    why in the commit message -- do not delete a legitimate survivor just to
+    keep the number down.
 
-    The number below is the actual count measured across templates/*.html
-    the day styles.css was deleted (225), not the 60 guessed before any
-    migration ran. It is a ratchet, not a target: it may fall, it must never
-    rise. If a future change legitimately needs one more, raise the number
-    in the same commit and say why in the commit message -- do not delete a
-    legitimate survivor just to keep the number down.
+    It does NOT sort into three clean categories, and this docstring used to
+    claim it did. Measured honestly, across templates/*.html the day
+    styles.css was deleted: roughly 96 are spacing and flex/gap wrappers
+    reaching for var(--sp-*) tokens or meeting the >=8px tap-target floor,
+    roughly 51 are display toggles the scripts flip directly, and the
+    remaining ~76 are ordinary typography and interaction styling that
+    hasn't been componentized yet -- bare font-weight, text-align:center,
+    cursor:pointer, a couple of JS-computed dynamic values (the "Submit to
+    BWF" progress bar's animated width, and its fill colour, which
+    intentionally differs between tournament.html and
+    manage-tournaments.html), and the two modals' per-instance backdrop
+    opacity/z-index. The modal backdrop and progress-bar/track structure
+    used to be pasted twice each (manage-db.html + manage-tournaments.html;
+    tournament.html + manage-tournaments.html) and now live once each as
+    .modal-overlay / .progress-track / .progress-bar in
+    static/design-system.css -- fix round 1 folded those two duplicate
+    pairs in, which is why the budget dropped from 225 to 223.
     """
-    total = sum(
-        p.read_text(encoding="utf-8").count('style="')
-        for p in (REPO_ROOT / "templates").glob("*.html")
-    )
-    assert total <= 225, (
-        f"{total} inline style= attributes across templates, budget is 225. "
-        "Put appearance in static/design-system.css.")
+    from collections import Counter
+    counts = Counter()
+    for p in (REPO_ROOT / "templates").glob("*.html"):
+        n = p.read_text(encoding="utf-8").count('style="')
+        if n:
+            counts[p.name] = n
+    total = sum(counts.values())
+    assert total <= 223, (
+        f"{total} inline style= attributes across templates, budget is 223: "
+        f"{dict(counts.most_common())}. Put appearance in "
+        "static/design-system.css.")
