@@ -200,7 +200,7 @@
         <label class="sr-only" for="search-registered">Search registered players</label>
         <input type="text" id="search-registered" placeholder="Search registered player to edit..." autocomplete="off">
     </div>
-    <table id="players-table" class="table table--stack">
+    <table id="players-table" class="table table--stack table--dense">
         <thead>
             <tr>
                 <th>Name</th><th>License ID</th><th>Club</th><th>Gender</th><th>Email</th><th>Phone</th><th>Singles</th><th>Doubles</th><th>Mixed</th><th>Actions</th>
@@ -549,12 +549,12 @@
                                     <tbody>
                                         ${catPlayers.map(p => `<tr>
                                             <td data-label="Name">${p.player_name || ""}${p.need_accommodation ? ' <span class="badge badge--neutral" title="Ages: '+(p.accommodation_ages||'N/A')+'">Accommodation '+p.accommodation_count+'</span>' : ''}${p.need_transport ? ' <span class="badge badge--neutral">Needs transport '+p.transport_count+'</span>' : ''}${p.offer_transport ? ' <span class="badge badge--neutral">Offers '+p.offer_transport_seats+' seats</span>' : ''}</td>
-                                            <td data-label="License ID">${p.license_id || ""}</td>
+                                            <td data-label="License ID" class="nowrap">${p.license_id || ""}</td>
                                             <td data-label="Club">${p.club || ""}</td>
                                             <td data-label="Gender">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
                                             ${isDoubles ? `<td data-label="Partner">${p.partner}${p.partnerLicense ? ' <span class="muted">(' + p.partnerLicense + ')</span>' : ''}</td>` : ''}
                                             <td data-label="Actions">
-                                                <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">
+                                                <div class="table__actions">
                                                     <button onclick="adminEditPlayer(${p.player_id})" class="btn btn--secondary">Edit</button>
                                                     <button onclick="deletePlayer(${p.player_id})" class="btn btn--danger">Delete</button>
                                                 </div>
@@ -588,7 +588,7 @@
                     return `
                     <tr>
                         <td data-label="Name">${p.player_name || ""}</td>
-                        <td data-label="License ID">${p.license_id || ""}</td>
+                        <td data-label="License ID" class="nowrap">${p.license_id || ""}</td>
                         <td data-label="Club">${p.club || ""}</td>
                         <td data-label="Gender">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
                         <td data-label="Email">${p.email || ""}</td>
@@ -596,7 +596,7 @@
                         <td data-label="Singles">${p.singles_levels || ""}</td>
                         <td data-label="Doubles">${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
                         <td data-label="Mixed">${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
-                        <td data-label="Actions">${actions ? `<div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">${actions}</div>` : ""}</td>
+                        <td data-label="Actions">${actions ? `<div class="table__actions">${actions}</div>` : ""}</td>
                     </tr>
                 `}).join("");
             } catch (error) {

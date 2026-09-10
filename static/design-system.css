@@ -351,6 +351,13 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 }
 .table td { padding: 12px; border-bottom: 1px solid #f0f5fc; }
 .table tr:last-child td { border-bottom: none; }
+/* Ten columns in 930px (the registrations table) cannot afford 12px of
+   padding a side; 8/10 recovers ~80px without touching the type. */
+.table--dense th, .table--dense td { padding: 8px 10px; }
+/* Row actions sit on one line and claim their width; stacking Edit over
+   Withdraw doubled every row's height for no gain. */
+.table__actions { display: flex; gap: var(--sp-2); white-space: nowrap; }
+.nowrap { white-space: nowrap; }
 
 /* A Brevo bounce reason or a raw database cell can run to hundreds of
    characters. .table sets no table-layout, so one long value widens the
@@ -513,6 +520,10 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     .table--stack tr { display: block; padding: var(--sp-3); border-bottom: 1px solid #f0f5fc; }
     .table--stack tr:last-child { border-bottom: none; }
     .table--stack td { display: block; padding: 0; border: none; }
+    /* A cell with nothing in it would print its label over nothing --
+       "DOUBLES" with no value under it. Stacked only: on desktop an empty
+       cell still holds its column. */
+    .table--stack td:empty { display: none; }
     /* Clipping is a desktop table-width defence; stacked, the cell owns the
        full width and an ellipsis would hide text for no gain. */
     .table--clip.table--stack td { max-width: none; overflow: visible; white-space: normal; }
