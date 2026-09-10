@@ -66,8 +66,8 @@
   - All three fixes are confined to the test files themselves; no production code or schema
     changed.
 
-- **`.github/workflows/ci.yml`** (new) — two jobs on `namespace-profile-badmintonkomet`
-  (Namespace.so, Linux amd64, 4 vCPU/8 GB, Ubuntu 24.04), both pinned to Python 3.10 to match the
+- **`.github/workflows/ci.yml`** (new) — two jobs on GitHub-hosted `ubuntu-latest`
+  (free: the repository is public), both pinned to Python 3.10 to match the
   production `python:3.10-slim` image (the runner ships 3.12 by default, which would otherwise gate
   on a version that's never actually deployed):
   - `unit`: `pip install -r requirements-dev.txt`, then

@@ -13,7 +13,10 @@ concurrency:
 
 jobs:
   unit:
-    runs-on: ubuntu-latest   # TEMPORARY: proving the workflow while the Namespace runner is linked
+    # GitHub-hosted: this repository is public, so these minutes are free.
+    # A Namespace.so profile was considered and dropped -- its wins are private-repo
+    # minutes and big caches, and this pipeline finishes in about a minute.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +29,10 @@ jobs:
         run: pytest -m "not live" --ignore=tests/e2e -q
 
   e2e:
-    runs-on: ubuntu-latest   # TEMPORARY: proving the workflow while the Namespace runner is linked
+    # GitHub-hosted: this repository is public, so these minutes are free.
+    # A Namespace.so profile was considered and dropped -- its wins are private-repo
+    # minutes and big caches, and this pipeline finishes in about a minute.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
