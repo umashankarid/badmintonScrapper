@@ -123,6 +123,10 @@ a.card:hover { border-color: var(--blue); }
 
 .inset { background: var(--tint); border-radius: var(--r-inner); padding: var(--sp-3); }
 
+/* --muted on --tint is 4.47:1, under the floor. Every tinted surface darkens
+   its own muted text rather than each template remembering to. */
+.inset .muted, .reg-layout__aside .muted { color: var(--on-tint); }
+
 /* ---------- button ---------- */
 
 .btn {
@@ -255,6 +259,9 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .badge--warn    { background: #fdf1e2; color: #7a4a10; }
 .badge--bad     { background: #fdeceb; color: #8f2018; }
 .badge--neutral { background: var(--tint); color: var(--on-tint); }
+/* --badge-neutral's fill IS --tint, so on a tinted panel the pill vanishes and
+   a row of them reads as one run of uppercase. This one keeps its edges. */
+.badge--outline { background: #fff; color: var(--on-tint); border: 1px solid var(--line); }
 .badge + .badge { margin-left: var(--sp-1); }
 
 /* Stat box value (Task 7). Used across several detail pages -- Tasks 10 and
@@ -356,6 +363,11 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 
 .reg-layout { display: flex; flex-direction: column; gap: var(--sp-4); }
 .reg-layout__aside { background: var(--tint); border: 1px solid #dde8fa; border-radius: var(--r-card); padding: var(--sp-4); }
+
+/* The deadline line, ruled off from the identity above it. A tournament need
+   not have a deadline, and an empty div would still paint the hairline. */
+.aside-rule { border-top: 1px solid var(--line); margin-top: var(--sp-3); padding-top: var(--sp-3); }
+.aside-rule:empty { display: none; }
 
 /* ============================================================
    >= 768px

@@ -36,7 +36,7 @@
             <div class="label">Registering</div>
             <div id="who-name" style="font-weight:600"></div>
             <div class="muted" id="who-club"></div>
-            <div id="who-deadline" class="muted" style="border-top:1px solid #dde8fa;margin-top:var(--sp-3);padding-top:var(--sp-3)"></div>
+            <div id="who-deadline" class="muted aside-rule"></div>
         </aside>
         <div class="reg-layout__form">
             <div id="register-section" style="display:none;">
@@ -58,33 +58,40 @@
                     <!-- Accommodation & transport (only shown if enabled for this tournament) -->
                     <div id="accomm-transport-section" class="inset" style="display:none;margin-bottom:var(--sp-4)">
                         <div class="label" style="margin-bottom:var(--sp-2)">Accommodation &amp; transport</div>
-                        <div class="check-row">
-                            <input type="checkbox" id="need-accommodation" onchange="toggleAccommodation()">
-                            <label for="need-accommodation" style="flex:1;cursor:pointer">Need accommodation</label>
-                            <span id="accommodation-count-container" style="display:none">
-                                <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:72px" title="Antal personer" onchange="updateAccommodationAges()">
-                                <span class="muted">pers</span>
-                            </span>
-                        </div>
-                        <div id="accommodation-ages-container" class="field" style="display:none;margin-left:26px">
-                            <label class="field__label" for="accommodation-ages">Ages</label>
-                            <input type="text" id="accommodation-ages" placeholder="e.g. 12, 40" title="Enter age for each person, separated by comma">
-                        </div>
-                        <div class="check-row">
-                            <input type="checkbox" id="need-transport" onchange="toggleTransport()">
-                            <label for="need-transport" style="flex:1;cursor:pointer">Need transport</label>
-                            <span id="transport-count-container" style="display:none">
-                                <input type="number" id="transport-count" min="1" max="10" value="1" style="width:72px" title="Antal personer">
-                                <span class="muted">pers</span>
-                            </span>
-                        </div>
-                        <div class="check-row">
-                            <input type="checkbox" id="offer-transport" onchange="toggleOfferTransport()">
-                            <label for="offer-transport" style="flex:1;cursor:pointer">Can offer rides</label>
-                            <span id="offer-transport-count-container" style="display:none">
-                                <input type="number" id="offer-transport-count" min="1" max="8" value="1" style="width:72px" title="Lediga platser">
-                                <span class="muted">platser</span>
-                            </span>
+                        <!-- .check-row carries a 44px target but no margin, so
+                             three of them stack flush without this gap. -->
+                        <div style="display:flex;flex-direction:column;gap:var(--sp-2)">
+                            <div class="check-row">
+                                <input type="checkbox" id="need-accommodation" onchange="toggleAccommodation()">
+                                <label for="need-accommodation" style="flex:1;cursor:pointer">Need accommodation</label>
+                                <span id="accommodation-count-container" style="display:none">
+                                    <label class="sr-only" for="accommodation-count">Number of people needing accommodation</label>
+                                    <input type="number" id="accommodation-count" min="1" max="10" value="1" style="width:72px" onchange="updateAccommodationAges()">
+                                    <span class="muted">pers</span>
+                                </span>
+                            </div>
+                            <div id="accommodation-ages-container" class="field" style="display:none;margin:0 0 0 26px">
+                                <label class="field__label" for="accommodation-ages">Ages</label>
+                                <input type="text" id="accommodation-ages" placeholder="e.g. 12, 40" title="Enter age for each person, separated by comma">
+                            </div>
+                            <div class="check-row">
+                                <input type="checkbox" id="need-transport" onchange="toggleTransport()">
+                                <label for="need-transport" style="flex:1;cursor:pointer">Need transport</label>
+                                <span id="transport-count-container" style="display:none">
+                                    <label class="sr-only" for="transport-count">Number of people needing transport</label>
+                                    <input type="number" id="transport-count" min="1" max="10" value="1" style="width:72px">
+                                    <span class="muted">pers</span>
+                                </span>
+                            </div>
+                            <div class="check-row">
+                                <input type="checkbox" id="offer-transport" onchange="toggleOfferTransport()">
+                                <label for="offer-transport" style="flex:1;cursor:pointer">Can offer rides</label>
+                                <span id="offer-transport-count-container" style="display:none">
+                                    <label class="sr-only" for="offer-transport-count">Seats available to offer</label>
+                                    <input type="number" id="offer-transport-count" min="1" max="8" value="1" style="width:72px">
+                                    <span class="muted">platser</span>
+                                </span>
+                            </div>
                         </div>
                     </div>
 
@@ -341,7 +348,7 @@
                         groupsInfo.innerHTML = `
                             <div style="margin-bottom:var(--sp-3)">
                                 <span class="label">Groups</span>
-                                ${groups.map(g => `<span class="badge badge--neutral">${g}</span>`).join("")}
+                                ${groups.map(g => `<span class="badge badge--outline">${g}</span>`).join("")}
                             </div>
                             <details>
                                 <summary style="cursor:pointer;font-weight:600">Eligible players (${eligible.length})</summary>
@@ -1657,7 +1664,11 @@
                         const target = new Date(targetDate + "T00:00:00");
                         const diffMs = target - now;
                         const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-                        if (diffDays < 0) return { text: "Sent", badge: "badge--neutral", passed: true };
+                        // "Not sent", not "Sent": the sent-override below is the
+                        // only thing that knows an email actually went out. Both
+                        // states are struck through, so if they shared a word an
+                        // admin could not tell them apart without the colour.
+                        if (diffDays < 0) return { text: "Not sent", badge: "badge--bad", passed: true };
                         if (diffDays === 0) return { text: "Today", badge: "badge--bad", passed: false };
                         if (diffDays === 1) {
                             const hours = Math.round(diffMs / (1000 * 60 * 60));
@@ -1758,7 +1769,7 @@
                     <div class="card__body">
                         <h2 class="card-title">Submitting to Badminton Sweden</h2>
                         <p id="submit-status">Logging in and processing registrations. This may take a few minutes.</p>
-                        <div style="background:var(--line);border-radius:4px;height:8px;overflow:hidden;margin:var(--sp-4) 0">
+                        <div style="background:var(--line);border-radius:var(--r-inner);height:8px;overflow:hidden;margin:var(--sp-4) 0">
                             <div id="progress-bar" style="width:0%;height:100%;background:var(--blue);transition:width 0.3s"></div>
                         </div>
                         <div id="submit-results" style="display:none;"></div>
