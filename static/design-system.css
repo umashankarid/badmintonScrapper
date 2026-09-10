@@ -217,6 +217,10 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     border: 1px solid var(--line);
     border-radius: var(--r-inner);
 }
+/* setupLiveSearch() on tournament.html empties this container rather than
+   hiding it, and an empty bordered box still paints a 2px line under the
+   field. :empty is the native answer -- no JS toggle to keep in sync. */
+.search-results:empty { display: none; }
 .search-item { padding: var(--sp-3); cursor: pointer; border-bottom: 1px solid var(--line); }
 .search-item:last-child { border-bottom: none; }
 .search-item:hover { background: var(--tint); }

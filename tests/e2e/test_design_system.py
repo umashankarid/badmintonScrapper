@@ -85,3 +85,26 @@ def test_tournament_card_is_stacked_on_a_phone_and_sideways_on_a_desktop(
     page.wait_for_function(
         "getComputedStyle(document.querySelector('.t-card__main')).flexDirection === 'row'"
     )
+
+
+def test_registration_form_stays_one_column_at_every_width(
+        app_server, page, data_dir):
+    """Width buys context, not parallel inputs. If the form ever becomes two
+    columns, the singles and doubles pickers end up side by side -- which is
+    precisely how someone registers for the wrong event.
+
+    Passes before the Task 8 migration as well as after: the old form was
+    already one column. It is a regression guard for the two-pane layout, not
+    a red-to-green cycle.
+    """
+    name = seed.open_tournament(data_dir, name="One Column Cup", groups=["SENIOR"])
+    sign_in_as(page, app_server, "adam")
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{app_server}/tournament.html?url={seed.tournament_url(name)}")
+    page.wait_for_selector("#register-section", state="visible")
+
+    singles = page.locator("select.singles-level").first.bounding_box()
+    doubles = page.locator("select.doubles-level").first.bounding_box()
+    assert doubles["y"] >= singles["y"] + singles["height"], \
+        "the level pickers are side by side; the form went two-column"
