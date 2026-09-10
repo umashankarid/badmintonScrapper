@@ -4,31 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tournament Results</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <style>
-        .filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:20px; padding:15px; background:#f5f5f5; border-radius:8px; }
-        .filters select, .filters input { padding:8px; border:1px solid #ddd; border-radius:4px; }
-        .filters button { padding:8px 16px; }
-        .tournament-result { border:1px solid #ddd; border-radius:8px; padding:15px; margin-bottom:10px; }
-        .tournament-result:hover { background:#f9f9f9; cursor:pointer; }
-        .tournament-result h3 { margin:0 0 5px; color:#0066cc; }
-        .tournament-result p { margin:2px 0; color:#666; font-size:0.9em; }
-        .club-filter { margin-top:15px; padding:15px; background:#e8f4ff; border-radius:8px; }
-        .club-filter select { width:100%; padding:10px; }
-        .back-link { color:#0066cc; text-decoration:none; display:inline-block; margin-bottom:15px; }
-    </style>
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-            <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
-        <span style="font-weight:bold;font-size:0.9em;color:#333;" id="admin-header-name"></span>
-        <button onclick="window.location.href='/'" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;border:none;border-radius:4px;color:white;cursor:pointer;">Logout</button>
+    <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
     </div>
-    <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;margin-bottom:20px;flex-wrap:wrap;">
-        <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Tournaments for Registration</a>
-        <a href="/add-remove-tournaments.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Add/Remove</a>
-        <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Previous Tournaments</a>
-        <a href="/send-email.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Send Email</a>
-        <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Manage</a>
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html">Add/Remove</a>
+        <a href="/results.html" class="is-active">Previous Tournaments</a>
+        <a href="/send-email.html">Send Email</a>
+        <a href="/manage.html">Manage</a>
     </nav>
     <script>
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
@@ -41,32 +30,38 @@
             window.location.href = "/";
         };
     </script>
-<div class="filters">
-        <label>Quick filter:</label>
-        <select id="quickFilter" onchange="applyQuickFilter()">
-            <option value="">Select period...</option>
-            <option value="last_week">Last Week</option>
-            <option value="this_week">This Week</option>
-            <option value="next_week">Next Week</option>
-            <option value="last_month">Last Month</option>
-            <option value="this_month">This Month</option>
-            <option value="next_month">Next Month</option>
-        </select>
-        <label>From:</label>
-        <input type="date" id="startDate">
-        <label>To:</label>
-        <input type="date" id="endDate">
-        <select id="statusFilter">
-            <option value="">All Status</option>
-            <option value="4">Finished</option>
-            <option value="2">Registration Open</option>
-            <option value="3">Upcoming</option>
-        </select>
-        <button onclick="searchTournaments()">Search</button>
+
+    <h1 class="page-title">Tournament Results</h1>
+
+    <div class="inset" style="margin-bottom:var(--sp-5)">
+        <div style="display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap">
+            <label for="quickFilter">Quick filter:</label>
+            <select id="quickFilter" onchange="applyQuickFilter()">
+                <option value="">Select period...</option>
+                <option value="last_week">Last Week</option>
+                <option value="this_week">This Week</option>
+                <option value="next_week">Next Week</option>
+                <option value="last_month">Last Month</option>
+                <option value="this_month">This Month</option>
+                <option value="next_month">Next Month</option>
+            </select>
+            <label for="startDate">From:</label>
+            <input type="date" id="startDate">
+            <label for="endDate">To:</label>
+            <input type="date" id="endDate">
+            <label for="statusFilter" class="sr-only">Status</label>
+            <select id="statusFilter">
+                <option value="">All Status</option>
+                <option value="4">Finished</option>
+                <option value="2">Registration Open</option>
+                <option value="3">Upcoming</option>
+            </select>
+            <button onclick="searchTournaments()" class="btn">Search</button>
+        </div>
     </div>
 
-    <p id="loading" style="display:none;">Loading tournaments...</p>
-    <div id="results"></div>
+    <p id="loading" class="muted" style="display:none;">Loading tournaments...</p>
+    <div id="results" class="stack"></div>
 
     <script>
         function applyQuickFilter() {
@@ -123,19 +118,21 @@
             document.getElementById('loading').style.display = 'none';
 
             if (!data.success || !data.tournaments.length) {
-                document.getElementById('results').innerHTML = '<p>No tournaments found for this period.</p>';
+                document.getElementById('results').innerHTML = '<p class="muted">No tournaments found for this period.</p>';
                 return;
             }
 
             document.getElementById('results').innerHTML = data.tournaments.map(t => {
                 const detailUrl = `/tournament-detail.html?id=${t.id}&name=${encodeURIComponent(t.name)}&info=${encodeURIComponent(t.location + ' · ' + t.date_start + (t.date_end ? ' to ' + t.date_end : ''))}`;
                 return `
-                <div class="tournament-result" onclick="window.location.href='${detailUrl}'">
-                    <h3>${t.name}</h3>
-                    <p>📍 ${t.location}</p>
-                    <p>📅 ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</p>
-                    <p>Status: ${t.status || ''}</p>
-                </div>
+                <a class="card" href="${detailUrl}" style="display:block">
+                    <div class="card__body">
+                        <h2 class="card-title">${t.name}</h2>
+                        <div class="muted" style="margin-top:var(--sp-1)">Location: ${t.location}</div>
+                        <div class="muted">Date: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
+                        <div class="muted">Status: ${t.status || ''}</div>
+                    </div>
+                </a>
             `}).join("");
         }
 
@@ -143,9 +140,10 @@
         document.getElementById('quickFilter').value = 'this_week';
         applyQuickFilter();
     </script>
+    </div>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>

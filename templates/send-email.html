@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Send Email</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
-        <span style="font-weight:bold;font-size:0.9em;color:#333;" id="admin-header-name"></span>
-        <button onclick="window.location.href='/'" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;border:none;border-radius:4px;color:white;cursor:pointer;">Logout</button>
+    <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
     </div>
-    <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;margin-bottom:20px;flex-wrap:wrap;">
-        <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Tournaments for Registration</a>
-        <a href="/add-remove-tournaments.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Add/Remove</a>
-        <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Previous Tournaments</a>
-        <a href="/send-email.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Send Email</a>
-        <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Manage</a>
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html">Add/Remove</a>
+        <a href="/results.html">Previous Tournaments</a>
+        <a href="/send-email.html" class="is-active">Send Email</a>
+        <a href="/manage.html">Manage</a>
     </nav>
     <script>
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
@@ -30,85 +31,93 @@
         };
     </script>
 
-    <div style="margin-top:20px;max-width:700px;">
-        <form id="email-form">
-            <label>Load Recipients</label>
-            <div style="margin-bottom:10px;padding:12px;background:#f5f5f5;border-radius:8px;">
-                <div style="display:flex;gap:15px;margin-bottom:10px;">
-                    <label style="cursor:pointer;font-size:0.9em;"><input type="radio" name="load-type" value="tournament" onchange="showLoadOption()"> By Tournament</label>
-                    <label style="cursor:pointer;font-size:0.9em;"><input type="radio" name="load-type" value="group" onchange="showLoadOption()"> By Group</label>
-                    <label style="cursor:pointer;font-size:0.9em;"><input type="radio" name="load-type" value="all" onchange="showLoadOption()"> All Komet Players</label>
-                </div>
-                
-                <div id="tournament-option" style="display:none;">
-                    <select id="tournament-select" style="width:100%;padding:8px;font-size:0.9em;">
-                        <option value="">-- Select tournament --</option>
-                    </select>
-                    <button type="button" onclick="loadFromTournament()" style="margin-top:8px;width:auto;padding:6px 14px;background:#0d47a1;font-size:0.85em;">Load Emails</button>
-                </div>
-                
-                <div id="group-option" style="display:none;">
-                    <select id="group-select" multiple style="width:100%;padding:8px;font-size:0.9em;height:80px;">
-                    </select>
-                    <p style="color:#999;font-size:0.8em;margin:4px 0 0;">Hold Ctrl/Cmd to select multiple groups</p>
-                    <button type="button" onclick="loadFromGroups()" style="margin-top:8px;width:auto;padding:6px 14px;background:#0d47a1;font-size:0.85em;">Load Emails</button>
-                </div>
-                
-                <div id="all-option" style="display:none;">
-                    <button type="button" onclick="loadAllKometEmails()" style="width:auto;padding:6px 14px;background:#0d47a1;font-size:0.85em;">Load All Komet Player Emails</button>
-                </div>
-            </div>
+    <h1 class="page-title">Send Email</h1>
 
-            <label>To (email addresses — comma or semicolon separated)</label>
-            <textarea id="email-to" rows="3" placeholder="Email addresses will be loaded here..." style="width:100%;font-size:0.9em;" oninput="validateEmails()"></textarea>
-            <div id="email-validation" style="margin-top:4px;font-size:0.8em;"></div>
-            <div id="invalid-emails" style="display:none;margin-top:6px;padding:8px 12px;background:#ffebee;border:1px solid #ef9a9a;border-radius:6px;font-size:0.85em;color:#c62828;"></div>
-            
-            <label>Subject</label>
-            <input type="text" id="email-subject" placeholder="Email subject" required>
-            
-            <label>Message</label>
-            <div style="border:1px solid #ddd;border-radius:6px;overflow:hidden;">
-                <div id="email-toolbar" style="padding:6px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
-                    <button type="button" onclick="execCmd('bold')" title="Bold" style="width:30px;height:28px;padding:0;font-weight:bold;background:white;border:1px solid #999;border-radius:4px;cursor:pointer;color:#333;">B</button>
-                    <button type="button" onclick="execCmd('italic')" title="Italic" style="width:30px;height:28px;padding:0;font-style:italic;background:white;border:1px solid #999;border-radius:4px;cursor:pointer;color:#333;">I</button>
-                    <button type="button" onclick="execCmd('underline')" title="Underline" style="width:30px;height:28px;padding:0;text-decoration:underline;background:white;border:1px solid #999;border-radius:4px;cursor:pointer;color:#333;">U</button>
-                    <span style="border-left:1px solid #ccc;height:20px;margin:0 5px;"></span>
-                    <select onchange="execCmdVal('fontSize', this.value); this.value='';" style="padding:3px;font-size:0.8em;border:1px solid #ccc;border-radius:4px;">
-                        <option value="">Size</option>
-                        <option value="1">Small</option>
-                        <option value="3">Normal</option>
-                        <option value="5">Large</option>
-                        <option value="7">Huge</option>
-                    </select>
-                    <select onchange="execCmdVal('foreColor', this.value); this.value='';" style="padding:3px;font-size:0.8em;border:1px solid #ccc;border-radius:4px;">
-                        <option value="">Color</option>
-                        <option value="#000000" style="color:#000000;">Black</option>
-                        <option value="#c62828" style="color:#c62828;">Red</option>
-                        <option value="#0d47a1" style="color:#0d47a1;">Blue</option>
-                        <option value="#2e7d32" style="color:#2e7d32;">Green</option>
-                        <option value="#e65100" style="color:#e65100;">Orange</option>
-                        <option value="#6a1b9a" style="color:#6a1b9a;">Purple</option>
-                    </select>
-                    <span style="border-left:1px solid #ccc;height:20px;margin:0 5px;"></span>
-                    <button type="button" onclick="execCmd('insertUnorderedList')" title="Bullet list" style="width:30px;height:28px;padding:0;background:white;border:1px solid #999;border-radius:4px;cursor:pointer;color:#333;font-size:1.1em;">•</button>
-                    <button type="button" onclick="execCmd('insertOrderedList')" title="Numbered list" style="width:30px;height:28px;padding:0;background:white;border:1px solid #999;border-radius:4px;cursor:pointer;color:#333;font-size:0.85em;">1.</button>
+    <div class="card">
+        <div class="card__body stack">
+            <form id="email-form">
+                <div class="field">
+                    <label class="field__label">Load Recipients</label>
+                    <div class="inset stack">
+                        <div style="display:flex;gap:var(--sp-4);flex-wrap:wrap;">
+                            <label class="check-row"><input type="radio" name="load-type" value="tournament" onchange="showLoadOption()"> By Tournament</label>
+                            <label class="check-row"><input type="radio" name="load-type" value="group" onchange="showLoadOption()"> By Group</label>
+                            <label class="check-row"><input type="radio" name="load-type" value="all" onchange="showLoadOption()"> All Komet Players</label>
+                        </div>
+
+                        <div id="tournament-option" class="stack" style="display:none">
+                            <select id="tournament-select">
+                                <option value="">-- Select tournament --</option>
+                            </select>
+                            <button type="button" onclick="loadFromTournament()" class="btn btn--secondary">Load Emails</button>
+                        </div>
+
+                        <div id="group-option" class="stack" style="display:none">
+                            <select id="group-select" multiple size="6"></select>
+                            <p class="muted">Hold Ctrl/Cmd to select multiple groups</p>
+                            <button type="button" onclick="loadFromGroups()" class="btn btn--secondary">Load Emails</button>
+                        </div>
+
+                        <div id="all-option" style="display:none">
+                            <button type="button" onclick="loadAllKometEmails()" class="btn btn--secondary">Load All Komet Player Emails</button>
+                        </div>
+                    </div>
                 </div>
-                <div id="email-body" contenteditable="true" style="min-height:200px;padding:12px;font-size:0.95em;outline:none;overflow-y:auto;max-height:400px;" data-placeholder="Write your message here..."></div>
-            </div>
-            <input type="hidden" id="email-body-hidden" name="body">
-            
-            <label style="margin-top:10px;">Attachments (optional)</label>
-            <input type="file" id="email-attachments" multiple style="font-size:0.9em;margin-bottom:5px;">
-            <p style="color:#999;font-size:0.8em;margin:0;">Max 10MB per file. Multiple files allowed.</p>
-            
-            <div style="display:flex;gap:10px;margin-top:15px;">
-                <button type="submit" style="background:#28a745;">Send to All</button>
-                <button type="button" onclick="sendTest()" style="background:#f57c00;">Send Test to Me</button>
-            </div>
-        </form>
-        
-        <div id="send-result" style="display:none;margin-top:15px;padding:12px;border-radius:6px;"></div>
+
+                <div class="field">
+                    <label class="field__label" for="email-to">To (email addresses — comma or semicolon separated)</label>
+                    <textarea id="email-to" rows="3" placeholder="Email addresses will be loaded here..." oninput="validateEmails()"></textarea>
+                    <div id="email-validation"></div>
+                    <div id="invalid-emails" class="banner banner--bad" style="display:none"></div>
+                </div>
+
+                <div class="field">
+                    <label class="field__label" for="email-subject">Subject</label>
+                    <input type="text" id="email-subject" placeholder="Email subject" required>
+                </div>
+
+                <div class="field">
+                    <span class="field__label" id="email-body-label">Message</span>
+                    <div class="rich-editor-toolbar" style="display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-2);">
+                        <button type="button" onclick="execCmd('bold')" title="Bold" class="btn btn--secondary"><strong>B</strong></button>
+                        <button type="button" onclick="execCmd('italic')" title="Italic" class="btn btn--secondary"><em>I</em></button>
+                        <button type="button" onclick="execCmd('underline')" title="Underline" class="btn btn--secondary"><u>U</u></button>
+                        <select onchange="execCmdVal('fontSize', this.value); this.value='';">
+                            <option value="">Size</option>
+                            <option value="1">Small</option>
+                            <option value="3">Normal</option>
+                            <option value="5">Large</option>
+                            <option value="7">Huge</option>
+                        </select>
+                        <select onchange="execCmdVal('foreColor', this.value); this.value='';">
+                            <option value="">Color</option>
+                            <option value="#0f2544" style="color:var(--ink);">Black</option>
+                            <option value="#b42318" style="color:var(--bad);">Red</option>
+                            <option value="#1d4ed8" style="color:var(--blue);">Blue</option>
+                            <option value="#0f7a52" style="color:var(--ok);">Green</option>
+                            <option value="#b45309" style="color:var(--warn);">Orange</option>
+                        </select>
+                        <button type="button" onclick="execCmd('insertUnorderedList')" title="Bullet list" class="btn btn--secondary">&bull;</button>
+                        <button type="button" onclick="execCmd('insertOrderedList')" title="Numbered list" class="btn btn--secondary">1.</button>
+                    </div>
+                    <div id="email-body" class="rich-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="email-body-label" data-placeholder="Write your message here..."></div>
+                </div>
+
+                <div class="field">
+                    <label class="field__label" for="email-attachments">Attachments (optional)</label>
+                    <input type="file" id="email-attachments" multiple>
+                    <p class="muted">Max 10MB per file. Multiple files allowed.</p>
+                </div>
+
+                <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+                    <button type="submit" class="btn">Send to All</button>
+                    <button type="button" onclick="sendTest()" class="btn btn--secondary">Send Test to Me</button>
+                </div>
+            </form>
+
+            <p id="send-result" class="banner" style="display:none"></p>
+        </div>
+    </div>
     </div>
 
     <script>
@@ -129,7 +138,7 @@
             const el = document.getElementById("email-body");
             return el.innerText.trim();
         }
-        
+
         // Placeholder behavior for contenteditable
         document.addEventListener("DOMContentLoaded", () => {
             const editor = document.getElementById("email-body");
@@ -145,7 +154,7 @@
             document.getElementById("tournament-option").style.display = "none";
             document.getElementById("group-option").style.display = "none";
             document.getElementById("all-option").style.display = "none";
-            
+
             const selected = document.querySelector('input[name="load-type"]:checked');
             if (selected) {
                 document.getElementById(selected.value + "-option").style.display = "block";
@@ -205,7 +214,7 @@
             const select = document.getElementById("group-select");
             const selectedGroups = Array.from(select.selectedOptions).map(o => o.value);
             if (!selectedGroups.length) { alert("Select at least one group"); return; }
-            
+
             try {
                 // Fetch emails for each selected group and combine
                 let allEmails = new Set();
@@ -252,7 +261,7 @@
             const emails = parseEmails(text);
             const validationEl = document.getElementById("email-validation");
             const invalidEl = document.getElementById("invalid-emails");
-            
+
             if (!emails.length) {
                 validationEl.innerHTML = "";
                 invalidEl.style.display = "none";
@@ -262,15 +271,15 @@
             const valid = emails.filter(isValidEmail);
             const invalid = emails.filter(e => !isValidEmail(e));
 
-            let html = `<span style="color:#2e7d32;">✅ ${valid.length} valid</span>`;
+            let html = `<span class="badge badge--ok">${valid.length} valid</span>`;
             if (invalid.length) {
-                html += ` &nbsp; <span style="color:#c62828;">❌ ${invalid.length} invalid</span>`;
+                html += ` <span class="badge badge--bad">${invalid.length} invalid</span>`;
             }
             validationEl.innerHTML = html;
 
             if (invalid.length) {
                 invalidEl.style.display = "block";
-                invalidEl.innerHTML = `<strong>Invalid emails:</strong> ${invalid.map(e => `<span style="background:#ffcdd2;padding:2px 6px;border-radius:3px;margin:2px;display:inline-block;">${e}</span>`).join(" ")}`;
+                invalidEl.innerHTML = `<strong>Invalid emails:</strong> ${invalid.map(e => `<span class="badge badge--bad">${e}</span>`).join(" ")}`;
             } else {
                 invalidEl.style.display = "none";
             }
@@ -281,28 +290,27 @@
         document.getElementById("email-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const {valid, invalid} = validateEmails();
-            
+
             if (!valid.length) { alert("No valid email addresses"); return; }
             if (invalid.length) {
                 if (!confirm(`There are ${invalid.length} invalid email(s) that will be skipped:\n\n${invalid.join(", ")}\n\nSend to ${valid.length} valid recipient(s)?`)) return;
             } else {
                 if (!confirm(`Send email to ${valid.length} recipient${valid.length !== 1 ? 's' : ''}?`)) return;
             }
-            
+
             const subject = document.getElementById("email-subject").value;
             const body = getEmailBody();
             if (!subject || !getEmailBodyText()) { alert("Subject and message required"); return; }
-            
+
             const resultEl = document.getElementById("send-result");
             resultEl.style.display = "block";
-            resultEl.style.background = "#e3f2fd";
-            resultEl.style.color = "#1565c0";
+            resultEl.className = "banner";
             resultEl.textContent = `Sending to ${valid.length} recipients...`;
-            
+
             // Use FormData if there are attachments
             const fileInput = document.getElementById("email-attachments");
             const hasFiles = fileInput.files.length > 0;
-            
+
             let res;
             if (hasFiles) {
                 const formData = new FormData();
@@ -324,15 +332,13 @@
                 });
             }
             const data = await res.json();
-            
+
             if (data.success) {
-                resultEl.style.background = "#e8f5e9";
-                resultEl.style.color = "#2e7d32";
-                resultEl.textContent = `✅ Sent to ${data.sent} of ${data.total} recipients.${data.failed > 0 ? ` (${data.failed} failed)` : ''}`;
+                resultEl.className = "banner banner--ok";
+                resultEl.textContent = `Sent to ${data.sent} of ${data.total} recipients.${data.failed > 0 ? ` (${data.failed} failed)` : ''}`;
             } else {
-                resultEl.style.background = "#ffebee";
-                resultEl.style.color = "#c62828";
-                resultEl.textContent = `❌ ${data.error || 'Failed to send'}`;
+                resultEl.className = "banner banner--bad";
+                resultEl.textContent = data.error || 'Failed to send';
             }
         });
 
@@ -340,33 +346,30 @@
             const subject = document.getElementById("email-subject").value;
             const body = getEmailBody();
             if (!subject || !getEmailBodyText()) { alert("Enter subject and message first"); return; }
-            
+
             const res = await fetch("/api/bwf-status");
             const status = await res.json();
             const myEmail = status.email;
             if (!myEmail) { alert("Your email not found. Log in first."); return; }
-            
+
             const resultEl = document.getElementById("send-result");
             resultEl.style.display = "block";
-            resultEl.style.background = "#e3f2fd";
-            resultEl.style.color = "#1565c0";
+            resultEl.className = "banner";
             resultEl.textContent = `Sending test to ${myEmail}...`;
-            
+
             const sendRes = await fetch("/api/send-bulk-email", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({emails: [myEmail], subject: "[TEST] " + subject, body})
             });
             const data = await sendRes.json();
-            
+
             if (data.success) {
-                resultEl.style.background = "#e8f5e9";
-                resultEl.style.color = "#2e7d32";
-                resultEl.textContent = `✅ Test email sent to ${myEmail}`;
+                resultEl.className = "banner banner--ok";
+                resultEl.textContent = `Test email sent to ${myEmail}`;
             } else {
-                resultEl.style.background = "#ffebee";
-                resultEl.style.color = "#c62828";
-                resultEl.textContent = `❌ ${data.error || 'Failed to send test'}`;
+                resultEl.className = "banner banner--bad";
+                resultEl.textContent = data.error || 'Failed to send test';
             }
         }
 
@@ -374,8 +377,8 @@
         loadPlayerGroups();
     </script>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>

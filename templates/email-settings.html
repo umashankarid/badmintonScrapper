@@ -4,180 +4,217 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Email Settings</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <h1>📧 Email Settings</h1>
-    <a href="/manage.html">← Back to Manage</a>
+    <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
+    </div>
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html">Add/Remove</a>
+        <a href="/results.html">Previous Tournaments</a>
+        <a href="/send-email.html">Send Email</a>
+        <a href="/manage.html">Manage</a>
+    </nav>
+    <script>
+        fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
+            const el = document.getElementById("admin-header-name");
+            if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
+        });
+        document.querySelector('[onclick*="location"]').onclick = async () => {
+            await fetch("/api/bwf-logout", {method:"POST"});
+            window.location.href = "/";
+        };
+    </script>
 
-    <div class="tabs" style="margin-top:20px;">
-    <div style="margin-top:20px;max-width:600px;">
-        <h2>Brevo API Configuration</h2>
-        <form id="smtp-form">
-            <label>Sender Email Address</label>
-            <input type="email" id="smtp-email" placeholder="your-email@gmail.com">
-            <label>Brevo API Key</label>
-            <input type="password" id="smtp-password" placeholder="Your Brevo API key (xkeysib-...)">
-            <label>Reminder Days Before Registration Closes</label>
-            <input type="number" id="reminder-days" value="3" min="1" max="14">
-            <div style="display:flex;gap:10px;margin-top:10px;">
-                <button type="submit" style="background:#28a745;">Save Settings</button>
-                <button type="button" onclick="testEmail()" style="background:#f57c00;">Send Test Email</button>
-            </div>
-        </form>
-        <p id="smtp-result" style="display:none;margin-top:10px;padding:10px;border-radius:6px;"></p>
+    <h1 class="page-title">Email Settings</h1>
+    <p><a href="/manage.html">← Back to Manage</a></p>
 
-        <!-- Setup Instructions -->
-        <div style="margin-top:40px;padding:20px;background:#f5f5f5;border-radius:10px;border:1px solid #e0e0e0;">
-            <h3 style="margin-top:0;">📋 Setup Instructions</h3>
-            
-            <h4>Setup with Brevo (Free - 300 emails/day)</h4>
-            <ol style="line-height:2;color:#333;">
-                <li>Go to <a href="https://www.brevo.com/" target="_blank">brevo.com</a> and create a free account (or log in)</li>
-                <li>After login, click your name (top-right) → <strong>SMTP & API</strong>
-                    <br><em>Or go directly to: <a href="https://app.brevo.com/settings/keys/api" target="_blank">https://app.brevo.com/settings/keys/api</a></em></li>
-                <li>Click the <strong>"API Keys"</strong> tab</li>
-                <li>Click <strong>"Generate a new API key"</strong></li>
-                <li>Give it a name (e.g. "Badminton Tournament") and click <strong>Generate</strong></li>
-                <li>⚠️ <strong>Copy the key immediately</strong> — it starts with <code>xkeysib-</code> and is only shown once!</li>
-                <li>Paste it in the <strong>"Brevo API Key"</strong> field above</li>
-            </ol>
-            
-            <h4 style="margin-top:25px;">Verify Your Sender Email</h4>
-            <ol style="line-height:2;color:#333;">
-                <li>Go to <a href="https://app.brevo.com/senders/list" target="_blank">https://app.brevo.com/senders/list</a></li>
-                <li>Click <strong>"Add a sender"</strong></li>
-                <li>Enter your email and a name</li>
-                <li>Click <strong>Save</strong> — Brevo will send a verification email</li>
-                <li>Open your inbox, click the verification link</li>
-            </ol>
-
-            <div style="margin-top:20px;padding:12px;background:#e8f5e9;border-radius:6px;border-left:4px solid #4caf50;">
-                <strong>✅ Why Brevo API?</strong> Render (and many cloud hosts) block SMTP ports. Brevo's API uses HTTPS (port 443) which is always allowed.
+    <div class="stack">
+        <div class="card">
+            <div class="card__body stack">
+                <h2 class="card-title">Brevo API Configuration</h2>
+                <form id="smtp-form">
+                    <div class="field">
+                        <label class="field__label" for="smtp-email">Sender Email Address</label>
+                        <input type="email" id="smtp-email" placeholder="your-email@gmail.com">
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="smtp-password">Brevo API Key</label>
+                        <input type="password" id="smtp-password" placeholder="Your Brevo API key (xkeysib-...)">
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="reminder-days">Reminder Days Before Registration Closes</label>
+                        <input type="number" id="reminder-days" value="3" min="1" max="14">
+                    </div>
+                    <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+                        <button type="submit" class="btn">Save Settings</button>
+                        <button type="button" onclick="testEmail()" class="btn btn--secondary">Send Test Email</button>
+                    </div>
+                </form>
+                <p id="smtp-result" class="banner" style="display:none"></p>
             </div>
         </div>
 
-        <!-- Auto-Reminder System Info -->
-        <div style="margin-top:30px;padding:20px;background:#e3f2fd;border-radius:10px;border:1px solid #bbdefb;">
-            <h3 style="margin-top:0;">⏰ Auto-Reminder System</h3>
-            <p style="color:#333;font-size:0.9em;">The system automatically sends emails based on tournament dates. Runs every 6 hours.</p>
-            
-            <h4 style="margin-top:15px;">1. Registration Reminders (to players NOT yet registered)</h4>
-            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
-                <tr style="background:#bbdefb;">
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
-                </tr>
-                <tr>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">3 days before reg. deadline</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Eligible players who haven't registered</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">📋 Registration closing in 3 days</td>
-                </tr>
-                <tr style="background:#e3f2fd;">
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Last day (day of deadline)</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Eligible players who haven't registered</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">⚠️ Last day to register</td>
-                </tr>
-            </table>
-            <p style="font-size:0.8em;color:#555;">Based on the "Reg. deadline" date set on the Add/Remove Tournaments page. Only sends to players matching tournament groups.</p>
+        <div class="card">
+            <div class="card__body stack">
+                <h2 class="card-title">Setup Instructions</h2>
 
-            <h4 style="margin-top:15px;">2. Admin Notification (registration closed)</h4>
-            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
-                <tr style="background:#bbdefb;">
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
-                </tr>
-                <tr>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Day registration deadline is reached</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">All admin emails</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">🏸 Registration closed: {tournament} + total count</td>
-                </tr>
-            </table>
+                <h3>Setup with Brevo (Free — 300 emails/day)</h3>
+                <ol>
+                    <li>Go to <a href="https://www.brevo.com/" target="_blank">brevo.com</a> and create a free account (or log in)</li>
+                    <li>After login, click your name (top-right) → <strong>SMTP &amp; API</strong>
+                        <br><em>Or go directly to: <a href="https://app.brevo.com/settings/keys/api" target="_blank">https://app.brevo.com/settings/keys/api</a></em></li>
+                    <li>Click the <strong>"API Keys"</strong> tab</li>
+                    <li>Click <strong>"Generate a new API key"</strong></li>
+                    <li>Give it a name (e.g. "Badminton Tournament") and click <strong>Generate</strong></li>
+                    <li><strong>Important — copy the key immediately</strong> — it starts with <code>xkeysib-</code> and is only shown once!</li>
+                    <li>Paste it in the <strong>"Brevo API Key"</strong> field above</li>
+                </ol>
 
-            <h4 style="margin-top:15px;">3. Competition Reminders (to REGISTERED players)</h4>
-            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
-                <tr style="background:#bbdefb;">
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
-                </tr>
-                <tr>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">3 days before competition starts</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Players who are registered</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">🏸 {tournament} starts in 3 days!</td>
-                </tr>
-                <tr style="background:#e3f2fd;">
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Day of competition</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Players who are registered</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">🏸 {tournament} starts today!</td>
-                </tr>
-            </table>
+                <h3>Verify Your Sender Email</h3>
+                <ol>
+                    <li>Go to <a href="https://app.brevo.com/senders/list" target="_blank">https://app.brevo.com/senders/list</a></li>
+                    <li>Click <strong>"Add a sender"</strong></li>
+                    <li>Enter your email and a name</li>
+                    <li>Click <strong>Save</strong> — Brevo will send a verification email</li>
+                    <li>Open your inbox, click the verification link</li>
+                </ol>
 
-            <h4 style="margin-top:15px;">4. Cancellation Deadline Reminder (to REGISTERED players)</h4>
-            <table style="width:100%;border-collapse:collapse;font-size:0.9em;margin:8px 0;">
-                <tr style="background:#bbdefb;">
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">When</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Who</th>
-                    <th style="padding:6px 10px;text-align:left;border:1px solid #90caf9;">Subject</th>
-                </tr>
-                <tr>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">1 day before cancellation deadline</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">Players who are registered</td>
-                    <td style="padding:6px 10px;border:1px solid #90caf9;">⚠️ Last day for changes / withdrawal</td>
-                </tr>
-            </table>
-            <p style="font-size:0.8em;color:#555;">Informs players that after the cancellation deadline, the entry fee will be charged regardless of participation.</p>
-
-            <h4 style="margin-top:15px;">Safeguards</h4>
-            <ul style="font-size:0.9em;color:#333;line-height:1.8;">
-                <li>✅ Won't double-send — tracks every sent email in the database</li>
-                <li>✅ Players can opt out per tournament</li>
-                <li>✅ Group-aware — only sends to players whose groups match the tournament</li>
-                <li>✅ Skips already-registered players for registration reminders</li>
-            </ul>
-
-            <h4 style="margin-top:20px;">🧪 Test Auto-Reminders</h4>
-            <p style="font-size:0.85em;color:#555;margin-bottom:10px;">Send all 3 reminder types to a test email to verify how they look. Sets a short timer, then the system sends the emails.</p>
-            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
-                <div>
-                    <label style="font-size:0.8em;color:#666;display:block;margin-bottom:4px;">Test Email</label>
-                    <input type="email" id="test-reminder-email" placeholder="your@email.com" style="padding:8px 12px;font-size:0.9em;width:250px;">
+                <div class="banner banner--ok">
+                    <p class="banner__title">Why Brevo API?</p>
+                    <p>Render (and many cloud hosts) block SMTP ports. Brevo's API uses HTTPS (port 443) which is always allowed.</p>
                 </div>
-                <div>
-                    <label style="font-size:0.8em;color:#666;display:block;margin-bottom:4px;">Delay (minutes)</label>
-                    <input type="number" id="test-reminder-delay" value="2" min="1" max="10" style="padding:8px 12px;font-size:0.9em;width:80px;">
-                </div>
-                <button onclick="testAutoReminders()" style="padding:8px 16px;background:#1976d2;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9em;">🧪 Start Test</button>
             </div>
-            <div id="test-reminder-status" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:0.9em;"></div>
+        </div>
+
+        <div class="card">
+            <div class="card__body stack">
+                <h2 class="card-title">Auto-Reminder System</h2>
+                <p class="muted">The system automatically sends emails based on tournament dates. Runs every 6 hours.</p>
+
+                <h3>1. Registration Reminders (to players NOT yet registered)</h3>
+                <table class="table table--stack">
+                    <thead><tr><th>When</th><th>Who</th><th>Subject</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td data-label="When">3 days before reg. deadline</td>
+                            <td data-label="Who">Eligible players who haven't registered</td>
+                            <td data-label="Subject">Registration closing in 3 days</td>
+                        </tr>
+                        <tr>
+                            <td data-label="When">Last day (day of deadline)</td>
+                            <td data-label="Who">Eligible players who haven't registered</td>
+                            <td data-label="Subject">Last day to register</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="muted">Based on the "Reg. deadline" date set on the Add/Remove Tournaments page. Only sends to players matching tournament groups.</p>
+
+                <h3>2. Admin Notification (registration closed)</h3>
+                <table class="table table--stack">
+                    <thead><tr><th>When</th><th>Who</th><th>Subject</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td data-label="When">Day registration deadline is reached</td>
+                            <td data-label="Who">All admin emails</td>
+                            <td data-label="Subject">Registration closed: {tournament} + total count</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>3. Competition Reminders (to REGISTERED players)</h3>
+                <table class="table table--stack">
+                    <thead><tr><th>When</th><th>Who</th><th>Subject</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td data-label="When">3 days before competition starts</td>
+                            <td data-label="Who">Players who are registered</td>
+                            <td data-label="Subject">{tournament} starts in 3 days!</td>
+                        </tr>
+                        <tr>
+                            <td data-label="When">Day of competition</td>
+                            <td data-label="Who">Players who are registered</td>
+                            <td data-label="Subject">{tournament} starts today!</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>4. Cancellation Deadline Reminder (to REGISTERED players)</h3>
+                <table class="table table--stack">
+                    <thead><tr><th>When</th><th>Who</th><th>Subject</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td data-label="When">1 day before cancellation deadline</td>
+                            <td data-label="Who">Players who are registered</td>
+                            <td data-label="Subject">Last day for changes / withdrawal</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="muted">Informs players that after the cancellation deadline, the entry fee will be charged regardless of participation.</p>
+
+                <h3>Safeguards</h3>
+                <ul>
+                    <li>Won't double-send — tracks every sent email in the database</li>
+                    <li>Players can opt out per tournament</li>
+                    <li>Group-aware — only sends to players whose groups match the tournament</li>
+                    <li>Skips already-registered players for registration reminders</li>
+                </ul>
+
+                <h3>Test Auto-Reminders</h3>
+                <p class="muted">Send all 3 reminder types to a test email to verify how they look. Sets a short timer, then the system sends the emails.</p>
+                <div class="stack">
+                    <div class="field">
+                        <label class="field__label" for="test-reminder-email">Test Email</label>
+                        <input type="email" id="test-reminder-email" placeholder="your@email.com">
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="test-reminder-delay">Delay (minutes)</label>
+                        <input type="number" id="test-reminder-delay" value="2" min="1" max="10">
+                    </div>
+                    <button onclick="testAutoReminders()" class="btn">Start Test</button>
+                </div>
+                <div id="test-reminder-status" class="banner" style="display:none"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card__body stack">
+                <h2 class="card-title">Email Delivery Events</h2>
+                <p class="muted">Events received from Brevo webhook (bounces, blocks, etc.)</p>
+
+                <div class="stack">
+                    <div class="field">
+                        <label class="field__label" for="event-type-filter">Filter by Event Type</label>
+                        <select id="event-type-filter">
+                            <option value="">All Events</option>
+                            <option value="hard_bounce">Hard Bounce</option>
+                            <option value="soft_bounce">Soft Bounce</option>
+                            <option value="blocked">Blocked</option>
+                            <option value="invalid_email">Invalid Email</option>
+                            <option value="deferred">Deferred</option>
+                            <option value="error">Error</option>
+                            <option value="delivered">Delivered</option>
+                        </select>
+                    </div>
+                    <button onclick="loadEmailEvents()" class="btn btn--secondary">Load Events</button>
+
+                    <div class="field">
+                        <label class="field__label" for="clear-month">Clear Events From Month</label>
+                        <select id="clear-month">
+                            <option value="">Select month to clear...</option>
+                        </select>
+                    </div>
+                    <button onclick="clearEmailEvents()" class="btn btn--danger">Clear Month</button>
+
+                    <div id="email-events-list"></div>
+                </div>
+            </div>
         </div>
     </div>
-
-    <!-- Email Events (Bounce Tracking) -->
-    <div style="margin-top:30px;padding:20px;background:#fafafa;border-radius:10px;border:1px solid #e0e0e0;">
-        <h3 style="margin-top:0;">📊 Email Delivery Events</h3>
-        <p style="color:#555;font-size:0.85em;">Events received from Brevo webhook (bounces, blocks, etc.)</p>
-        
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:15px;">
-            <select id="event-type-filter" style="padding:6px 10px;font-size:0.9em;">
-                <option value="">All Events</option>
-                <option value="hard_bounce">Hard Bounce</option>
-                <option value="soft_bounce">Soft Bounce</option>
-                <option value="blocked">Blocked</option>
-                <option value="invalid_email">Invalid Email</option>
-                <option value="deferred">Deferred</option>
-                <option value="error">Error</option>
-                <option value="delivered">Delivered</option>
-            </select>
-            <button onclick="loadEmailEvents()" style="width:auto;padding:6px 14px;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">🔄 Load Events</button>
-            <select id="clear-month" style="padding:6px 10px;font-size:0.9em;">
-                <option value="">Select month to clear...</option>
-            </select>
-            <button onclick="clearEmailEvents()" style="width:auto;padding:6px 14px;background:#cc3333;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">🗑️ Clear Month</button>
-        </div>
-        <div id="email-events-list" style="font-size:0.85em;max-height:300px;overflow-y:auto;"></div>
     </div>
 
     <script>
@@ -186,19 +223,19 @@
         async function loadEmailEvents() {
             const type = document.getElementById("event-type-filter").value;
             const container = document.getElementById("email-events-list");
-            container.innerHTML = "Loading...";
-            
+            container.innerHTML = '<p class="muted">Loading...</p>';
+
             let url = "/api/email-events?limit=100";
             if (type) url += `&type=${type}`;
-            
+
             try {
                 const res = await fetch(url);
                 const data = await res.json();
                 if (!data.success || !data.events.length) {
-                    container.innerHTML = "<p style='color:#999;'>No events found.</p>";
+                    container.innerHTML = '<p class="muted">No events found.</p>';
                     return;
                 }
-                
+
                 // Populate clear month dropdown
                 const months = new Set();
                 data.events.forEach(e => {
@@ -209,32 +246,26 @@
                 Array.from(months).sort().reverse().forEach(m => {
                     monthSelect.innerHTML += `<option value="${m}">${m}</option>`;
                 });
-                
+
                 container.innerHTML = `
-                    <table style="width:100%;border-collapse:collapse;">
-                        <thead><tr style="background:#f5f5f5;">
-                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Event</th>
-                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Recipient</th>
-                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Subject</th>
-                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Reason</th>
-                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Time</th>
-                        </tr></thead>
+                    <table class="table table--stack table--clip">
+                        <thead><tr><th>Event</th><th>Recipient</th><th>Subject</th><th>Reason</th><th>Time</th></tr></thead>
                         <tbody>
                             ${data.events.map(e => {
-                                const color = ['hard_bounce','blocked','invalid_email','error'].includes(e.event_type) ? '#c62828' : 
-                                              ['soft_bounce','deferred'].includes(e.event_type) ? '#e65100' : '#333';
+                                const badgeClass = ['hard_bounce','blocked','invalid_email','error'].includes(e.event_type) ? 'badge--bad' :
+                                              ['soft_bounce','deferred'].includes(e.event_type) ? 'badge--warn' : 'badge--neutral';
                                 return `<tr>
-                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;color:${color};font-weight:500;">${(e.event_type||'').replace('_',' ')}</td>
-                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;">${e.recipient||''}</td>
-                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.subject||''}</td>
-                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${e.reason||''}</td>
-                                    <td style="padding:5px 8px;border-bottom:1px solid #eee;white-space:nowrap;">${(e.created_at||'').substring(0,16)}</td>
+                                    <td data-label="Event"><span class="badge ${badgeClass}">${(e.event_type||'').replace('_',' ')}</span></td>
+                                    <td data-label="Recipient">${e.recipient||''}</td>
+                                    <td data-label="Subject">${e.subject||''}</td>
+                                    <td data-label="Reason">${e.reason||''}</td>
+                                    <td data-label="Time">${(e.created_at||'').substring(0,16)}</td>
                                 </tr>`;
                             }).join("")}
                         </tbody>
                     </table>`;
             } catch(e) {
-                container.innerHTML = `<p style="color:red;">Error: ${e.message}</p>`;
+                container.innerHTML = `<p class="banner banner--bad">Error: ${e.message}</p>`;
             }
         }
 
@@ -242,7 +273,7 @@
             const month = document.getElementById("clear-month").value;
             if (!month) { alert("Select a month to clear"); return; }
             if (!confirm(`Delete all email events from ${month}? This cannot be undone.`)) return;
-            
+
             try {
                 const res = await fetch("/api/email-events/clear", {
                     method: "POST",
@@ -263,38 +294,37 @@
         async function testAutoReminders() {
             const email = document.getElementById("test-reminder-email").value.trim();
             const delay = parseInt(document.getElementById("test-reminder-delay").value) || 2;
-            
+
             if (!email || !email.includes("@")) {
                 alert("Enter a valid email address");
                 return;
             }
-            
+
             if (!confirm(`This will send 4 test emails to ${email} after ${delay} minute(s):\n\n1. Registration reminder (7 days before)\n2. Admin notification (registration closed)\n3. Competition reminder (7 days before)\n4. Cancellation deadline reminder (1 day before)\n\nProceed?`)) return;
-            
+
             const statusEl = document.getElementById("test-reminder-status");
             statusEl.style.display = "block";
-            statusEl.style.background = "#e3f2fd";
-            statusEl.style.color = "#1565c0";
-            
+            statusEl.className = "banner";
+
             // Start countdown
             let secondsLeft = delay * 60;
-            statusEl.innerHTML = `⏳ Sending test emails in <strong>${secondsLeft}s</strong>...`;
-            
+            statusEl.innerHTML = `Sending test emails in <strong>${secondsLeft}s</strong>...`;
+
             const countdown = setInterval(() => {
                 secondsLeft--;
                 if (secondsLeft > 0) {
-                    statusEl.innerHTML = `⏳ Sending test emails in <strong>${secondsLeft}s</strong>...`;
+                    statusEl.innerHTML = `Sending test emails in <strong>${secondsLeft}s</strong>...`;
                 } else {
                     clearInterval(countdown);
-                    statusEl.innerHTML = `📧 Sending test emails now...`;
+                    statusEl.innerHTML = `Sending test emails now...`;
                 }
             }, 1000);
-            
+
             // Wait for delay then send
             setTimeout(async () => {
                 clearInterval(countdown);
-                statusEl.innerHTML = `📧 Sending 3 test emails to ${email}...`;
-                
+                statusEl.innerHTML = `Sending 3 test emails to ${email}...`;
+
                 try {
                     const res = await fetch("/api/test-auto-reminders", {
                         method: "POST",
@@ -302,20 +332,17 @@
                         body: JSON.stringify({email})
                     });
                     const data = await res.json();
-                    
+
                     if (data.success) {
-                        statusEl.style.background = "#e8f5e9";
-                        statusEl.style.color = "#2e7d32";
-                        statusEl.innerHTML = `✅ ${data.message}`;
+                        statusEl.className = "banner banner--ok";
+                        statusEl.innerHTML = data.message;
                     } else {
-                        statusEl.style.background = "#ffebee";
-                        statusEl.style.color = "#c62828";
-                        statusEl.innerHTML = `❌ ${data.error || 'Failed to send test emails'}`;
+                        statusEl.className = "banner banner--bad";
+                        statusEl.innerHTML = data.error || 'Failed to send test emails';
                     }
                 } catch(e) {
-                    statusEl.style.background = "#ffebee";
-                    statusEl.style.color = "#c62828";
-                    statusEl.innerHTML = `❌ Error: ${e.message}`;
+                    statusEl.className = "banner banner--bad";
+                    statusEl.innerHTML = `Error: ${e.message}`;
                 }
             }, delay * 60 * 1000);
         }
@@ -348,11 +375,11 @@
             const data = await res.json();
             resultEl.style.display = "block";
             if (data.success) {
-                resultEl.style.background = "#e8f5e9"; resultEl.style.color = "#2e7d32";
-                resultEl.textContent = "✅ Settings saved!";
+                resultEl.className = "banner banner--ok";
+                resultEl.textContent = "Settings saved!";
             } else {
-                resultEl.style.background = "#ffebee"; resultEl.style.color = "#c62828";
-                resultEl.textContent = "❌ " + (data.error || "Failed to save");
+                resultEl.className = "banner banner--bad";
+                resultEl.textContent = data.error || "Failed to save";
             }
         });
 
@@ -361,7 +388,7 @@
             if (!email) { alert("Enter an email address first"); return; }
             const resultEl = document.getElementById("smtp-result");
             resultEl.style.display = "block";
-            resultEl.style.background = "#e3f2fd"; resultEl.style.color = "#1565c0";
+            resultEl.className = "banner";
             resultEl.textContent = "Sending test email...";
             const res = await fetch("/admin/send-test-email", {
                 method: "POST",
@@ -370,19 +397,19 @@
             });
             const data = await res.json();
             if (data.success) {
-                resultEl.style.background = "#e8f5e9"; resultEl.style.color = "#2e7d32";
-                resultEl.textContent = "✅ Test email sent to " + email;
+                resultEl.className = "banner banner--ok";
+                resultEl.textContent = "Test email sent to " + email;
             } else {
-                resultEl.style.background = "#ffebee"; resultEl.style.color = "#c62828";
-                resultEl.textContent = "❌ " + (data.error || "Failed to send.");
+                resultEl.className = "banner banner--bad";
+                resultEl.textContent = data.error || "Failed to send.";
             }
         }
 
         loadSettings();
     </script>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>
