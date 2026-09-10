@@ -179,13 +179,19 @@
                 // Use admin_reg_end_date if set, otherwise fall back to registration_closes
                 let urgentStyle = "";
                 let daysCounter = "";
+                let registrationClosed = false;
                 const regEndDate = t.admin_reg_end_date || t.registration_closes;
                 if (regEndDate) {
                     const closeDate = new Date(regEndDate);
                     const today = new Date();
                     const daysLeft = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
                     
-                    if (daysLeft === 0) {
+                    if (daysLeft < 0) {
+                        // Registration closed - grey banner
+                        registrationClosed = true;
+                        daysCounter = `<div style="background:#616161;color:white;padding:8px 15px;font-weight:bold;font-size:0.85em;text-align:center;">🔒 Registration closed / Anmälan stängd</div>`;
+                        urgentStyle = "border-left:4px solid #616161;opacity:0.92;";
+                    } else if (daysLeft === 0) {
                         // Last day for registration - orange banner
                         daysCounter = `<div style="background:#ff6f00;color:white;padding:8px 15px;font-weight:bold;font-size:0.85em;text-align:center;">⚠️ Last day for registration</div>`;
                         urgentStyle = "border-left:4px solid #ff6f00;";
@@ -217,11 +223,20 @@
                             </button>
                         ` : ''}
                         <div style="margin-top:12px;">
-                            <a href="/tournament.html?url=${encodeURIComponent(t.url)}"
-                               class="register-btn"
-                               style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,#0d47a1,#1a237e);color:#fff;font-weight:600;border-radius:10px;text-decoration:none;box-shadow:0 4px 15px rgba(13,71,161,0.25);transition:transform 0.15s,box-shadow 0.15s;">
-                                ${(statusData.logged_in && !statusData.is_admin && registeredUrls.has(t.url)) ? '✏️ View / Edit Registration' : '📝 Register'}
-                            </a>
+                            ${registrationClosed
+                                ? ((statusData.logged_in && !statusData.is_admin && registeredUrls.has(t.url))
+                                    ? `<a href="/tournament.html?url=${encodeURIComponent(t.url)}"
+                                         class="register-btn"
+                                         style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,#0d47a1,#1a237e);color:#fff;font-weight:600;border-radius:10px;text-decoration:none;box-shadow:0 4px 15px rgba(13,71,161,0.25);transition:transform 0.15s,box-shadow 0.15s;">
+                                         👁️ View My Registration
+                                       </a>`
+                                    : `<span style="display:inline-block;padding:10px 22px;background:#e0e0e0;color:#757575;font-weight:600;border-radius:10px;cursor:not-allowed;" title="Registration for this tournament has closed">🔒 Registration Closed</span>`)
+                                : `<a href="/tournament.html?url=${encodeURIComponent(t.url)}"
+                                     class="register-btn"
+                                     style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,#0d47a1,#1a237e);color:#fff;font-weight:600;border-radius:10px;text-decoration:none;box-shadow:0 4px 15px rgba(13,71,161,0.25);transition:transform 0.15s,box-shadow 0.15s;">
+                                     ${(statusData.logged_in && !statusData.is_admin && registeredUrls.has(t.url)) ? '✏️ View / Edit Registration' : '📝 Register'}
+                                   </a>`
+                            }
                         </div>
                     </div>
                 </div>
