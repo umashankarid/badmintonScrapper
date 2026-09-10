@@ -159,6 +159,19 @@ textarea { min-height: 120px; resize: vertical; }
 
 input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 
+/* A bare 18px box is under the 44px tap-target floor. The control users
+   actually aim at is the checkbox plus its label, so the row carries the
+   target and the label is clickable. Templates wrap checkbox + label in
+   this rather than growing the box. */
+.check-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-height: 44px;
+    cursor: pointer;
+}
+.check-row input { flex: none; }
+
 /* The dev bar sets its own inline styles but not min-height, so the 44px
    rule above would inflate it into the page. It is chrome, not content --
    and it must stay visually unlike the app so nobody mistakes fake data for
@@ -194,7 +207,7 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .badge--ok      { background: #e8f5ef; color: #0b5c3e; }
 .badge--warn    { background: #fdf1e2; color: #7a4a10; }
 .badge--bad     { background: #fdeceb; color: #8f2018; }
-.badge--neutral { background: var(--tint); color: var(--muted); }
+.badge--neutral { background: var(--tint); color: #4a5a70; }
 
 /* ---------- table ---------- */
 
