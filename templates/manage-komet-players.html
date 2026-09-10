@@ -4,82 +4,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Komet Players</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <style>
-        .group-tag { display:inline-block;padding:2px 8px;background:#e8f5e9;border-radius:12px;font-size:0.8em;color:#2e7d32;margin:1px; }
-    </style>
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <h1>🏸 Manage Komet Players</h1>
-    <a href="/manage.html">← Back to Manage</a>
+    <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
+    </div>
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html">Add/Remove</a>
+        <a href="/results.html">Previous Tournaments</a>
+        <a href="/send-email.html">Send Email</a>
+        <a href="/manage.html">Manage</a>
+    </nav>
+    <script>
+        fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
+            const el = document.getElementById("admin-header-name");
+            if(el && d.logged_in) el.textContent = "Admin: " + d.player_name;
+            if(!d.is_admin) window.location.href = "/";
+        });
+        document.querySelector('[onclick*="location"]').onclick = async () => {
+            await fetch("/api/bwf-logout", {method:"POST"});
+            window.location.href = "/";
+        };
+    </script>
 
-    <div class="tabs" style="margin-top:20px;">
+    <h1 class="page-title">Manage Komet Players</h1>
+
+    <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('players')">Add Players</button>
         <button class="tab-btn" onclick="switchTab('groups')">Add Groups</button>
     </div>
 
     <!-- Tab 1: Add Players -->
-    <div id="players-tab" class="tab-content active" style="max-width:700px;">
-        <form id="player-form" style="padding:15px;background:#f5f5f5;border-radius:8px;margin-bottom:20px;">
-            <h3 id="form-title" style="margin-top:0;">Add Player</h3>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div style="position:relative;">
-                    <label>Name</label>
-                    <input type="text" id="player-name" placeholder="Search player..." autocomplete="off" required>
-                    <div id="name-search-results" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:4px;max-height:200px;overflow-y:auto;z-index:10;display:none;"></div>
+    <div id="players-tab" class="tab-content active">
+        <div class="stack">
+            <form id="player-form" class="card">
+                <div class="card__body">
+                    <h3 id="form-title" class="card-title">Add Player</h3>
+                    <div class="field search-anchor">
+                        <label class="field__label" for="player-name">Name</label>
+                        <input type="text" id="player-name" placeholder="Search player..." autocomplete="off" required>
+                        <div id="name-search-results" class="search-results" style="display:none;"></div>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="player-license">License ID</label>
+                        <input type="text" id="player-license" placeholder="Auto-filled from search" readonly>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="player-email">Email</label>
+                        <input type="email" id="player-email" placeholder="email@example.com">
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="player-secondary-email">Secondary Email</label>
+                        <input type="email" id="player-secondary-email" placeholder="secondary@example.com">
+                    </div>
+                    <div class="field">
+                        <label class="field__label">Groups</label>
+                        <div id="groups-checkboxes" style="display:flex;flex-wrap:wrap;gap:var(--sp-2);"></div>
+                    </div>
+                    <input type="hidden" id="edit-id" value="">
+                    <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+                        <button type="submit" class="btn">Save</button>
+                        <button type="button" onclick="cancelEdit()" class="btn btn--secondary" style="display:none;" id="cancel-btn">Cancel</button>
+                    </div>
                 </div>
-                <div>
-                    <label>License ID</label>
-                    <input type="text" id="player-license" placeholder="Auto-filled from search" readonly style="background:#f0f0f0;">
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
-                <div>
-                    <label>Email</label>
-                    <input type="email" id="player-email" placeholder="email@example.com">
-                </div>
-                <div>
-                    <label>Secondary Email</label>
-                    <input type="email" id="player-secondary-email" placeholder="secondary@example.com">
-                </div>
-            </div>
-            <div style="margin-top:10px;">
-                <label>Groups</label>
-                <div id="groups-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0;"></div>
-            </div>
-            <input type="hidden" id="edit-id" value="">
-            <div style="display:flex;gap:10px;margin-top:10px;">
-                <button type="submit" style="background:#28a745;width:auto;padding:8px 16px;">Save</button>
-                <button type="button" onclick="cancelEdit()" style="background:#666;width:auto;padding:8px 16px;display:none;" id="cancel-btn">Cancel</button>
-            </div>
-        </form>
+            </form>
 
-        <!-- Search, Filter and Sync -->
-        <div style="margin-bottom:15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="max-width:300px;flex:1;">
-            <select id="group-filter" onchange="applyFilter()" style="padding:8px;font-size:0.9em;width:auto;">
-                <option value="">All Groups</option>
-            </select>
-            <button onclick="syncFromPlayers()" style="width:auto;padding:8px 14px;background:#f57c00;font-size:0.85em;">🔄 Sync from Players DB</button>
+            <div class="stack">
+                <div style="display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="search-input" placeholder="Search by name, license ID, or email..." autocomplete="off" style="flex:1;">
+                    <select id="group-filter" onchange="applyFilter()" style="width:auto;">
+                        <option value="">All Groups</option>
+                    </select>
+                    <button onclick="syncFromPlayers()" class="btn btn--secondary">Sync from Players DB</button>
+                </div>
+                <p id="sync-status" class="banner" style="display:none;"></p>
+                <p id="player-count" class="muted"></p>
+                <div id="players-list"></div>
+                <div id="pagination" style="display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;"></div>
+            </div>
         </div>
-        <p id="sync-status" style="display:none;padding:8px 12px;border-radius:6px;font-size:0.9em;margin-bottom:10px;"></p>
-        <p id="player-count" style="color:#666;font-size:0.9em;"></p>
-        <div id="players-list"></div>
-        <div id="pagination" style="margin-top:15px;display:flex;gap:10px;align-items:center;"></div>
     </div>
 
     <!-- Tab 2: Add Groups -->
-    <div id="groups-tab" class="tab-content" style="max-width:500px;">
-        <h3>Create Player Groups</h3>
-        <p style="color:#666;font-size:0.9em;">Groups are used to categorize players (e.g. U13, U15, Parents, Board).</p>
-        
-        <form id="group-form" style="display:flex;gap:10px;margin-bottom:20px;">
-            <input type="text" id="new-group-name" placeholder="Group name (e.g. U13, Parents)" required style="flex:1;margin:0;">
-            <button type="submit" style="background:#28a745;width:auto;padding:8px 16px;">Add Group</button>
-        </form>
+    <div id="groups-tab" class="tab-content">
+        <div class="stack">
+            <div>
+                <h3 class="card-title">Create Player Groups</h3>
+                <p class="muted">Groups are used to categorize players (e.g. U13, U15, Parents, Board).</p>
+                <form id="group-form" style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+                    <input type="text" id="new-group-name" placeholder="Group name (e.g. U13, Parents)" required style="flex:1;">
+                    <button type="submit" class="btn">Add Group</button>
+                </form>
+            </div>
 
-        <h3>Existing Groups</h3>
-        <div id="groups-list"></div>
+            <div>
+                <h3 class="card-title">Existing Groups</h3>
+                <div id="groups-list"></div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -106,15 +132,14 @@
         function renderGroupCheckboxes(selectedGroups = []) {
             const container = document.getElementById("groups-checkboxes");
             if (!allGroups.length) {
-                container.innerHTML = "<span style='color:#999;font-size:0.85em;'>No groups yet. Create one in the Groups tab.</span>";
+                container.innerHTML = '<span class="muted">No groups yet. Create one in the Groups tab.</span>';
                 return;
             }
             container.innerHTML = allGroups.map(g => {
                 const checked = selectedGroups.includes(g.group_name);
                 return `
-                <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px 10px;border-radius:16px;font-size:0.85em;border:1px solid ${checked ? '#2e7d32' : '#ccc'};background:${checked ? '#e8f5e9' : '#fff'};color:${checked ? '#2e7d32' : '#666'};transition:all 0.2s;">
-                    <input type="checkbox" class="group-checkbox" value="${g.group_name}" 
-                        ${checked ? 'checked' : ''} style="display:none;" onchange="this.parentElement.style.background=this.checked?'#e8f5e9':'#fff';this.parentElement.style.borderColor=this.checked?'#2e7d32':'#ccc';this.parentElement.style.color=this.checked?'#2e7d32':'#666';">
+                <label class="check-row">
+                    <input type="checkbox" class="group-checkbox" value="${g.group_name}" ${checked ? 'checked' : ''}>
                     ${g.group_name}
                 </label>`;
             }).join("");
@@ -128,15 +153,19 @@
             await loadGroups();
             const container = document.getElementById("groups-list");
             if (!allGroups.length) {
-                container.innerHTML = "<p style='color:#999;'>No groups yet.</p>";
+                container.innerHTML = '<p class="muted">No groups yet.</p>';
                 return;
             }
-            container.innerHTML = allGroups.map(g => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:white;border:1px solid #e0e0e0;border-radius:6px;margin-bottom:6px;">
-                    <span>${g.group_name}</span>
-                    <button onclick="deleteGroup(${g.id}, '${g.group_name.replace(/'/g,"\\'")}')" style="width:auto;padding:4px 10px;font-size:0.8em;background:#cc3333;">Delete</button>
-                </div>
-            `).join("");
+            container.innerHTML = `<table class="table table--stack">
+                <thead><tr><th>Group Name</th><th>Actions</th></tr></thead>
+                <tbody>` +
+                allGroups.map(g => `
+                    <tr>
+                        <td data-label="Group Name">${g.group_name}</td>
+                        <td data-label="Actions"><button onclick="deleteGroup(${g.id}, '${g.group_name.replace(/'/g,"\\'")}')" class="btn btn--danger">Delete</button></td>
+                    </tr>
+                `).join("") +
+                `</tbody></table>`;
         }
 
         document.getElementById("group-form").addEventListener("submit", async (e) => {
@@ -170,27 +199,23 @@
         async function syncFromPlayers() {
             const statusEl = document.getElementById("sync-status");
             statusEl.style.display = "block";
-            statusEl.style.background = "#e3f2fd";
-            statusEl.style.color = "#1565c0";
-            statusEl.textContent = "🔄 Syncing Komet players from players database...";
-            
+            statusEl.className = "banner";
+            statusEl.textContent = "Syncing Komet players from players database...";
+
             try {
                 const res = await fetch("/api/komet-players/sync", {method: "POST"});
                 const data = await res.json();
                 if (data.success) {
-                    statusEl.style.background = "#e8f5e9";
-                    statusEl.style.color = "#2e7d32";
-                    statusEl.textContent = `✅ ${data.message}`;
+                    statusEl.className = "banner banner--ok";
+                    statusEl.textContent = `Success: ${data.message}`;
                     loadPlayers();
                 } else {
-                    statusEl.style.background = "#ffebee";
-                    statusEl.style.color = "#c62828";
-                    statusEl.textContent = `❌ ${data.error}`;
+                    statusEl.className = "banner banner--bad";
+                    statusEl.textContent = `Error: ${data.error}`;
                 }
             } catch(e) {
-                statusEl.style.background = "#ffebee";
-                statusEl.style.color = "#c62828";
-                statusEl.textContent = `❌ Error: ${e.message}`;
+                statusEl.className = "banner banner--bad";
+                statusEl.textContent = `Error: ${e.message}`;
             }
             setTimeout(() => { statusEl.style.display = "none"; }, 5000);
         }
@@ -199,29 +224,29 @@
             currentPage = page;
             const container = document.getElementById("players-list");
             const groupFilter = document.getElementById("group-filter").value;
-            
+
             let url = `/api/komet-players?page=${page}&pageSize=${pageSize}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
             if (groupFilter) url += `&group=${encodeURIComponent(groupFilter)}`;
-            
+
             const res = await fetch(url);
             const data = await res.json();
-            
+
             if (!data.success) {
-                container.innerHTML = `<p style="color:red;">${data.error || 'Failed to load'}</p>`;
+                container.innerHTML = `<p class="banner banner--bad">${data.error || 'Failed to load'}</p>`;
                 return;
             }
-            
+
             document.getElementById("player-count").textContent = `${data.total} player${data.total !== 1 ? 's' : ''} total`;
-            
+
             if (!data.players.length) {
-                container.innerHTML = "<p style='color:#999;'>No players found.</p>";
+                container.innerHTML = '<p class="muted">No players found.</p>';
                 document.getElementById("pagination").innerHTML = "";
                 return;
             }
-            
+
             container.innerHTML = `
-                <table style="width:100%;font-size:0.9em;">
+                <table class="table table--stack">
                     <thead>
                         <tr><th>Name</th><th>License ID</th><th>Email</th><th>Groups</th><th>Actions</th></tr>
                     </thead>
@@ -229,27 +254,30 @@
                         ${data.players.map(p => {
                             let groups = [];
                             try { groups = p.groups ? JSON.parse(p.groups) : []; } catch(e) {}
-                            const groupTags = groups.map(g => `<span class="group-tag">${g}</span>`).join("");
+                            const groupTags = groups.map(g => `<span class="badge badge--neutral">${g}</span>`).join("");
+                            const secondaryEmail = p.secondary_email ? `<br><span class="muted">${p.secondary_email}</span>` : "";
                             return `
                             <tr>
-                                <td>${p.name}</td>
-                                <td>${p.license_id || ""}</td>
-                                <td>${p.email || ""}${p.secondary_email ? '<br><span style="color:#666;font-size:0.85em;">' + p.secondary_email + '</span>' : ''}</td>
-                                <td>${groupTags}</td>
-                                <td>
-                                    <button onclick='editPlayer(${JSON.stringify(p)})' style="width:auto;padding:4px 10px;font-size:0.8em;background:#f57c00;">Edit</button>
-                                    <button onclick="deletePlayer(${p.id}, '${(p.name||'').replace(/'/g,"\\'")}')" style="width:auto;padding:4px 10px;font-size:0.8em;background:#cc3333;">Delete</button>
+                                <td data-label="Name">${p.name}</td>
+                                <td data-label="License ID">${p.license_id || ""}</td>
+                                <td data-label="Email">${p.email || ""}${secondaryEmail}</td>
+                                <td data-label="Groups">${groupTags}</td>
+                                <td data-label="Actions">
+                                    <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+                                        <button onclick='editPlayer(${JSON.stringify(p)})' class="btn btn--secondary">Edit</button>
+                                        <button onclick="deletePlayer(${p.id}, '${(p.name||'').replace(/'/g,"\\'")}')" class="btn btn--danger">Delete</button>
+                                    </div>
                                 </td>
                             </tr>`;
                         }).join("")}
                     </tbody>
                 </table>
             `;
-            
+
             const totalPages = Math.ceil(data.total / pageSize);
-            let pagHtml = `<span style="color:#666;font-size:0.9em;">Page ${page} of ${totalPages}</span>`;
-            if (page > 1) pagHtml += `<button onclick="loadPlayers(${page-1}, document.getElementById('search-input').value)" style="width:auto;padding:5px 12px;">← Prev</button>`;
-            if (page < totalPages) pagHtml += `<button onclick="loadPlayers(${page+1}, document.getElementById('search-input').value)" style="width:auto;padding:5px 12px;">Next →</button>`;
+            let pagHtml = `<span class="muted">Page ${page} of ${totalPages}</span>`;
+            if (page > 1) pagHtml += `<button onclick="loadPlayers(${page-1}, document.getElementById('search-input').value)" class="btn btn--secondary">← Prev</button>`;
+            if (page < totalPages) pagHtml += `<button onclick="loadPlayers(${page+1}, document.getElementById('search-input').value)" class="btn btn--secondary">Next →</button>`;
             document.getElementById("pagination").innerHTML = pagHtml;
         }
 
@@ -265,7 +293,7 @@
                 secondary_email: document.getElementById("player-secondary-email").value.trim(),
                 groups: selectedGroups.join(", ")
             };
-            
+
             let res;
             if (editId) {
                 res = await fetch(`/api/komet-players/${editId}`, {
@@ -292,11 +320,10 @@
         function editPlayer(p) {
             let groups = [];
             try { groups = p.groups ? JSON.parse(p.groups) : []; } catch(e) {}
-            
+
             document.getElementById("edit-id").value = p.id;
             document.getElementById("player-license").value = p.license_id || "";
             document.getElementById("player-license").readOnly = false;
-            document.getElementById("player-license").style.background = "";
             document.getElementById("player-name").value = p.name || "";
             document.getElementById("player-email").value = p.email || "";
             document.getElementById("player-secondary-email").value = p.secondary_email || "";
@@ -310,7 +337,6 @@
             document.getElementById("player-form").reset();
             document.getElementById("edit-id").value = "";
             document.getElementById("player-license").readOnly = true;
-            document.getElementById("player-license").style.background = "#f0f0f0";
             document.getElementById("form-title").textContent = "Add Player";
             document.getElementById("cancel-btn").style.display = "none";
             renderGroupCheckboxes([]);
@@ -328,7 +354,7 @@
         let nameSearchTimeout;
         const nameInput = document.getElementById("player-name");
         const nameResults = document.getElementById("name-search-results");
-        
+
         nameInput.addEventListener("input", (e) => {
             clearTimeout(nameSearchTimeout);
             const q = e.target.value.trim();
@@ -337,11 +363,10 @@
                 const res = await fetch(`/api/search-players?q=${encodeURIComponent(q)}`);
                 const players = await res.json();
                 if (!players.length) { nameResults.style.display = "none"; return; }
-                nameResults.innerHTML = players.map((p, i) => 
-                    `<div class="search-item" data-index="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;"
-                         onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background='white'">
+                nameResults.innerHTML = players.map((p, i) =>
+                    `<div class="search-item" data-index="${i}">
                         <strong>${p.name}</strong>${p.license_id ? ' (' + p.license_id + ')' : ''}<br>
-                        <span style="color:#666;font-size:0.85em;">${p.club || 'No club'}</span>
+                        <span class="muted">${p.club || 'No club'}</span>
                     </div>`
                 ).join("");
                 nameResults.style.display = "block";
@@ -389,9 +414,10 @@
         populateGroupFilter();
         loadPlayers();
     </script>
+    </div>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>

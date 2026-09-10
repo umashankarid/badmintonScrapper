@@ -158,6 +158,8 @@ select, textarea {
 }
 textarea { min-height: 120px; resize: vertical; }
 
+input[readonly] { background: var(--tint); color: var(--muted); }
+
 input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 
 /* A bare 18px box is under the 44px tap-target floor. The control users
@@ -178,6 +180,29 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
    and it must stay visually unlike the app so nobody mistakes fake data for
    real. Keep it small and out of the design system. */
 #devbar select, #devbar button { min-height: 0; }
+
+/* ---------- search dropdown (name autocomplete) ---------- */
+
+/* Anchors an absolutely-positioned .search-results under the field that
+   triggers it. Not folded into .field itself -- most fields have no
+   dropdown, and a blanket position:relative would silently become the
+   containing block for anything absolutely positioned inside them later. */
+.search-anchor { position: relative; }
+.search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    max-height: 200px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--r-inner);
+}
+.search-item { padding: var(--sp-3); cursor: pointer; border-bottom: 1px solid var(--line); }
+.search-item:last-child { border-bottom: none; }
+.search-item:hover { background: var(--tint); }
 
 /* ---------- banner ---------- */
 
@@ -269,6 +294,27 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     gap: var(--sp-2);
     margin-bottom: var(--sp-5);
 }
+
+/* Tab button + panel pair (Task 6). manage-komet-players.html's switchTab()
+   toggles the "active" class on both rather than writing inline
+   style.display -- these rules are what makes that toggle visible. */
+.tab-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 10px var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-inner);
+    background: #fff;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.tab-btn:hover { background: var(--tint); }
+.tab-btn.active { color: var(--blue); border-color: var(--blue); background: var(--tint); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
 
 /* ---------- tournament list card (Task 2) ---------- */
 
