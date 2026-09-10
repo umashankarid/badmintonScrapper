@@ -108,3 +108,62 @@ def test_registration_form_stays_one_column_at_every_width(
     doubles = page.locator("select.doubles-level").first.bounding_box()
     assert doubles["y"] >= singles["y"] + singles["height"], \
         "the level pickers are side by side; the form went two-column"
+
+
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_no_template_references_the_old_stylesheet():
+    """styles.css is deleted. A template still linking it renders unstyled,
+    and nothing else in the suite would notice."""
+    offenders = [
+        p.name for p in (REPO_ROOT / "templates").glob("*.html")
+        if "styles.css" in p.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"still linking the deleted stylesheet: {offenders}"
+
+
+def test_the_old_stylesheet_is_gone():
+    assert not (REPO_ROOT / "static" / "styles.css").exists()
+
+
+def test_no_template_uses_emoji_as_an_icon():
+    """The old templates leaned on emoji for status and category icons. Every
+    one carried meaning that a screen reader announces as a picture name, or
+    no meaning at all. The redesign replaces the meaningful ones with words
+    and deletes the decorative ones. These ranges are pictographs and
+    dingbats only -- accented Latin (aa, ae, oe) is nowhere near them."""
+    import re
+    pattern = re.compile(
+        "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\U00002B00-\U00002BFF]")
+    offenders = {}
+    for path in (REPO_ROOT / "templates").glob("*.html"):
+        found = pattern.findall(path.read_text(encoding="utf-8"))
+        if found:
+            offenders[path.name] = sorted(set(found))
+    assert not offenders, f"emoji used as icons: {offenders}"
+
+
+def test_templates_carry_almost_no_inline_styles():
+    """Inline style= attributes are how the old design drifted. A handful
+    survive on purpose: display toggles the scripts drive, a few one-off
+    spacing nudges reaching for var(--sp-*) tokens, and flex/gap wrappers
+    that exist to meet the >=8px tap-target floor. All three are accepted
+    carve-outs, reviewed repeatedly during this migration.
+
+    The number below is the actual count measured across templates/*.html
+    the day styles.css was deleted (225), not the 60 guessed before any
+    migration ran. It is a ratchet, not a target: it may fall, it must never
+    rise. If a future change legitimately needs one more, raise the number
+    in the same commit and say why in the commit message -- do not delete a
+    legitimate survivor just to keep the number down.
+    """
+    total = sum(
+        p.read_text(encoding="utf-8").count('style="')
+        for p in (REPO_ROOT / "templates").glob("*.html")
+    )
+    assert total <= 225, (
+        f"{total} inline style= attributes across templates, budget is 225. "
+        "Put appearance in static/design-system.css.")

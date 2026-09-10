@@ -98,13 +98,13 @@
             const data = await res.json();
 
             if (data.success) {
-                resultEl.textContent = `✅ ${username} added as admin`;
+                resultEl.textContent = `${username} added as admin`;
                 resultEl.className = "banner banner--ok";
                 document.getElementById("new-admin-username").value = "";
                 document.getElementById("new-admin-email").value = "";
                 loadAdmins();
             } else {
-                resultEl.textContent = `❌ ${data.error || 'Failed to add admin'}`;
+                resultEl.textContent = `Error: ${data.error || 'Failed to add admin'}`;
                 resultEl.className = "banner banner--bad";
             }
             resultEl.style.display = "block";
