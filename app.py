@@ -3989,6 +3989,27 @@ def delete_player():
             conn.close()
             return jsonify(success=False, error="Registration not found"), 404
 
+        # Enforce cancellation deadline for non-admin (player self-withdrawal).
+        # Admins can always manage the roster.
+        if not session.get("admin"):
+            cur.execute("SELECT cancellation_deadline FROM tournaments WHERE tournament_name = ?", (db_file,))
+            trow = cur.fetchone()
+            cancellation_deadline = trow["cancellation_deadline"] if trow else None
+            if cancellation_deadline:
+                from datetime import datetime as _dt
+                today = _dt.now().strftime("%Y-%m-%d")
+                if today > cancellation_deadline:
+                    conn.close()
+                    return jsonify(
+                        success=False,
+                        error=(
+                            "Avanmälningstiden har passerat (sista dag: " + cancellation_deadline + "). "
+                            "Du kan inte längre dra tillbaka din anmälan. Kontakta Tavlingar@bmkkomet.se.\n\n"
+                            "The cancellation deadline has passed (last day: " + cancellation_deadline + "). "
+                            "You can no longer withdraw your registration. Contact Tavlingar@bmkkomet.se."
+                        )
+                    ), 403
+
         license_id = registration["license_id"]
         doubles_partner_name = registration["doubles_partner"] or ""
         mixed_partner_name = registration["mixed_partner"] or ""
