@@ -418,7 +418,10 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
    as a vertical list; the button does not exist at desktop widths. */
 .admin-nav__toggle { display: none; }
 @media (max-width: 767.98px) {
-    .admin-nav__toggle { display: inline-flex; margin-bottom: var(--sp-3); }
+    /* align-self: index.html's nav lives inside a flex column (#admin-info),
+       where a block child stretches full width. Every page gets the same
+       compact button either way. */
+    .admin-nav__toggle { display: inline-flex; align-self: flex-start; margin-bottom: var(--sp-3); }
     .admin-nav {
         display: none;
         flex-direction: column;
