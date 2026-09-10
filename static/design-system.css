@@ -99,6 +99,7 @@ h1, h2, h3 { margin: 0; line-height: 1.3; }
 
 .card { background: #fff; border: 1px solid var(--line); border-radius: var(--r-card); }
 .card + .card { margin-top: var(--sp-3); }
+a.card:hover { border-color: var(--blue); }
 .card__body { padding: var(--sp-4); }
 .card__row { padding: var(--sp-4); border-bottom: 1px solid var(--line); }
 .card__row:last-child { border-bottom: none; }

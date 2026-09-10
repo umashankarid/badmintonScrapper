@@ -4,65 +4,80 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Admins</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <h1>Manage Admins</h1>
-    <a href="/manage.html">← Back to Manage</a>
+    <div class="page">
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html">Add/Remove</a>
+        <a href="/results.html">Previous Tournaments</a>
+        <a href="/send-email.html">Send Email</a>
+        <a href="/manage.html">Manage</a>
+    </nav>
 
-    <div style="margin-top:20px;">
-        <!-- Add Admin -->
-        <h2>Add Admin</h2>
-        <form id="add-admin-form" style="display:flex;gap:10px;align-items:flex-end;max-width:600px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:200px;">
-                <label for="new-admin-username">Username (Badminton Sweden login)</label>
-                <input type="text" id="new-admin-username" placeholder="e.g. username or email" required style="margin-bottom:0;">
-            </div>
-            <div style="flex:1;min-width:200px;">
-                <label for="new-admin-email">Email (for notifications)</label>
-                <input type="email" id="new-admin-email" placeholder="admin@email.com" style="margin-bottom:0;">
-            </div>
-            <button type="submit" style="padding:10px 20px;background:#0d47a1;white-space:nowrap;">Add Admin</button>
-        </form>
-        <p id="add-result" style="display:none;margin-top:10px;padding:10px;border-radius:6px;"></p>
+    <h1 class="page-title">Manage Admins</h1>
 
-        <!-- Admin List -->
-        <h2 style="margin-top:30px;">Current Admins</h2>
-        <div id="admin-list"></div>
+    <div class="stack">
+        <p><a href="/manage.html">← Back to Manage</a></p>
+
+        <div class="card">
+            <div class="card__body">
+                <h2 class="card-title">Add Admin</h2>
+                <form id="add-admin-form">
+                    <div class="field">
+                        <label class="field__label" for="new-admin-username">Username (Badminton Sweden login)</label>
+                        <input type="text" id="new-admin-username" placeholder="e.g. username or email" required>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="new-admin-email">Email (for notifications)</label>
+                        <input type="email" id="new-admin-email" placeholder="admin@email.com">
+                    </div>
+                    <button type="submit" class="btn btn--block">Add Admin</button>
+                </form>
+                <p id="add-result" class="banner" style="display:none"></p>
+            </div>
+        </div>
+
+        <h2 class="card-title">Current Admins</h2>
+        <div class="card">
+            <div id="admin-list" class="card__body"></div>
+        </div>
+    </div>
     </div>
 
     <script>
         async function loadAdmins() {
             const container = document.getElementById("admin-list");
-            container.innerHTML = "<p style='color:#999;'>Loading...</p>";
-            
+            container.innerHTML = "<p class=\"muted\">Loading...</p>";
+
             try {
                 const res = await fetch("/api/list-admins");
                 const data = await res.json();
-                
+
                 if (!data.success) {
-                    container.innerHTML = `<p style="color:red;">${data.error || 'Failed to load admins'}</p>`;
+                    container.innerHTML = `<p class="banner banner--bad">${data.error || 'Failed to load admins'}</p>`;
                     return;
                 }
-                
+
                 if (!data.admins || !data.admins.length) {
-                    container.innerHTML = "<p>No admins found.</p>";
+                    container.innerHTML = "<p class=\"muted\">No admins found.</p>";
                     return;
                 }
-                
-                container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
+
+                container.innerHTML = `<table class="table table--stack">
+                    <thead><tr><th>Username</th><th>Email</th><th></th></tr></thead>
+                    <tbody>` +
                     data.admins.map(admin => `
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 15px;background:white;border:1px solid #e0e0e0;border-radius:8px;">
-                            <div>
-                                <span style="font-weight:500;">${admin.username}</span>
-                                ${admin.email ? `<span style="color:#666;font-size:0.85em;margin-left:8px;">📧 ${admin.email}</span>` : '<span style="color:#cc3333;font-size:0.8em;margin-left:8px;">(no email)</span>'}
-                            </div>
-                            <button onclick="removeAdmin('${admin.username.replace(/'/g, "\\'")}')" style="padding:6px 14px;background:#cc3333;font-size:0.85em;width:auto;">Remove</button>
-                        </div>
+                        <tr>
+                            <td data-label="Username">${admin.username}</td>
+                            <td data-label="Email">${admin.email ? admin.email : '<span class="muted">(no email)</span>'}</td>
+                            <td data-label="Actions"><button onclick="removeAdmin('${admin.username.replace(/'/g, "\\'")}')" class="btn btn--danger">Remove</button></td>
+                        </tr>
                     `).join("") +
-                    `</div>`;
+                    `</tbody></table>`;
             } catch (err) {
-                container.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+                container.innerHTML = `<p class="banner banner--bad">Error: ${err.message}</p>`;
             }
         }
 
@@ -71,42 +86,40 @@
             const username = document.getElementById("new-admin-username").value.trim();
             const email = document.getElementById("new-admin-email").value.trim();
             if (!username) return;
-            
+
             const resultEl = document.getElementById("add-result");
             resultEl.style.display = "none";
-            
+
             const res = await fetch("/admin/add-admin-by-id", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({username, email})
             });
             const data = await res.json();
-            
+
             if (data.success) {
                 resultEl.textContent = `✅ ${username} added as admin`;
-                resultEl.style.background = "#e8f5e9";
-                resultEl.style.color = "#2e7d32";
+                resultEl.className = "banner banner--ok";
                 document.getElementById("new-admin-username").value = "";
                 document.getElementById("new-admin-email").value = "";
                 loadAdmins();
             } else {
                 resultEl.textContent = `❌ ${data.error || 'Failed to add admin'}`;
-                resultEl.style.background = "#ffebee";
-                resultEl.style.color = "#c62828";
+                resultEl.className = "banner banner--bad";
             }
             resultEl.style.display = "block";
         });
 
         async function removeAdmin(username) {
             if (!confirm(`Remove ${username} as admin?`)) return;
-            
+
             const res = await fetch("/api/remove-admin", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({username})
             });
             const data = await res.json();
-            
+
             if (data.success) {
                 loadAdmins();
             } else {
@@ -117,8 +130,8 @@
         loadAdmins();
     </script>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>

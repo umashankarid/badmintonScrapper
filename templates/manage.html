@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
-    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
-        <span style="font-weight:bold;font-size:0.9em;color:#333;" id="admin-header-name"></span>
-        <button onclick="window.location.href='/'" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;border:none;border-radius:4px;color:white;cursor:pointer;">Logout</button>
+    <div class="page">
+    <div class="topbar">
+        <span id="admin-header-name" style="font-weight:600"></span>
+        <button onclick="window.location.href='/'" class="btn btn--secondary">Logout</button>
     </div>
-    <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;margin-bottom:20px;flex-wrap:wrap;">
-        <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Tournaments for Registration</a>
-        <a href="/add-remove-tournaments.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Add/Remove</a>
-        <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Previous Tournaments</a>
-        <a href="/send-email.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Send Email</a>
-        <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Manage</a>
+    <nav class="admin-nav">
+        <a href="/">Tournaments for Registration</a>
+        <a href="/add-remove-tournaments.html">Add/Remove</a>
+        <a href="/results.html">Previous Tournaments</a>
+        <a href="/send-email.html">Send Email</a>
+        <a href="/manage.html" class="is-active">Manage</a>
     </nav>
     <script>
         fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
@@ -30,35 +31,36 @@
         };
     </script>
 
-    <div style="margin-top:30px;display:grid;gap:15px;max-width:500px;">
-        <a href="/manage-admins.html" style="text-decoration:none;">
-            <div style="padding:20px;background:white;border:1px solid #e0e0e0;border-radius:10px;transition:all 0.2s;border-left:5px solid #0d47a1;">
-                <h3 style="margin:0 0 5px 0;color:#1a237e;">👤 Manage Admins</h3>
-                <p style="margin:0;color:#666;font-size:0.9em;">Add or remove admin users</p>
+    <div class="stack" style="max-width:520px">
+        <a href="/manage-admins.html" class="card" style="display:block">
+            <div class="card__body">
+                <h2 class="card-title">Manage Admins</h2>
+                <p class="muted" style="margin:var(--sp-1) 0 0">Add or remove admin users</p>
             </div>
         </a>
-        <a href="/manage-komet-players.html" style="text-decoration:none;">
-            <div style="padding:20px;background:white;border:1px solid #e0e0e0;border-radius:10px;transition:all 0.2s;border-left:5px solid #2e7d32;">
-                <h3 style="margin:0 0 5px 0;color:#1b5e20;">🏸 Manage Komet Players</h3>
-                <p style="margin:0;color:#666;font-size:0.9em;">View all scraped players from Badminton Sweden</p>
+        <a href="/manage-komet-players.html" class="card" style="display:block">
+            <div class="card__body">
+                <h2 class="card-title">Manage Komet Players</h2>
+                <p class="muted" style="margin:var(--sp-1) 0 0">View all scraped players from Badminton Sweden</p>
             </div>
         </a>
-        <a href="/email-settings.html" style="text-decoration:none;">
-            <div style="padding:20px;background:white;border:1px solid #e0e0e0;border-radius:10px;transition:all 0.2s;border-left:5px solid #6a1b9a;">
-                <h3 style="margin:0 0 5px 0;color:#4a148c;">📧 Email Settings</h3>
-                <p style="margin:0;color:#666;font-size:0.9em;">Configure Brevo API for sending emails and reminders</p>
+        <a href="/email-settings.html" class="card" style="display:block">
+            <div class="card__body">
+                <h2 class="card-title">Email Settings</h2>
+                <p class="muted" style="margin:var(--sp-1) 0 0">Configure Brevo API for sending emails and reminders</p>
             </div>
         </a>
-        <a href="/manage-db.html" style="text-decoration:none;">
-            <div style="padding:20px;background:white;border:1px solid #e0e0e0;border-radius:10px;transition:all 0.2s;border-left:5px solid #455a64;">
-                <h3 style="margin:0 0 5px 0;color:#37474f;">📊 Manage Database</h3>
-                <p style="margin:0;color:#666;font-size:0.9em;">View and manage all project databases</p>
+        <a href="/manage-db.html" class="card" style="display:block">
+            <div class="card__body">
+                <h2 class="card-title">Manage Database</h2>
+                <p class="muted" style="margin:var(--sp-1) 0 0">View and manage all project databases</p>
             </div>
         </a>
     </div>
+    </div>
 
-    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
-        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    <footer class="site-footer">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se">support@bmkkomet.se</a></p>
     </footer>
 <script src="/static/devbar.js"></script>
 </body>
