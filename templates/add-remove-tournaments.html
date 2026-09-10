@@ -139,6 +139,12 @@
                         if (hasJunior) ageBadges += ' <span class="badge badge--warn">Junior</span>';
                         if (hasSenior) ageBadges += ' <span class="badge badge--neutral">Senior</span>';
                         const safeName = t.name.replace(/"/g, '&quot;');
+                        // Old markup checked `t.categories && (singles_levels || doubles_levels
+                        // || mixed_levels)` -- an empty array is truthy in JS, so that rendered
+                        // a "Categories:" line with nothing after it whenever categories existed
+                        // but all three level arrays were empty. allLevels.length drops the line
+                        // entirely in that case instead of leaving an empty label.
+                        const hasCategories = allLevels.length > 0;
 
                         return `
                         <div class="card__row">
@@ -159,7 +165,7 @@
                                     <strong>${t.name}</strong>${ageBadges}
                                     <div class="muted">${t.location} &middot; ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
                                     ${t.registration_closes ? `<div class="muted">Registration closes ${t.registration_closes}</div>` : ''}
-                                    ${allLevels.length ? `<div class="muted">Categories: ${allLevels.join(', ')}</div>` : ''}
+                                    ${hasCategories ? `<div class="muted">Categories: ${allLevels.join(', ')}</div>` : ''}
                                 </div>
                             </label>
                             <div class="stack" style="max-width:260px;margin-top:var(--sp-3)">
