@@ -3252,6 +3252,75 @@ def _cleanup_removed_partner(cur, tournament_name, partner_name, category_type, 
         logger.error(f"⚠️  Error cleaning up removed partner: {e}")
 
 
+def _tournament_dates_line(tournament_name):
+    """Return a bilingual one-line summary of a tournament's competition dates for emails."""
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COALESCE(NULLIF(competition_start,''), NULLIF(date_start,'')),
+                   COALESCE(NULLIF(competition_end,''), NULLIF(date_end,'')),
+                   location
+            FROM tournaments WHERE tournament_name = ?
+        """, (tournament_name,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return ""
+        start, end, location = row[0] or "", row[1] or "", row[2] or ""
+        parts = []
+        if start:
+            date_str = start + (f" – {end}" if end and end != start else "")
+            parts.append(f"📅 Datum / Date: {date_str}")
+        if location:
+            parts.append(f"📍 {location}")
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
+
+def _notify_partner_withdrawn(tournament_name, partner_name, category_label, withdrawn_by_name):
+    """Email a partner that the person they were paired with has withdrawn from a
+    doubles/mixed category, so they can re-register with someone else or go open.
+    partner_name is looked up in players.db to find their email(s)."""
+    if not partner_name:
+        return
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT email, secondary_email FROM players WHERE name = ?", (partner_name,))
+        row = cur.fetchone()
+        conn.close()
+        if not row or not (row[0] or row[1]):
+            logger.info(f"📧 No email on file for partner '{partner_name}' — withdrawal notice skipped")
+            return
+        date_line = _tournament_dates_line(tournament_name)
+        subject = f"🏸 Din partner har avanmält sig / Your partner has withdrawn: {tournament_name}"
+        body = (f"Hej {partner_name},\n\n"
+                f"{withdrawn_by_name} har avanmält sig från {category_label} i '{tournament_name}', "
+                f"så ni är inte längre anmälda som par.\n"
+                f"{date_line}\n\n"
+                f"Om du fortfarande vill spela {category_label} kan du logga in och antingen anmäla "
+                f"dig med en ny partner eller anmäla dig som öppen (letar partner).\n\n"
+                f"— — —\n\n"
+                f"Hi {partner_name},\n\n"
+                f"{withdrawn_by_name} has withdrawn from {category_label} in '{tournament_name}', "
+                f"so you are no longer registered as a pair.\n"
+                f"{date_line}\n\n"
+                f"If you still want to play {category_label}, log in and either register with a new "
+                f"partner or register as open (looking for a partner):\n"
+                f"https://tournament-registration.bmkkomet.se\n\n"
+                f"Tävlingsfrågor / Tournament questions: tavlingar@bmkkomet.se\n"
+                f"Support / Hjälp: support@bmkkomet.se\n\n"
+                f"Med vänliga hälsningar / Best regards,\nBMK Komet")
+        for addr in (row[0], row[1]):
+            if addr:
+                send_email(addr, subject, body)
+                logger.info(f"📧 Partner-withdrawal notice sent to {addr} ({partner_name}) for {tournament_name}")
+    except Exception as e:
+        logger.debug(f"Could not notify partner of withdrawal: {e}")
+
+
 def _register_partner(tournament_name, partner_license_id, partner_name, partner_club="", partner_profile_url="", doubles_levels="", mixed_levels="", doubles_partner="", mixed_partner=""):
     """
     Register a partner player in both players.db and tournament_registrations.
@@ -3425,15 +3494,18 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
         if notify_row and (notify_row[0] or notify_row[1]):
             category = doubles_levels or mixed_levels or ""
             paired_with = doubles_partner or mixed_partner or ""
+            date_line = _tournament_dates_line(tournament_name)
             
             notify_subject = f"🏸 Du är anmäld som partner / You've been added as a partner: {tournament_name}"
             notify_body = (f"Hi {partner_name},\n\n"
                           f"Du har lagts till som partner i '{tournament_name}'.\n"
                           f"Kategori: {category}\n"
-                          f"Partner: {paired_with}\n\n"
+                          f"Partner: {paired_with}\n"
+                          f"{date_line}\n\n"
                           f"You have been added as a partner in '{tournament_name}'.\n"
                           f"Category: {category}\n"
-                          f"Partner: {paired_with}\n\n"
+                          f"Partner: {paired_with}\n"
+                          f"{date_line}\n\n"
                           f"Logga in för att se din anmälan / Log in to see your registration:\n"
                           f"https://tournament-registration.bmkkomet.se\n\n"
                           f"Tävlingsfrågor / Tournament questions: tavlingar@bmkkomet.se\n"
@@ -4068,6 +4140,26 @@ def delete_player():
         # Delete the registration
         cur.execute("DELETE FROM tournament_registrations WHERE id = ?", (player_id,))
 
+        # Collect partners to notify (name + category label) before clearing their refs
+        partners_to_notify = []  # (partner_name, category_label)
+        if player_name:
+            cur.execute("""
+                SELECT license_id, doubles_partner, mixed_partner, doubles_levels, mixed_levels
+                FROM tournament_registrations
+                WHERE tournament_name = ? AND (doubles_partner = ? OR mixed_partner = ?)
+            """, (db_file, player_name, player_name))
+            for prow in cur.fetchall():
+                # Resolve the affected partner's name from players.db
+                pconn = sqlite3.connect(PLAYERS_DB); pcur = pconn.cursor()
+                pcur.execute("SELECT name FROM players WHERE license_id = ?", (prow["license_id"],))
+                nr = pcur.fetchone(); pconn.close()
+                affected_name = nr[0] if nr else ""
+                if affected_name:
+                    if prow["doubles_partner"] == player_name:
+                        partners_to_notify.append((affected_name, prow["doubles_levels"] or "dubbel / doubles"))
+                    if prow["mixed_partner"] == player_name:
+                        partners_to_notify.append((affected_name, prow["mixed_levels"] or "mixed"))
+
         # Clear partner references from other registrations
         if player_name:
             cur.execute("""
@@ -4092,6 +4184,11 @@ def delete_player():
 
         conn.commit()
         conn.close()
+
+        # Notify affected partners that their pairing was withdrawn
+        for affected_name, cat_label in partners_to_notify:
+            _notify_partner_withdrawn(db_file, affected_name, cat_label, player_name or license_id)
+
         return jsonify(success=True)
 
     except Exception as e:
@@ -4146,15 +4243,21 @@ def withdraw_category():
         player_name = prow[0] if prow else ""
 
         # Clear the chosen category on this player's row; unwind partner mirror for doubles/mixed
+        withdrawn_partner_name = ""
+        withdrawn_category_label = ""
         if category_type == "singles":
             cur.execute("UPDATE tournament_registrations SET singles_levels = '' WHERE id = ?", (player_id,))
         elif category_type == "doubles":
             partner_name = reg["doubles_partner"] or ""
+            withdrawn_partner_name = partner_name
+            withdrawn_category_label = reg["doubles_levels"] or "dubbel / doubles"
             cur.execute("UPDATE tournament_registrations SET doubles_levels = '', doubles_partner = '' WHERE id = ?", (player_id,))
             if player_name and partner_name:
                 _cleanup_removed_partner(cur, db_file, partner_name, "doubles", player_name)
         elif category_type == "mixed":
             partner_name = reg["mixed_partner"] or ""
+            withdrawn_partner_name = partner_name
+            withdrawn_category_label = reg["mixed_levels"] or "mixed"
             cur.execute("UPDATE tournament_registrations SET mixed_levels = '', mixed_partner = '' WHERE id = ?", (player_id,))
             if player_name and partner_name:
                 _cleanup_removed_partner(cur, db_file, partner_name, "mixed", player_name)
@@ -4171,6 +4274,11 @@ def withdraw_category():
 
         conn.commit()
         conn.close()
+
+        # Notify the partner (if any) that their pairing was withdrawn
+        if withdrawn_partner_name:
+            _notify_partner_withdrawn(db_file, withdrawn_partner_name, withdrawn_category_label, player_name or license_id)
+
         logger.info(f"🔄 Withdrew {category_type} for reg id={player_id} ({license_id}) in {db_file}; row_removed={row_removed}")
         return jsonify(success=True, row_removed=row_removed,
                        message=f"Withdrew from {category_type}." + (" No categories left — registration removed." if row_removed else ""))
