@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+
+# push already fires for every commit on a PR branch in this repo, so a
+# separate pull_request: trigger would run the same suite twice per push
+# and double-bill the runner. Keep push only.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    # GitHub-hosted: this repository is public, so these minutes are free.
+    # A Namespace.so profile was considered and dropped -- its wins are private-repo
+    # minutes and big caches, and this pipeline finishes in about a minute.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"      # matches the production image
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run the offline suite
+        run: pytest -m "not live" --ignore=tests/e2e -q
+
+  e2e:
+    # GitHub-hosted: this repository is public, so these minutes are free.
+    # A Namespace.so profile was considered and dropped -- its wins are private-repo
+    # minutes and big caches, and this pipeline finishes in about a minute.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Cache the Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          # Keyed on the pinned version, so it invalidates exactly when
+          # requirements.txt moves and never otherwise.
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+      - run: playwright install --with-deps chromium
+      - name: Run the browser suite
+        # --tracing=retain-on-failure: pytest-playwright only writes
+        # test-results/ when tracing (or screenshots) are enabled, so
+        # without this flag the upload step below can never find anything.
+        run: pytest tests/e2e -q --tracing=retain-on-failure
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore

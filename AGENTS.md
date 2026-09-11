@@ -16,11 +16,17 @@ python3 run_tests.py                           # the gate used by build.sh (runs
 python3 -m unittest test_badminton -v
 python3 -m unittest test_badminton.TestTournamentVisibility.test_toggle_tournament_visibility -v
 python3 -m pytest test_player_storage.py -v    # other test_*.py are run individually
+
+pytest -m "not live" --ignore=tests/e2e         # the offline suite, what CI gates on
+pytest tests/e2e                                # the browser suite (needs: playwright install chromium)
+pytest -m live                                  # reaches the real site; needs credentials, never runs in CI
 ```
 
 `app.py` runs `test_badminton.py` at import time and calls `sys.exit(1)` if anything fails — a broken test in that one file stops the server from booting. `build.sh` (Render/Coolify build step) runs the same gate.
 
-Not all `test_*.py` files are unit tests: `test_bwf_steps.py`, `test_bwf_doubles.py`, `test_live_ensure_tournament.py`, and `test_ensure_tournament_e2e.py` hit the live Badminton Sweden site (Playwright/HTTP) and need real credentials. Don't add them to `unittest discover` runs.
+Not all `test_*.py` files are unit tests: `test_bwf_steps.py`, `test_bwf_doubles.py`, and `test_live_ensure_tournament.py` hit the live Badminton Sweden site (Playwright/HTTP) and need real credentials. Don't add them to `unittest discover` runs. They also carry pytest's `@pytest.mark.live` (declared in `pytest.ini`), so a plain `pytest` run deselects them with `-m "not live"`; CI always runs with that flag and never sets credentials. `test_ensure_tournament_e2e.py` is misleadingly named despite the "e2e": it never touches the network or `app.py` -- it builds its own temp SQLite file with hardcoded tournament data and asserts against that. It carries no `live` marker because it doesn't need one, and runs as part of the ordinary offline suite in CI.
+
+**The browser suite** (`tests/e2e/`) boots `app.py` as a subprocess in dev mode with its own temporary `DATA_DIR` and outbound HTTP blocked, then drives Chromium against it via Playwright/pytest-playwright. State is seeded by writing SQLite directly, and every write lives in `tests/e2e/seed.py` — put new state builders there rather than inline in a test, so a schema change breaks one file instead of many. CI runs it as a separate job from the offline suite (`.github/workflows/ci.yml`) because it needs `playwright install --with-deps chromium` first.
 
 Docker: `python:3.10-slim` + Playwright Chromium, `CMD python app.py`, port 3000.
 
@@ -81,6 +87,17 @@ User-facing error messages are bilingual: Swedish first, blank line, then Englis
 ## Repo conventions
 
 `CODE_GUIDELINES.md` is the active working agreement and its rules apply here: write the test first, log every operation (INFO for events, ERROR for failures, the codebase uses ✅/❌/📧 emoji prefixes consistently), update `CHANGES.md` with every commit, and **never push without explicit user approval**.
+
+**Change a user-facing flow, update its browser test in the same commit.** The templates are static HTML with inline JavaScript and no type checking, so nothing but `tests/e2e/` connects a control to the endpoint it calls. If you touch a page, a route a page calls, a response shape a page reads, or an element id or class a test selects, update the covering test in `tests/e2e/` as part of the same change. CI runs that suite on every push and will fail — which is the point, but a failure you discover in CI costs more than one you fix while the change is still in front of you.
+
+Concretely, these break browser tests and are easy to do without noticing:
+
+- renaming or removing an `id`/class the tests select — `#submit-btn`, `#register-section`, `#devbar select`, `select.singles-level`, `#doubles-partner`
+- renaming an endpoint, or changing a key in a JSON response a page reads
+- changing what a rejection message says: several tests assert the exact text, so that the test proves *which* rule fired rather than merely that something was refused
+- changing the database schema — `tests/e2e/seed.py` is the only file in the suite that knows it, and every write belongs there rather than inline in a test
+
+If the flow you changed has no test, add one rather than leaving the gap. If you deliberately remove coverage, say so in the commit message; a test quietly deleted to make a change pass is worse than no test at all.
 
 **Do not commit plans or specs.** Design documents, implementation plans, task breakdowns and similar planning artifacts stay local — `docs/superpowers/` is gitignored for this reason. They are working notes for a single piece of work, they go stale the moment the code moves on, and this repository already carries a dozen abandoned `*_PLAN.md` and `*_SUMMARY.md` files that prove the point. Put the reasoning that outlives the task in the commit message, in `CHANGES.md`, or here.
 
