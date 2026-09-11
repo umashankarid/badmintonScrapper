@@ -617,6 +617,12 @@
                 }
 
                 tbody.innerHTML = players.map(p => {
+                    const isMine = loggedInPlayer && loggedInPlayer.license_id === p.license_id;
+                    const canWithdrawCat = isMine && !isAdmin && !window.cancellationPassed;
+                    // Small per-category withdraw link (only for the logged-in owner, before cancellation deadline)
+                    const catWithdraw = (type, hasCat) => (canWithdrawCat && hasCat)
+                        ? ` <a href="#" onclick="withdrawCategory(${p.player_id}, '${type}');return false;" title="Withdraw from this category / Avanmäl denna kategori" style="color:#cc3333;font-weight:bold;text-decoration:none;margin-left:4px;">✕</a>`
+                        : "";
                     return `
                     <tr>
                         <td>${p.player_name || ""}</td>
@@ -625,9 +631,9 @@
                         <td>${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
                         <td>${p.email || ""}</td>
                         <td>${p.phone || ""}</td>
-                        <td>${p.singles_levels || ""}</td>
-                        <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}</td>
-                        <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}</td>
+                        <td>${p.singles_levels || ""}${catWithdraw('singles', p.singles_levels)}</td>
+                        <td>${p.doubles_levels || ""}${p.doubles_partner ? " (" + p.doubles_partner + ")" : ""}${catWithdraw('doubles', p.doubles_levels)}</td>
+                        <td>${p.mixed_levels || ""}${p.mixed_partner ? " (" + p.mixed_partner + ")" : ""}${catWithdraw('mixed', p.mixed_levels)}</td>
                         <td>
                             ${isAdmin ?
                                 `<button onclick="adminEditPlayer(${p.player_id})">Edit</button>
@@ -637,8 +643,8 @@
                                     `<button disabled style="opacity:0.5;cursor:not-allowed;">Edit</button>` :
                                     `<button onclick="editPlayer(${p.player_id})">Edit</button>`}
                                  ${window.cancellationPassed ?
-                                    `<button disabled title="Cancellation deadline has passed" style="background:#cc3333;opacity:0.5;cursor:not-allowed;">Withdraw</button>` :
-                                    `<button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw</button>`}` :
+                                    `<button disabled title="Cancellation deadline has passed" style="background:#cc3333;opacity:0.5;cursor:not-allowed;">Withdraw All</button>` :
+                                    `<button onclick="deletePlayer(${p.player_id})" style="background:#cc3333;">Withdraw All</button>`}` :
                                 "")}
                         </td>
                     </tr>
@@ -853,6 +859,30 @@
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({dbFile, playerId: id, confirm: true})
                 });
+            }
+            loadPlayers();
+        }
+
+        async function withdrawCategory(id, categoryType) {
+            const labels = {singles: "singel / singles", doubles: "dubbel / doubles", mixed: "mixed"};
+            const label = labels[categoryType] || categoryType;
+            const msg = `Vill du avanmäla dig från ${label}? Dina andra kategorier behålls.\n\n` +
+                        `Withdraw from ${label} only? Your other categories will be kept.`;
+            if (!confirm(msg)) return;
+            try {
+                const res = await fetch("/api/withdraw-category", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({dbFile, playerId: id, categoryType})
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    alert(data.error || "Could not withdraw from this category.");
+                    return;
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+                return;
             }
             loadPlayers();
         }

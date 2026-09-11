@@ -4099,6 +4099,86 @@ def delete_player():
         return jsonify(success=False, error=str(e)), 500
 
 
+@app.route("/api/withdraw-category", methods=["POST"])
+def withdraw_category():
+    """Withdraw a player from ONE category (singles/doubles/mixed) without removing
+    their other categories. If it was their last category, the whole row is removed.
+    For doubles/mixed, the partner's mirror is unwound too."""
+    data = request.json
+    db_file = data.get("dbFile")
+    player_id = data.get("playerId")
+    category_type = (data.get("categoryType") or "").strip().lower()  # singles|doubles|mixed
+    if not db_file or not player_id or category_type not in ("singles", "doubles", "mixed"):
+        return jsonify(success=False, error="Missing or invalid data"), 400
+
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        cur.execute("SELECT * FROM tournament_registrations WHERE id = ? AND tournament_name = ?", (player_id, db_file))
+        reg = cur.fetchone()
+        if not reg:
+            conn.close()
+            return jsonify(success=False, error="Registration not found"), 404
+
+        # Enforce cancellation deadline for non-admins (same rule as full withdrawal)
+        if not session.get("admin"):
+            cur.execute("SELECT cancellation_deadline FROM tournaments WHERE tournament_name = ?", (db_file,))
+            trow = cur.fetchone()
+            cancellation_deadline = trow["cancellation_deadline"] if trow else None
+            if cancellation_deadline:
+                from datetime import datetime as _dt
+                if _dt.now().strftime("%Y-%m-%d") > cancellation_deadline:
+                    conn.close()
+                    return jsonify(success=False, error=(
+                        "Avanmälningstiden har passerat. Du kan inte längre avanmäla dig.\n\n"
+                        "The cancellation deadline has passed. You can no longer withdraw."
+                    )), 403
+
+        license_id = reg["license_id"]
+        # Resolve the player's own name (for unwinding partner mirrors)
+        conn_p = sqlite3.connect(PLAYERS_DB)
+        cur_p = conn_p.cursor()
+        cur_p.execute("SELECT name FROM players WHERE license_id = ?", (license_id,))
+        prow = cur_p.fetchone()
+        conn_p.close()
+        player_name = prow[0] if prow else ""
+
+        # Clear the chosen category on this player's row; unwind partner mirror for doubles/mixed
+        if category_type == "singles":
+            cur.execute("UPDATE tournament_registrations SET singles_levels = '' WHERE id = ?", (player_id,))
+        elif category_type == "doubles":
+            partner_name = reg["doubles_partner"] or ""
+            cur.execute("UPDATE tournament_registrations SET doubles_levels = '', doubles_partner = '' WHERE id = ?", (player_id,))
+            if player_name and partner_name:
+                _cleanup_removed_partner(cur, db_file, partner_name, "doubles", player_name)
+        elif category_type == "mixed":
+            partner_name = reg["mixed_partner"] or ""
+            cur.execute("UPDATE tournament_registrations SET mixed_levels = '', mixed_partner = '' WHERE id = ?", (player_id,))
+            if player_name and partner_name:
+                _cleanup_removed_partner(cur, db_file, partner_name, "mixed", player_name)
+
+        # If this player now has no categories left, remove their row entirely
+        cur.execute("""
+            DELETE FROM tournament_registrations
+            WHERE id = ? AND
+                (singles_levels IS NULL OR singles_levels = '') AND
+                (doubles_levels IS NULL OR doubles_levels = '') AND
+                (mixed_levels IS NULL OR mixed_levels = '')
+        """, (player_id,))
+        row_removed = cur.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        logger.info(f"🔄 Withdrew {category_type} for reg id={player_id} ({license_id}) in {db_file}; row_removed={row_removed}")
+        return jsonify(success=True, row_removed=row_removed,
+                       message=f"Withdrew from {category_type}." + (" No categories left — registration removed." if row_removed else ""))
+    except Exception as e:
+        logger.error(f"❌ Error withdrawing category: {e}")
+        return jsonify(success=False, error=str(e)), 500
+
+
 # --- Search players live from Badminton Sweden ---
 @app.route("/api/search-players", methods=["GET"])
 def search_players():
