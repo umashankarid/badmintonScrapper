@@ -431,6 +431,10 @@
                     <button onclick="cleanupOrphaned()" style="padding:10px 20px;background:#f57c00;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9em;">🧹 Clean Orphaned Registrations</button>
                     <p style="color:#666;font-size:0.85em;margin:8px 0 0;">Removes empty registration records (e.g. left over when a partner was removed). Fixes false "already registered" errors.</p>
                     <div id="cleanup-result" style="margin-top:10px;font-size:0.9em;"></div>
+                    <hr style="border:none;border-top:1px solid #eee;margin:15px 0;">
+                    <button onclick="repairNames()" style="padding:10px 20px;background:#0d47a1;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9em;">🩹 Repair Missing Player Names</button>
+                    <p style="color:#666;font-size:0.85em;margin:8px 0 0;">Re-fetches names from Badminton Sweden for players showing as "Unknown" (usually auto-added partners whose name wasn't captured).</p>
+                    <div id="repair-result" style="margin-top:10px;font-size:0.9em;"></div>
                 </div>
             </div>
 
@@ -499,6 +503,27 @@
             resultEl.style.color = "#1565c0";
             try {
                 const res = await fetch("/api/cleanup-orphaned-registrations", {method: "POST"});
+                const data = await res.json();
+                if (data.success) {
+                    resultEl.style.color = "#2e7d32";
+                    resultEl.innerHTML = `✅ ${data.message}` + (data.details && data.details.length ? '<br><small>' + data.details.join('<br>') + '</small>' : '');
+                } else {
+                    resultEl.style.color = "#c62828";
+                    resultEl.textContent = `❌ ${data.error}`;
+                }
+            } catch(e) {
+                resultEl.style.color = "#c62828";
+                resultEl.textContent = `❌ Error: ${e.message}`;
+            }
+        }
+
+        async function repairNames() {
+            if (!confirm("Re-fetch missing player names from Badminton Sweden? This may take a moment.")) return;
+            const resultEl = document.getElementById("repair-result");
+            resultEl.textContent = "Repairing... (contacting Badminton Sweden)";
+            resultEl.style.color = "#1565c0";
+            try {
+                const res = await fetch("/api/repair-player-names", {method: "POST"});
                 const data = await res.json();
                 if (data.success) {
                     resultEl.style.color = "#2e7d32";

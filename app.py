@@ -3325,10 +3325,19 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
         conn_players = sqlite3.connect(PLAYERS_DB)
         cur_players = conn_players.cursor()
         
-        cur_players.execute("SELECT id FROM players WHERE license_id = ?", (partner_license_id,))
+        # Final safeguard: never persist an empty name. Fall back to the license ID
+        # as a placeholder so the partner never displays as "Unknown".
+        safe_name = (partner_name or "").strip() or partner_license_id
+        
+        cur_players.execute("SELECT id, name FROM players WHERE license_id = ?", (partner_license_id,))
         existing = cur_players.fetchone()
         
         if existing:
+            # Preserve an existing good name if the incoming name is empty/placeholder.
+            existing_name = (existing[1] or "").strip()
+            name_to_save = safe_name
+            if (not partner_name or not partner_name.strip()) and existing_name and existing_name != partner_license_id:
+                name_to_save = existing_name
             # Update existing - preserve login data
             cur_players.execute("""
                 UPDATE players SET
@@ -3338,17 +3347,17 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
                     ranking = COALESCE(?, ranking),
                     last_updated = ?
                 WHERE license_id = ?
-            """, (partner_name, partner_profile_url or None, partner_club or None, partner_ranking, now, partner_license_id))
+            """, (name_to_save, partner_profile_url or None, partner_club or None, partner_ranking, now, partner_license_id))
         else:
             # Insert new partner player
             cur_players.execute("""
                 INSERT INTO players (license_id, name, profile_url, club, ranking, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (partner_license_id, partner_name, partner_profile_url, partner_club, partner_ranking, now))
+            """, (partner_license_id, safe_name, partner_profile_url, partner_club, partner_ranking, now))
         
         conn_players.commit()
         conn_players.close()
-        logger.info(f"✅ Partner {partner_name} ({partner_license_id}) saved to players.db")
+        logger.info(f"✅ Partner {safe_name} ({partner_license_id}) saved to players.db")
     except Exception as e:
         logger.error(f"⚠️  Error saving partner to players.db: {e}")
     
@@ -4861,6 +4870,70 @@ def reset_reminder():
         
         logger.info(f"🔄 Reset reminder '{key}': deleted {deleted} record(s)")
         return jsonify(success=True, message=f"Reset '{reminder_type}' for '{tournament_name}'. Deleted {deleted} record(s). Will be resent on next scheduler run.")
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
+@app.route("/api/repair-player-names", methods=["GET", "POST"])
+def repair_player_names():
+    """Re-fetch names for players with missing/placeholder names from SBF search. Admin only."""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        # Players whose name is empty, NULL, or equals their license id (placeholder)
+        cur.execute("""
+            SELECT license_id, name FROM players
+            WHERE name IS NULL OR TRIM(name) = '' OR name = license_id
+        """)
+        broken = cur.fetchall()
+
+        repaired = []
+        for license_id, old_name in broken:
+            if not license_id:
+                continue
+            try:
+                resp = ext_requests.get(
+                    "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+                    params={"Page": 1, "SportID": 2, "Query": license_id},
+                    headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
+                    timeout=8
+                )
+                soup = BeautifulSoup(resp.text, "html.parser")
+                fetched_name = ""
+                fetched_club = ""
+                fetched_profile = ""
+                for item in soup.select("li.list__item"):
+                    license_el = item.select_one(".media__title-aside")
+                    if license_el and license_id in license_el.get_text(strip=True):
+                        name_el = item.select_one("a.media__link span.nav-link__value")
+                        if name_el:
+                            fetched_name = name_el.get_text(strip=True)
+                        link = item.select_one("a.media__link")
+                        if link:
+                            fetched_profile = link.get("href", "")
+                        club_el = item.select_one(".media__subheading span.nav-link__value")
+                        if club_el:
+                            fetched_club = club_el.get_text(strip=True).split("|")[0].strip()
+                        break
+                if fetched_name and fetched_name != old_name:
+                    cur.execute("""
+                        UPDATE players SET
+                            name = ?,
+                            profile_url = COALESCE(NULLIF(?, ''), profile_url),
+                            club = COALESCE(NULLIF(?, ''), club)
+                        WHERE license_id = ?
+                    """, (fetched_name, fetched_profile, fetched_club, license_id))
+                    repaired.append(f"{license_id}: '{old_name}' → '{fetched_name}'")
+                    logger.info(f"✅ Repaired player name {license_id}: '{old_name}' → '{fetched_name}'")
+            except Exception as e:
+                logger.debug(f"Could not repair name for {license_id}: {e}")
+
+        conn.commit()
+        conn.close()
+        return jsonify(success=True, message=f"Repaired {len(repaired)} of {len(broken)} players with missing names.", details=repaired)
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
