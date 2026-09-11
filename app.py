@@ -4937,8 +4937,10 @@ def send_reminders():
 # --- Results Page ---
 @app.route("/results.html")
 def results_page():
-    from flask import render_template
-    return render_template("results.html")
+    # send_from_directory like every other page. render_template compiled the
+    # file once per process and, with DEBUG=0, kept serving that copy after
+    # the file changed on disk; the template has no Jinja in it anyway.
+    return send_from_directory("templates", "results.html")
 
 
 @app.route("/api/search-tournaments", methods=["GET"])
@@ -4958,8 +4960,7 @@ def search_tournaments():
 
 @app.route("/tournament-detail.html")
 def tournament_detail_page():
-    from flask import render_template
-    return render_template("tournament_detail.html")
+    return send_from_directory("templates", "tournament_detail.html")
 
 
 @app.route("/api/tournament-medals", methods=["GET"])
