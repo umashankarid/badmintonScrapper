@@ -4874,6 +4874,46 @@ def reset_reminder():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/api/cleanup-old-tournaments", methods=["GET", "POST"])
+def cleanup_old_tournaments_endpoint():
+    """Preview (GET) or run (POST) cleanup of tournaments that ended long ago. Admin only."""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    try:
+        grace_days = int(request.args.get("grace_days", 30))
+    except Exception:
+        grace_days = 30
+
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(days=grace_days)).strftime("%Y-%m-%d")
+
+    if request.method == "GET":
+        # Preview: list tournaments that WOULD be removed, with registration counts
+        try:
+            conn = sqlite3.connect(TOURNAMENTS_DB)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT tournament_name,
+                       COALESCE(NULLIF(competition_end, ''), NULLIF(date_end, '')) AS end_date
+                FROM tournaments
+            """)
+            preview = []
+            for name, end_date in cur.fetchall():
+                if end_date and end_date < cutoff:
+                    cur.execute("SELECT COUNT(*) FROM tournament_registrations WHERE tournament_name = ?", (name,))
+                    cnt = cur.fetchone()[0]
+                    preview.append(f"{name} (ended {end_date}, {cnt} registrations)")
+            conn.close()
+            return jsonify(success=True, grace_days=grace_days, would_remove=preview,
+                           message=f"{len(preview)} tournament(s) ended more than {grace_days} days ago.")
+        except Exception as e:
+            return jsonify(success=False, error=str(e))
+
+    # POST: perform the cleanup
+    removed = cleanup_old_tournaments(grace_days=grace_days)
+    return jsonify(success=True, message=f"Removed {len(removed)} old tournament(s) and their data.", details=removed)
+
+
 @app.route("/api/repair-player-names", methods=["GET", "POST"])
 def repair_player_names():
     """Re-fetch names for players with missing/placeholder names from SBF search. Admin only.
@@ -5984,6 +6024,70 @@ def _cleanup_old_backups(keep_days=10):
             logger.error(f"Error deleting old backup {old}: {e}")
 
 
+def cleanup_old_tournaments(grace_days=30):
+    """Delete tournaments (and their related rows) whose competition ended more than
+    `grace_days` ago, to keep the DB from growing without bound.
+
+    Removes matching rows from:
+      - tournaments.db: tournaments, tournament_registrations, reminder_opt_out
+      - admin.db: reminders_sent (keyed by "<tournament_name>_<type>")
+
+    A daily auto-backup runs before this in the scheduler, so deleted data is
+    recoverable from backups for the backup-retention window.
+    """
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(days=grace_days)).strftime("%Y-%m-%d")
+    removed = []
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        # A tournament is "over" when competition_end (or date_end fallback) < cutoff.
+        # Ignore rows with no usable end date (never auto-delete those).
+        cur.execute("""
+            SELECT tournament_name,
+                   COALESCE(NULLIF(competition_end, ''), NULLIF(date_end, '')) AS end_date
+            FROM tournaments
+        """)
+        expired = []
+        for name, end_date in cur.fetchall():
+            if end_date and end_date < cutoff:
+                expired.append(name)
+
+        if not expired:
+            conn.close()
+            return []
+
+        for name in expired:
+            cur.execute("DELETE FROM tournament_registrations WHERE tournament_name = ?", (name,))
+            reg_deleted = cur.rowcount
+            cur.execute("DELETE FROM reminder_opt_out WHERE tournament_name = ?", (name,))
+            cur.execute("DELETE FROM tournaments WHERE tournament_name = ?", (name,))
+            removed.append((name, reg_deleted))
+        conn.commit()
+        conn.close()
+
+        # Clean reminders_sent in admin.db (keyed by "<tournament_name>_<type>")
+        try:
+            aconn = sqlite3.connect(ADMIN_DB)
+            acur = aconn.cursor()
+            for name, _ in removed:
+                # tournament_db values look like "<name>_<type>"; match all types for this name.
+                acur.execute(
+                    "DELETE FROM reminders_sent WHERE tournament_db = ? OR tournament_db LIKE ? ESCAPE '\\'",
+                    (name, name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "\\_%")
+                )
+            aconn.commit()
+            aconn.close()
+        except Exception as e:
+            logger.error(f"❌ Error cleaning reminders_sent for old tournaments: {e}")
+
+        for name, reg_deleted in removed:
+            logger.info(f"🗑️ Auto-removed old tournament '{name}' (ended > {grace_days}d ago, {reg_deleted} registrations)")
+    except Exception as e:
+        logger.error(f"❌ Error in cleanup_old_tournaments: {e}")
+    return [r[0] for r in removed]
+
+
 def daily_backup_scheduler():
     """Run a daily auto-backup, keeping only the last 10 days."""
     import time
@@ -6000,6 +6104,8 @@ def daily_backup_scheduler():
             if not already_today:
                 _do_backup(prefix="auto_")
                 _cleanup_old_backups(keep_days=10)
+                # After the safety backup, purge tournaments that ended > 30 days ago
+                cleanup_old_tournaments(grace_days=30)
         except Exception as e:
             logger.error(f"❌ Error in daily backup: {e}")
         time.sleep(6 * 3600)  # Check every 6 hours (makes 1 backup per day)
