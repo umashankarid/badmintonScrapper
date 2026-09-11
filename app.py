@@ -4876,22 +4876,40 @@ def reset_reminder():
 
 @app.route("/api/repair-player-names", methods=["GET", "POST"])
 def repair_player_names():
-    """Re-fetch names for players with missing/placeholder names from SBF search. Admin only."""
+    """Re-fetch names for players with missing/placeholder names from SBF search. Admin only.
+    Covers both existing players rows with bad names AND registration license_ids that have
+    no players row at all (e.g. a partner who was added but never logged in)."""
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
 
     try:
         conn = sqlite3.connect(PLAYERS_DB)
         cur = conn.cursor()
-        # Players whose name is empty, NULL, or equals their license id (placeholder)
+        # 1. Players whose name is empty, NULL, or equals their license id (placeholder)
         cur.execute("""
             SELECT license_id, name FROM players
             WHERE name IS NULL OR TRIM(name) = '' OR name = license_id
         """)
-        broken = cur.fetchall()
+        broken = {row[0]: (row[1] or "") for row in cur.fetchall() if row[0]}
+
+        # 2. License IDs that appear in registrations but have NO players row at all
+        #    (partners added but never logged in — they show as "Unknown" in the admin view).
+        try:
+            conn.execute(f"ATTACH DATABASE '{TOURNAMENTS_DB}' AS t")
+            cur.execute("""
+                SELECT DISTINCT tr.license_id
+                FROM t.tournament_registrations tr
+                LEFT JOIN players p ON tr.license_id = p.license_id
+                WHERE p.license_id IS NULL AND tr.license_id IS NOT NULL AND tr.license_id != ''
+            """)
+            for row in cur.fetchall():
+                if row[0] not in broken:
+                    broken[row[0]] = ""  # no players row yet
+        except Exception as e:
+            logger.debug(f"Could not scan registrations for missing players: {e}")
 
         repaired = []
-        for license_id, old_name in broken:
+        for license_id, old_name in broken.items():
             if not license_id:
                 continue
             try:
@@ -4919,14 +4937,23 @@ def repair_player_names():
                             fetched_club = club_el.get_text(strip=True).split("|")[0].strip()
                         break
                 if fetched_name and fetched_name != old_name:
-                    cur.execute("""
-                        UPDATE players SET
-                            name = ?,
-                            profile_url = COALESCE(NULLIF(?, ''), profile_url),
-                            club = COALESCE(NULLIF(?, ''), club)
-                        WHERE license_id = ?
-                    """, (fetched_name, fetched_profile, fetched_club, license_id))
-                    repaired.append(f"{license_id}: '{old_name}' → '{fetched_name}'")
+                    # UPSERT: update if the player row exists, else insert it
+                    cur.execute("SELECT 1 FROM players WHERE license_id = ?", (license_id,))
+                    if cur.fetchone():
+                        cur.execute("""
+                            UPDATE players SET
+                                name = ?,
+                                profile_url = COALESCE(NULLIF(?, ''), profile_url),
+                                club = COALESCE(NULLIF(?, ''), club)
+                            WHERE license_id = ?
+                        """, (fetched_name, fetched_profile, fetched_club, license_id))
+                    else:
+                        cur.execute("""
+                            INSERT INTO players (license_id, name, profile_url, club, last_updated)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (license_id, fetched_name, fetched_profile, fetched_club,
+                              __import__('datetime').datetime.now().isoformat()))
+                    repaired.append(f"{license_id}: '{old_name or '(no row)'}' → '{fetched_name}'")
                     logger.info(f"✅ Repaired player name {license_id}: '{old_name}' → '{fetched_name}'")
             except Exception as e:
                 logger.debug(f"Could not repair name for {license_id}: {e}")

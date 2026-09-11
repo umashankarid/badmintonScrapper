@@ -462,6 +462,10 @@
                     // Track pairs already added per category so we don't show both mirror rows (A+B and B+A).
                     // Key on the sorted pair of LICENSE IDs (stable even when a name is "Unknown").
                     const seenPairs = {};
+                    // Set of "known" player names present in the registration list (for mutual-partner detection).
+                    const knownPlayerNames = new Set(
+                        players.filter(p => p.player_name && p.player_name !== "Unknown").map(p => p.player_name)
+                    );
                     function partnerLicenseOf(partnerName) {
                         if (!partnerName) return "";
                         const e = players.find(x => x.player_name === partnerName);
@@ -469,6 +473,14 @@
                     }
                     function pairKey(cat, licA, licB) {
                         return cat + "||" + [licA || "", licB || ""].sort().join("::");
+                    }
+                    // A row is a "mirror" of a known player's registration when:
+                    //  - this row's own name is Unknown/blank, AND
+                    //  - its partner is a known registered player (that known player's row already
+                    //    represents the pair with the proper names).
+                    function isMirrorOfKnown(p, partnerName) {
+                        const selfUnknown = !p.player_name || p.player_name === "Unknown";
+                        return selfUnknown && partnerName && knownPlayerNames.has(partnerName);
                     }
                     
                     kometPlayers.forEach(p => {
@@ -486,6 +498,8 @@
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
+                                    // Hide a mirror row whose own name is Unknown but whose partner is a known player
+                                    if (isMirrorOfKnown(p, p.doubles_partner)) return;
                                     const partnerLicense = partnerLicenseOf(p.doubles_partner);
                                     // Skip the mirror row if this pair is already shown in this category
                                     if (p.doubles_partner) {
@@ -502,6 +516,8 @@
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
+                                    // Hide a mirror row whose own name is Unknown but whose partner is a known player
+                                    if (isMirrorOfKnown(p, p.mixed_partner)) return;
                                     const partnerLicense = partnerLicenseOf(p.mixed_partner);
                                     // Skip the mirror row if this pair is already shown in this category
                                     if (p.mixed_partner) {
