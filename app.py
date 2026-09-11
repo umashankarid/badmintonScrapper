@@ -11,6 +11,8 @@ import os
 import sys
 import unittest
 
+import bwf_client
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -461,83 +463,6 @@ def get_player_club(player_name):
     return row[0] if row and row[0] else ""
 
 
-def get_player_license(player_name):
-    """Look up a player's license ID from Badminton Sweden search."""
-    try:
-        resp = ext_requests.get(
-            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-            params={"Page": 1, "SportID": 2, "Query": player_name},
-            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
-            timeout=5
-        )
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.select("li.list__item"):
-            name_el = item.select_one("a.media__link span.nav-link__value")
-            if name_el and name_el.get_text(strip=True).lower() == player_name.lower():
-                license_el = item.select_one(".media__title-aside")
-                if license_el:
-                    return license_el.get_text(strip=True).strip("()")
-    except Exception:
-        pass
-    return ""
-
-
-def get_player_ranking(player_name):
-    """Fetch a player's ranking by searching for their profile and visiting the ranking page."""
-    try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        # Search for the player to get their profile URL
-        resp = s.get(
-            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-            params={"Page": 1, "SportID": 2, "Query": player_name},
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=5
-        )
-        soup = BeautifulSoup(resp.text, "html.parser")
-        profile_url = ""
-        for item in soup.select("li.list__item"):
-            name_el = item.select_one("a.media__link span.nav-link__value")
-            if name_el and name_el.get_text(strip=True).lower() == player_name.lower():
-                link = item.select_one("a.media__link")
-                if link:
-                    profile_url = link.get("href", "")
-                break
-
-        if not profile_url:
-            return ""
-
-        # Fetch ranking page
-        ranking_resp = s.get(
-            f"https://badmintonsweden.tournamentsoftware.com{profile_url}/ranking",
-            timeout=5
-        )
-        ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
-        table = ranking_soup.find("table")
-        if not table:
-            return ""
-
-        ranking = {}
-        for row in table.find_all("tr")[1:]:
-            th = row.find("th", scope="row")
-            tds = row.find_all("td")
-            if th and len(tds) >= 2:
-                category = th.get_text(strip=True)
-                if category:
-                    rank = tds[0].get_text(strip=True)
-                    points = tds[1].get_text(strip=True)
-                    ranking[category] = {"rank": rank, "points": points}
-        return json.dumps(ranking) if ranking else ""
-    except Exception:
-        return ""
-
-
 def init_players_db():
     """Initialize players.db with new schema"""
     conn = sqlite3.connect(PLAYERS_DB)
@@ -673,6 +598,78 @@ def manage_db_page():
 
 
 # --- Badminton Sweden Login ---
+def _persist_login_profile(profile):
+    """Save the just-scraped login profile to players.db, exactly as before."""
+    player_name = profile["player_name"]
+    license_id = profile["license_id"]
+    profile_url = profile["profile_url"]
+    club = profile["club"]
+    gender = profile["gender"]
+    email = profile["email"]
+    phone = profile["phone"]
+    dob = profile["dob"]
+    age = profile["age"]
+    ranking = profile["ranking"]
+
+    # Save player data to players.db (we have ALL fields from login)
+    try:
+        if license_id:
+            from players_scraper import update_player_in_db
+
+            ranking_json = json.dumps(ranking) if ranking else None
+            update_player_in_db(
+                license_id=license_id,
+                name=player_name,
+                profile_url=profile_url,
+                club=club,
+                gender=gender,
+                email=email,
+                phone=phone,
+                dob=dob,
+                age=age,
+                ranking=ranking_json
+            )
+            logger.info(f"✅ Saved full player data for {player_name} ({license_id}) to players.db")
+
+            # If player belongs to Komet, add/update in kometPlayers table
+            if club and "komet" in club.lower():
+                try:
+                    conn_k = sqlite3.connect(PLAYERS_DB)
+                    cur_k = conn_k.cursor()
+                    cur_k.execute("SELECT id, groups FROM kometPlayers WHERE license_id = ?", (license_id,))
+                    existing = cur_k.fetchone()
+                    # Dev-mode-only: a real login profile never carries "groups" (bwf_live
+                    # returns no such key), but gate on the mode explicitly rather than on
+                    # the key's mere absence, so this can never fire against production data.
+                    dev_groups = profile.get("groups") if bwf_client.get_mode() == "dev" else None
+                    dev_groups_json = json.dumps(dev_groups) if dev_groups else None
+                    if existing:
+                        if dev_groups_json:
+                            conn_k.execute(
+                                "UPDATE kometPlayers SET name = ?, email = ?, groups = ? WHERE license_id = ?",
+                                (player_name, email or None, dev_groups_json, license_id)
+                            )
+                        else:
+                            # Update name and email, preserve groups
+                            conn_k.execute(
+                                "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
+                                (player_name, email or None, license_id)
+                            )
+                    else:
+                        # Insert new komet player
+                        conn_k.execute(
+                            "INSERT INTO kometPlayers (license_id, name, email, groups) VALUES (?, ?, ?, ?)",
+                            (license_id, player_name, email or None, dev_groups_json)
+                        )
+                        logger.info(f"✅ Added {player_name} to kometPlayers (auto-detected from login)")
+                    conn_k.commit()
+                    conn_k.close()
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not update kometPlayers: {e}")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not save player data to DB: {e}")
+
+
 @app.route("/api/bwf-login", methods=["POST"])
 def bwf_login():
     data = request.json
@@ -682,254 +679,69 @@ def bwf_login():
         return jsonify(success=False, error="Login and password required"), 400
 
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-
-        # Accept cookies
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/user",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=10)
-
-        # Get login page for verification token
-        resp = s.get("https://badmintonsweden.tournamentsoftware.com/user", timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        token_el = soup.find("input", {"name": "__RequestVerificationToken"})
-        if not token_el:
-            return jsonify(success=False, error="Could not load login page"), 500
-
-        # Submit login
-        logo_el = soup.find("input", {"name": "LogoUrl"})
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/user", data={
-            "__RequestVerificationToken": token_el.get("value", ""),
-            "ReturnUrl": "/",
-            "LogoUrl": logo_el.get("value", "") if logo_el else "",
-            "Login": login,
-            "Password": password
-        }, allow_redirects=True, timeout=10)
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Check if login failed - still on login page
-        login_input = soup.find("input", {"name": "Login"})
-        if login_input:
-            logger.warning(f"⚠️ Login failed for username: {login}")
-            return jsonify(success=False, error="Inloggning misslyckades. Kontrollera att användarnamn och lösenord stämmer med ditt Badminton Sweden-konto.\n\nLogin failed. Please check that your username and password match your Badminton Sweden account."), 401
-
-        # After login, find the profile link in the nav ("Min profil" -> /player-profile/<UUID>)
-        profile_url = ""
-        profile_link = soup.select_one("a[href*='player-profile']")
-        if not profile_link:
-            # Try fetching homepage explicitly
-            resp = s.get("https://badmintonsweden.tournamentsoftware.com/", timeout=10)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            profile_link = soup.select_one("a[href*='player-profile']")
-
-        if profile_link:
-            profile_url = profile_link.get("href", "")
-
-        print(f"[BWF Login] Profile URL found: {profile_url}")
-
-        if not profile_url:
-            # Club account (no player profile) - check if it's a known admin account
-            if login in ("sbf04959", "umashankar1985@gmail.com"):
-                # Club/admin account - proceed without player profile
-                player_name = login
-                name_el = soup.select_one(".masthead__user-title")
-                if name_el:
-                    player_name = name_el.get_text(strip=True)
-                
-                session["bwf_player"] = player_name
-                session["bwf_login"] = login
-                session["bwf_license_id"] = ""
-                session["bwf_club"] = ""
-                session["bwf_gender"] = ""
-                session["bwf_email"] = ""
-                session["bwf_phone"] = ""
-                session["bwf_dob"] = ""
-                session["bwf_age"] = ""
-                session["bwf_ranking"] = {}
-                session["admin"] = True
-                logger.info(f"✅ Club/admin account logged in: {login}")
-                return jsonify(success=True, player_name=player_name, license_id="", club="", gender="", email="", phone="", dob="", age="", ranking={})
-            else:
-                return jsonify(success=False, error="Login succeeded but could not find player profile"), 500
-
-        # Get player name from the masthead (shown after login)
-        player_name = ""
-        license_id = ""
-        club = ""
-
-        name_el = soup.select_one(".masthead__user-title")
-        if name_el:
-            player_name = name_el.get_text(strip=True)
-
-        print(f"[BWF Login] Player name from masthead: {player_name}")
-
-        # Search by last name to get license ID and club, matching by profile URL
-        if player_name and profile_url:
-            search_query = player_name.split()[-1]
-            search_resp = s.get(
-                "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-                params={"Page": 1, "SportID": 2, "Query": search_query},
-                headers={"X-Requested-With": "XMLHttpRequest"},
-                timeout=10
-            )
-            search_soup = BeautifulSoup(search_resp.text, "html.parser")
-
-            for item in search_soup.select("li.list__item"):
-                item_link = item.select_one("a.media__link")
-                if item_link and item_link.get("href", "").lower() == profile_url.lower():
-                    license_el = item.select_one(".media__title-aside")
-                    if license_el:
-                        license_id = license_el.get_text(strip=True).strip("()")
-                    club_el = item.select_one(".media__subheading span.nav-link__value")
-                    if club_el:
-                        club = club_el.get_text(strip=True).split("|")[0].strip()
-                    break
-
-        # Fetch gender, email, phone, date of birth from account settings
-        gender = ""
-        email = ""
-        phone = ""
-        dob = ""
-        age = ""
-        try:
-            settings_resp = s.get("https://badmintonsweden.tournamentsoftware.com/user/account-settings/person", timeout=10)
-            settings_soup = BeautifulSoup(settings_resp.text, "html.parser")
-            for dt in settings_soup.find_all("dt"):
-                dd = dt.find_next_sibling("dd")
-                if not dd:
-                    continue
-                label = dt.get_text(strip=True).rstrip(":")
-                value = dd.get_text(strip=True)
-                if label == "Kön":
-                    gender = "F" if "kvinna" in value.lower() else "M" if "man" in value.lower() else ""
-                elif label == "E-mail":
-                    email = value.replace("(Redigera)", "").strip()
-                elif label == "Telefon (mobil)" and value:
-                    phone = value
-                elif label == "Phone 3" and value and not phone:
-                    phone = value
-                elif "Födelsedatum" in label and value:
-                    dob = value.split(" ")[0]
-                    try:
-                        from datetime import datetime as dt_cls
-                        birth = dt_cls.strptime(dob, "%Y-%m-%d")
-                        today = dt_cls.now()
-                        age = str(today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # Fetch ranking data from player profile
-        ranking = {}
-        try:
-            ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}/ranking", timeout=10)
-            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
-            table = ranking_soup.find("table")
-            if table:
-                for row in table.find_all("tr")[1:]:
-                    th = row.find("th", scope="row")
-                    tds = row.find_all("td")
-                    if th and len(tds) >= 2:
-                        category = th.get_text(strip=True)
-                        if category:
-                            ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
-        except Exception:
-            pass
-
-        print(f"[BWF Login] Final: name={player_name}, license={license_id}, club={club}, gender={gender}, email={email}, phone={phone}")
-        print(f"[BWF Login] Ranking: {ranking}")
-
-        if not player_name:
-            player_name = login
-
-        # RESTRICT: Only Badmintonklubben Komet members can use the internal registration system.
-        # Non-Komet players must ask their Komet partner to register the pair.
-        # (Admin/club accounts are handled earlier and never reach this point.)
-        if not is_admin_user(login) and (not club or "komet" not in club.lower()):
-            logger.warning(f"⛔ Non-Komet login blocked: {player_name} ({license_id}) club='{club}'")
-            return jsonify(
-                success=False,
-                error=(
-                    "Detta registreringssystem är endast för medlemmar i Badmintonklubben Komet.\n\n"
-                    "Om du ska spela dubbel/mixed med en Komet-spelare, be din Komet-partner att "
-                    "registrera paret – du läggs då till automatiskt som partner.\n\n"
-                    "Frågor? Kontakta Tavlingar@bmkkomet.se\n\n"
-                    "─────────────────────\n\n"
-                    "This registration system is only for members of Badmintonklubben Komet.\n\n"
-                    "If you're playing doubles/mixed with a Komet player, please ask your Komet "
-                    "partner to register the pair — you'll be added automatically as their partner.\n\n"
-                    "Questions? Contact Tavlingar@bmkkomet.se"
-                )
-            ), 403
-
-        session["bwf_player"] = player_name
-        session["bwf_login"] = login
-        session["bwf_license_id"] = license_id
-        session["bwf_club"] = club
-        session["bwf_gender"] = gender
-        session["bwf_email"] = email
-        session["bwf_phone"] = phone
-        session["bwf_dob"] = dob
-        session["bwf_age"] = age
-        session["bwf_ranking"] = ranking
-        session["admin"] = is_admin_user(login)
-        
-        # Save player data to players.db (we have ALL fields from login)
-        try:
-            if license_id:
-                from players_scraper import update_player_in_db
-                
-                ranking_json = json.dumps(ranking) if ranking else None
-                update_player_in_db(
-                    license_id=license_id,
-                    name=player_name,
-                    profile_url=profile_url,
-                    club=club,
-                    gender=gender,
-                    email=email,
-                    phone=phone,
-                    dob=dob,
-                    age=age,
-                    ranking=ranking_json
-                )
-                logger.info(f"✅ Saved full player data for {player_name} ({license_id}) to players.db")
-                
-                # If player belongs to Komet, add/update in kometPlayers table
-                if club and "komet" in club.lower():
-                    try:
-                        conn_k = sqlite3.connect(PLAYERS_DB)
-                        cur_k = conn_k.cursor()
-                        cur_k.execute("SELECT id, groups FROM kometPlayers WHERE license_id = ?", (license_id,))
-                        existing = cur_k.fetchone()
-                        if existing:
-                            # Update name and email, preserve groups
-                            conn_k.execute(
-                                "UPDATE kometPlayers SET name = ?, email = ? WHERE license_id = ?",
-                                (player_name, email or None, license_id)
-                            )
-                        else:
-                            # Insert new komet player
-                            conn_k.execute(
-                                "INSERT INTO kometPlayers (license_id, name, email) VALUES (?, ?, ?)",
-                                (license_id, player_name, email or None)
-                            )
-                            logger.info(f"✅ Added {player_name} to kometPlayers (auto-detected from login)")
-                        conn_k.commit()
-                        conn_k.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️  Could not update kometPlayers: {e}")
-        except Exception as e:
-            logger.warning(f"⚠️  Could not save player data to DB: {e}")
-        
-        return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
-
-    except ext_requests.RequestException as e:
+        profile = bwf_client.login(login, password)
+    except bwf_client.LoginPageUnavailable:
+        return jsonify(success=False, error="Could not load login page"), 500
+    except bwf_client.ProfileNotFound as e:
+        return jsonify(success=False, error=str(e)), 500
+    except Exception as e:
+        logger.exception(f"❌ Login error: {e}")
         return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
+
+    if not profile:
+        logger.warning(f"⚠️ Login failed for username: {login}")
+        return jsonify(success=False, error="Inloggning misslyckades. Kontrollera att användarnamn och lösenord stämmer med ditt Badminton Sweden-konto.\n\nLogin failed. Please check that your username and password match your Badminton Sweden account."), 401
+
+    # RESTRICT: Only Badmintonklubben Komet members can use the internal registration system.
+    # Non-Komet players must ask their Komet partner to register the pair.
+    # Ported from main (2dd92d3). Main relied on club accounts returning earlier;
+    # after the extraction they reach here, so exempt them explicitly.
+    if (not profile["is_club_account"] and not is_admin_user(login)
+            and (not profile["club"] or "komet" not in profile["club"].lower())):
+        logger.warning(f"⛔ Non-Komet login blocked: {profile['player_name']} "
+                       f"({profile['license_id']}) club='{profile['club']}'")
+        return jsonify(
+            success=False,
+            error=(
+                "Detta registreringssystem är endast för medlemmar i Badmintonklubben Komet.\n\n"
+                "Om du ska spela dubbel/mixed med en Komet-spelare, be din Komet-partner att "
+                "registrera paret – du läggs då till automatiskt som partner.\n\n"
+                "Frågor? Kontakta Tavlingar@bmkkomet.se\n\n"
+                "─────────────────────\n\n"
+                "This registration system is only for members of Badmintonklubben Komet.\n\n"
+                "If you're playing doubles/mixed with a Komet player, please ask your Komet "
+                "partner to register the pair — you'll be added automatically as their partner.\n\n"
+                "Questions? Contact Tavlingar@bmkkomet.se"
+            )
+        ), 403
+
+    session["bwf_player"] = profile["player_name"]
+    session["bwf_login"] = login
+    session["bwf_license_id"] = profile["license_id"]
+    session["bwf_club"] = profile["club"]
+    session["bwf_gender"] = profile["gender"]
+    session["bwf_email"] = profile["email"]
+    session["bwf_phone"] = profile["phone"]
+    session["bwf_dob"] = profile["dob"]
+    session["bwf_age"] = profile["age"]
+    session["bwf_ranking"] = profile["ranking"]
+    # Club accounts have always been admins outright; ordinary logins are looked up.
+    session["admin"] = True if profile["is_club_account"] else is_admin_user(login)
+    # Which backend produced this identity. _drop_session_from_another_mode()
+    # invalidates the session if the mode later moves away from it.
+    session["bwf_mode"] = bwf_client.get_mode()
+
+    _persist_login_profile(profile)
+
+    if profile["is_club_account"]:
+        logger.info(f"✅ Club/admin account logged in: {login}")
+    else:
+        logger.info(f"✅ Login successful: {profile['player_name']}")
+    return jsonify(success=True, player_name=profile["player_name"],
+                   license_id=profile["license_id"], club=profile["club"],
+                   gender=profile["gender"], email=profile["email"],
+                   phone=profile["phone"], dob=profile["dob"],
+                   age=profile["age"], ranking=profile["ranking"])
 
 
 @app.route("/api/bwf-logout", methods=["POST"])
@@ -1346,30 +1158,11 @@ def add_admin():
 
     # Verify user against Badminton Sweden
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/user",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=10)
-        resp = s.get("https://badmintonsweden.tournamentsoftware.com/user", timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        token_el = soup.find("input", {"name": "__RequestVerificationToken"})
-        if not token_el:
-            return jsonify(success=False, error="Could not connect to Badminton Sweden"), 500
-        logo_el = soup.find("input", {"name": "LogoUrl"})
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/user", data={
-            "__RequestVerificationToken": token_el.get("value", ""),
-            "ReturnUrl": "/",
-            "LogoUrl": logo_el.get("value", "") if logo_el else "",
-            "Login": username,
-            "Password": password
-        }, allow_redirects=True, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        if soup.find("input", {"name": "Login"}):
+        if not bwf_client.verify_credentials(username, password):
             return jsonify(success=False, error="Invalid Badminton Sweden credentials"), 401
-    except ext_requests.RequestException as e:
+    except bwf_client.LoginPageUnavailable:
+        return jsonify(success=False, error="Could not connect to Badminton Sweden"), 500
+    except Exception as e:
         return jsonify(success=False, error=f"Connection error: {str(e)}"), 500
 
     # Verified - add as admin
@@ -1611,65 +1404,11 @@ def search_tournaments_bwf():
         return jsonify(success=False, error="Unauthorized"), 401
     try:
         from datetime import datetime, timedelta
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
 
         start = datetime.now().strftime("%Y-%m-%dT00:00")
         end = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%dT00:00")
 
-        # Load the find page to get form data
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/find?StatusFilterID=2&DateFilterType=0&StartDate={start}&EndDate={end}&Distance=10&page=1&SportID=2", timeout=10)
-        page_soup = BeautifulSoup(resp.text, "html.parser")
-        form = page_soup.select_one("#form_globalsearch")
-        form_data = {}
-        if form:
-            for inp in form.find_all("input"):
-                name = inp.get("name", "")
-                value = inp.get("value", "")
-                if name:
-                    form_data[name] = value
-
-        # Set StatusFilterID to 2 for 'Online-anmälan öppen' (registration open)
-        form_data["TournamentExtendedFilter.StatusFilterID"] = "2"
-
-        # POST to get results
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data=form_data,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        tournaments = []
-        for item in soup.select("li.list__item"):
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            # Get location
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            # Get dates
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            # Build full URL
-            import re
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
-
-            tournaments.append({
-                "name": name,
-                "url": tournament_url,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end
-            })
+        tournaments = bwf_client.list_all_tournaments(start, end)
 
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
@@ -1686,76 +1425,17 @@ def fetch_tournament_info():
         return jsonify(success=False, error="URL required"), 400
 
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        # Fetch tournament page
-        resp = s.get(url, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Get tournament name
-        name = ""
-        name_el = soup.select_one(".media__title a")
-        if name_el:
-            name = name_el.get_text(strip=True)
-        if not name:
-            name_el = soup.select_one(".media__title")
-            if name_el:
-                name = name_el.get_text(strip=True)
-
-        # Get timeline dates
-        dates = {}
-        timeline = soup.select_one(".tournament-meta__timeline")
-        if timeline:
-            for li in timeline.find_all("li"):
-                label_el = li.select_one(".list__value")
-                time_el = li.find("time")
-                if label_el and time_el:
-                    label = label_el.get_text(strip=True)
-                    datetime_val = time_el.get("datetime", "")[:10]  # Get YYYY-MM-DD
-                    if "öppnar" in label.lower():
-                        dates["registration_opens"] = datetime_val
-                    elif "stänger" in label.lower():
-                        dates["registration_closes"] = datetime_val
-                    elif "återbud" in label.lower():
-                        dates["cancellation_deadline"] = datetime_val
-                    elif "start" in label.lower():
-                        dates["competition_start"] = datetime_val
-                    elif "slut" in label.lower():
-                        dates["competition_end"] = datetime_val
-
-        # Get levels from events page
-        levels = []
-        # Extract tournament ID from URL
-        import re
-        tid_match = re.search(r'/tournament/([^/]+)', url)
-        if tid_match:
-            tid = tid_match.group(1)
-            events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-            events_soup = BeautifulSoup(events_resp.text, "html.parser")
-            level_set = set()
-            for a in events_soup.select("a"):
-                text = a.get_text(strip=True)
-                if text and len(text) < 50 and any(cat in text for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]):
-                    parts = text.split()
-                    if len(parts) >= 2:
-                        level_set.add(parts[1])
-            levels = sorted(level_set)
+        info = bwf_client.fetch_tournament_info(url)
 
         return jsonify(
             success=True,
-            name=name,
-            levels=levels,
-            registration_opens=dates.get("registration_opens", ""),
-            registration_closes=dates.get("registration_closes", ""),
-            cancellation_deadline=dates.get("cancellation_deadline", ""),
-            competition_start=dates.get("competition_start", ""),
-            competition_end=dates.get("competition_end", "")
+            name=info["name"],
+            levels=info["levels"],
+            registration_opens=info["registration_opens"],
+            registration_closes=info["registration_closes"],
+            cancellation_deadline=info["cancellation_deadline"],
+            competition_start=info["competition_start"],
+            competition_end=info["competition_end"]
         )
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
@@ -1806,16 +1486,9 @@ def submit_tournament():
     club_login = "sbf04959"
 
     try:
-        from bwf_submit import submit_tournament_sync
-
         logger.info(f"🏸 Starting BWF submission for tournament: {tournament_name}")
 
-        result = submit_tournament_sync(
-            tournament_name=tournament_name,
-            club_login=club_login,
-            club_password=club_password,
-            headless=True
-        )
+        result = bwf_client.submit_registrations(tournament_name, club_login, club_password)
 
         if result["success"]:
             logger.info(f"✅ BWF submission complete: {result['message']}")
@@ -2085,12 +1758,17 @@ def get_all_bwf_tournaments():
             conn_cache = sqlite3.connect(TOURNAMENTS_DB)
             cur_cache = conn_cache.cursor()
             today = datetime.now().strftime("%Y-%m-%d")
-            cur_cache.execute("SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ?", (f"{today}%",))
+            # Only rows from this mode count as cache, and only they are served:
+            # otherwise dev fixtures make live mode look "already fetched today".
+            mode_clause, mode_params = _mode_url_clause()
+            cur_cache.execute(
+                f"SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ? AND {mode_clause}",
+                (f"{today}%",) + mode_params)
             fetched_today = cur_cache.fetchone()[0]
-            
+
             if fetched_today > 0:
                 # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories, enable_accommodation_transport FROM tournaments ORDER BY date_start")
+                cur_cache.execute(f"SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories, enable_accommodation_transport FROM tournaments WHERE {mode_clause} ORDER BY date_start", mode_params)
                 tournaments_cached = []
                 for row in cur_cache.fetchall():
                     tg = []
@@ -2123,58 +1801,10 @@ def get_all_bwf_tournaments():
         
         logger.info("🔄 Fetching fresh tournament data from Badminton Sweden...")
         
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
         start = datetime.now().strftime("%Y-%m-%dT00:00")
         end = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%dT00:00")
 
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/find?StatusFilterID=2&DateFilterType=0&StartDate={start}&EndDate={end}&Distance=10&page=1&SportID=2", timeout=10)
-        page_soup = BeautifulSoup(resp.text, "html.parser")
-        form = page_soup.select_one("#form_globalsearch")
-        form_data = {}
-        if form:
-            for inp in form.find_all("input"):
-                name = inp.get("name", "")
-                value = inp.get("value", "")
-                if name:
-                    form_data[name] = value
-        form_data["TournamentExtendedFilter.StatusFilterID"] = "2"
-
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data=form_data,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        tournaments = []
-        import re
-        for item in soup.select("li.list__item"):
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
-
-            tournaments.append({
-                "name": name,
-                "url": tournament_url,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end
-            })
+        tournaments = bwf_client.list_all_tournaments(start, end)
 
         logger.info(f"Found {len(tournaments)} tournaments from Badminton Sweden")
         
@@ -2194,76 +1824,29 @@ def get_all_bwf_tournaments():
         def fetch_tournament_details(t):
             """Fetch dates and categories for a single tournament (thread-safe)"""
             try:
-                # Create per-thread session (sharing session across threads is unsafe)
-                ts = ext_requests.Session()
-                ts.headers.update({"User-Agent": "Mozilla/5.0"})
-                ts.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-                    "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-                }, allow_redirects=True, timeout=5)
-                
-                resp_detail = ts.get(t["url"], timeout=10)
-                soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
-                
-                # Extract detailed dates
-                dates = {}
-                timeline = soup_detail.select_one(".tournament-meta__timeline")
-                if timeline:
-                    for li in timeline.find_all("li"):
-                        label_el = li.select_one(".list__value")
-                        time_el = li.find("time")
-                        if label_el and time_el:
-                            label = label_el.get_text(strip=True)
-                            datetime_val = time_el.get("datetime", "")[:10]
-                            if "öppnar" in label.lower():
-                                dates["registration_opens"] = datetime_val
-                            elif "stänger" in label.lower():
-                                dates["registration_closes"] = datetime_val
-                            elif "återbud" in label.lower():
-                                dates["cancellation_deadline"] = datetime_val
-                            elif "start" in label.lower():
-                                dates["competition_start"] = datetime_val
-                            elif "slut" in label.lower():
-                                dates["competition_end"] = datetime_val
-                
-                # Extract event categories
+                # The client builds a session per call, so this stays thread-safe
+                info = bwf_client.fetch_tournament_details(t["url"])
+
+                dates = {
+                    "registration_opens": info["registration_opens"],
+                    "registration_closes": info["registration_closes"],
+                    "cancellation_deadline": info["cancellation_deadline"],
+                    "competition_start": info["competition_start"],
+                    "competition_end": info["competition_end"],
+                }
+
                 categories = {
-                    "singles_levels": [],
-                    "doubles_levels": [],
-                    "mixed_levels": [],
+                    "singles_levels": info["singles_levels"],
+                    "doubles_levels": info["doubles_levels"],
+                    "mixed_levels": info["mixed_levels"],
                     "doubles_partner": [],
                     "mixed_partner": []
                 }
-                tid_match = re.search(r'/tournament/([^/]+)', t["url"])
-                if tid_match:
-                    tid = tid_match.group(1)
-                    try:
-                        events_resp = ts.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-                        events_soup = BeautifulSoup(events_resp.text, "html.parser")
-                        
-                        all_events = set()
-                        for a in events_soup.select("a"):
-                            text = a.get_text(strip=True)
-                            if text and len(text) < 50:
-                                for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
-                                    if cat in text:
-                                        all_events.add(text.strip())
-                                        break
-                        
-                        for event in sorted(all_events):
-                            if event.startswith(("HS", "DS")):
-                                categories["singles_levels"].append(event)
-                            elif event.startswith(("HD", "DD")):
-                                categories["doubles_levels"].append(event)
-                            elif event.startswith("MD"):
-                                categories["mixed_levels"].append(event)
-                        
-                        if categories["doubles_levels"]:
-                            categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
-                        if categories["mixed_levels"]:
-                            categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
-                    except Exception:
-                        pass
-                
+                if categories["doubles_levels"]:
+                    categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+                if categories["mixed_levels"]:
+                    categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+
                 return {"tournament": t, "dates": dates, "categories": categories, "success": True}
             except Exception as e:
                 logger.debug(f"⚠️  Error fetching {t.get('name', 'Unknown')}: {e}")
@@ -2340,7 +1923,13 @@ def get_all_bwf_tournaments():
             conn = sqlite3.connect(TOURNAMENTS_DB)
             cur = conn.cursor()
             # Get tournament names that are expired (for cleaning registrations)
-            cur.execute("SELECT tournament_name FROM tournaments WHERE date_start < ?", (today,))
+            # Scoped to the current mode: without this, a refresh in dev mode
+            # deletes real expired tournaments (and their registrations) from
+            # the developer's local database.
+            expire_clause, expire_params = _mode_url_clause()
+            cur.execute(
+                f"SELECT tournament_name FROM tournaments WHERE date_start < ? AND {expire_clause}",
+                (today,) + expire_params)
             expired_names = [row[0] for row in cur.fetchall()]
             
             if expired_names:
@@ -2468,16 +2057,19 @@ def open_tournaments():
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
         
-        # Get tournaments marked as selected_for_view = 1 AND date_start >= TODAY
-        cur.execute("""
+        # Get tournaments marked as selected_for_view = 1 AND date_start >= TODAY,
+        # restricted to the current mode so dev fixtures do not surface in live.
+        mode_clause, mode_params = _mode_url_clause()
+        cur.execute(f"""
             SELECT tournament_url, tournament_name, location, date_start, date_end,
                    registration_opens, registration_closes, cancellation_deadline,
                    competition_start, competition_end, admin_reg_end_date, tournament_groups
-            FROM tournaments 
-            WHERE selected_for_view = 1 
+            FROM tournaments
+            WHERE selected_for_view = 1
             AND date_start >= ?
+            AND {mode_clause}
             ORDER BY registration_closes ASC, tournament_name ASC
-        """, (today,))
+        """, (today,) + mode_params)
         rows = cur.fetchall()
         conn.close()
         
@@ -2531,7 +2123,11 @@ def open_tournaments():
                 "cancellation_deadline": row[7],
                 "competition_start": row[8],
                 "competition_end": row[9],
-                "admin_reg_end_date": row[10] or ""
+                "admin_reg_end_date": row[10] or "",
+                # Provenance, not current mode: a dev.local fixture stays tagged
+                # after flipping back to live, and a real row synced while dev
+                # mode happened to be on is never mistaken for a fixture.
+                "_fake": row[0].startswith(DEV_FIXTURE_URL_PREFIX)
             })
         
         return jsonify(tournaments=tournaments)
@@ -2636,98 +2232,33 @@ def ensure_tournament():
         
         # Fetch tournament info from BWF
         logger.info(f"🔍 Fetching tournament info from Badminton Sweden...")
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
+        info = bwf_client.fetch_tournament_details(url)
 
-        resp = s.get(url, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        name = info["name"]
+        location = info["location"]
+        dates = {
+            "registration_opens": info["registration_opens"],
+            "registration_closes": info["registration_closes"],
+            "cancellation_deadline": info["cancellation_deadline"],
+            "competition_start": info["competition_start"],
+            "competition_end": info["competition_end"],
+        }
 
-        name = ""
-        name_el = soup.select_one(".media__title a")
-        if name_el:
-            name = name_el.get_text(strip=True)
-        if not name:
-            name_el = soup.select_one(".media__title")
-            if name_el:
-                name = name_el.get_text(strip=True)
-
-        # Get location
-        location = ""
-        location_el = soup.select_one(".media__subheading")
-        if location_el:
-            location = location_el.get_text(strip=True)
-
-        # Get timeline dates
-        dates = {}
-        timeline = soup.select_one(".tournament-meta__timeline")
-        if timeline:
-            for li in timeline.find_all("li"):
-                label_el = li.select_one(".list__value")
-                time_el = li.find("time")
-                if label_el and time_el:
-                    label = label_el.get_text(strip=True)
-                    datetime_val = time_el.get("datetime", "")[:10]
-                    if "\u00f6ppnar" in label.lower():
-                        dates["registration_opens"] = datetime_val
-                    elif "st\u00e4nger" in label.lower():
-                        dates["registration_closes"] = datetime_val
-                    elif "\u00e5terbud" in label.lower():
-                        dates["cancellation_deadline"] = datetime_val
-                    elif "start" in label.lower():
-                        dates["competition_start"] = datetime_val
-                    elif "slut" in label.lower():
-                        dates["competition_end"] = datetime_val
-
-        # Extract event categories/levels mapped to registration fields
+        # Map event categories to registration fields
         categories = {
-            "singles_levels": [],
-            "doubles_levels": [],
-            "mixed_levels": [],
+            "singles_levels": info["singles_levels"],
+            "doubles_levels": info["doubles_levels"],
+            "mixed_levels": info["mixed_levels"],
             "doubles_partner": [],
             "mixed_partner": []
         }
-        import re
-        tid_match = re.search(r'/tournament/([^/]+)', url)
-        if tid_match:
-            tid = tid_match.group(1)
-            try:
-                events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
-                events_soup = BeautifulSoup(events_resp.text, "html.parser")
-                
-                # Extract event categories and map to registration fields
-                all_events = set()
-                for a in events_soup.select("a"):
-                    text = a.get_text(strip=True)
-                    if text and len(text) < 50:
-                        # Check for category codes
-                        for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
-                            if cat in text:
-                                all_events.add(text.strip())
-                                break
-                
-                # Map events to registration fields
-                for event in sorted(all_events):
-                    if event.startswith(("HS", "DS")):
-                        categories["singles_levels"].append(event)
-                    elif event.startswith(("HD", "DD")):
-                        categories["doubles_levels"].append(event)
-                    elif event.startswith("MD"):
-                        categories["mixed_levels"].append(event)
-                
-                # Set partner options (typical pattern)
-                if categories["doubles_levels"]:
-                    categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
-                if categories["mixed_levels"]:
-                    categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
-                
-                logger.debug(f"✅ Extracted categories: {categories}")
-            except Exception as e:
-                logger.debug(f"⚠️  Could not extract categories: {e}")
+
+        # Set partner options (typical pattern)
+        if categories["doubles_levels"]:
+            categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+        if categories["mixed_levels"]:
+            categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+        logger.debug(f"✅ Extracted categories: {categories}")
 
         if not name:
             return jsonify(success=False, error="Could not fetch tournament info"), 500
@@ -3364,28 +2895,10 @@ def _register_partner(tournament_name, partner_license_id, partner_name, partner
     partner_ranking = None
     if partner_profile_url:
         try:
-            s = ext_requests.Session()
-            s.headers.update({"User-Agent": "Mozilla/5.0"})
-            s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-                "ReturnUrl": "/",
-                "SettingsOpen": "false",
-                "CookieWallCategoryPreferences": "1,2,3"
-            }, allow_redirects=True, timeout=5)
-            ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{partner_profile_url}/ranking", timeout=10)
-            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
-            table = ranking_soup.find("table")
-            if table:
-                ranking_data = {}
-                for row in table.find_all("tr")[1:]:
-                    th = row.find("th", scope="row")
-                    tds = row.find_all("td")
-                    if th and len(tds) >= 2:
-                        category = th.get_text(strip=True)
-                        if category:
-                            ranking_data[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
-                if ranking_data:
-                    partner_ranking = json.dumps(ranking_data)
-                    logger.info(f"✅ Fetched ranking for partner {partner_name}")
+            ranking_data = bwf_client.get_player_ranking_by_profile(partner_profile_url)
+            if ranking_data:
+                partner_ranking = json.dumps(ranking_data)
+                logger.info(f"✅ Fetched ranking for partner {partner_name}")
         except Exception as e:
             logger.debug(f"Could not fetch partner ranking: {e}")
     
@@ -4302,42 +3815,11 @@ def search_players():
     local_results = [dict(row) for row in cur.fetchall()]
 
     # Also search live from Badminton Sweden
-    try:
-        import requests as req
-        from bs4 import BeautifulSoup
-        resp = req.get(
-            "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-            params={"Page": 1, "SportID": 2, "Query": query},
-            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"},
-            timeout=5
-        )
-        soup = BeautifulSoup(resp.text, "html.parser")
-        items = soup.select("li.list__item")
-        live_results = []
-        for item in items:
-            name_el = item.select_one("a.media__link span.nav-link__value")
-            if not name_el:
-                continue
-            name = name_el.get_text(strip=True)
-            club = ""
-            club_el = item.select_one(".media__subheading span.nav-link__value")
-            if club_el:
-                club = club_el.get_text(strip=True).split("|")[0].strip()
-            license_id = ""
-            license_el = item.select_one(".media__title-aside")
-            if license_el:
-                license_id = license_el.get_text(strip=True).strip("()")
-            profile_link = item.select_one("a.media__link")
-            profile_url = profile_link.get("href", "") if profile_link else ""
-            live_results.append({"name": name, "club": club, "license_id": license_id, "profile_url": profile_url, "source": "live"})
-        # Merge: live results first, then local (deduplicated)
-        seen = {r["name"] for r in live_results}
-        combined = live_results + [r for r in local_results if r["name"] not in seen]
-        conn.close()
-        return jsonify(combined[:20])
-    except Exception:
-        conn.close()
-        return jsonify(local_results)
+    live_results = bwf_client.search_players(query)
+    seen = {r["name"] for r in live_results}
+    combined = live_results + [r for r in local_results if r["name"] not in seen]
+    conn.close()
+    return jsonify(combined[:20])
 
 
 @app.route("/api/player-details", methods=["GET"])
@@ -4349,16 +3831,15 @@ def player_details():
         return jsonify(success=False, error="profile_url or name required"), 400
 
     try:
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
         # If no profile_url, search for the player
         if not profile_url:
+            s = ext_requests.Session()
+            s.headers.update({"User-Agent": "Mozilla/5.0"})
+            s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3"
+            }, allow_redirects=True, timeout=5)
             resp = s.get(
                 "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
                 params={"Page": 1, "SportID": 2, "Query": player_name},
@@ -4377,64 +3858,8 @@ def player_details():
         if not profile_url:
             return jsonify(success=False, error="Player profile not found"), 404
 
-        # Fetch player profile page to get gender
-        gender = ""
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}", timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # Gender is often in the profile meta info
-        for dt in soup.find_all("dt"):
-            dd = dt.find_next_sibling("dd")
-            if not dd:
-                continue
-            label = dt.get_text(strip=True).rstrip(":")
-            value = dd.get_text(strip=True)
-            if label == "Kön" or "gender" in label.lower():
-                gender = "F" if "kvinna" in value.lower() or "female" in value.lower() else "M" if "man" in value.lower() or "male" in value.lower() else ""
-
-        # Try to get email and phone from profile page
-        email = ""
-        phone = ""
-        for dt in soup.find_all("dt"):
-            dd = dt.find_next_sibling("dd")
-            if not dd:
-                continue
-            label = dt.get_text(strip=True).rstrip(":")
-            value = dd.get_text(strip=True)
-            if "e-mail" in label.lower() or "email" in label.lower():
-                email = value.replace("(Redigera)", "").strip()
-            elif "telefon" in label.lower() or "phone" in label.lower() or "mobil" in label.lower():
-                if value and not phone:
-                    phone = value
-
-        # If gender not found on profile page, try to infer from events
-        if not gender:
-            for a in soup.select("a"):
-                text = a.get_text(strip=True)
-                if text.startswith("DS ") or text.startswith("DD "):
-                    gender = "F"
-                    break
-                elif text.startswith("HS ") or text.startswith("HD "):
-                    gender = "M"
-                    break
-
-        # Fetch ranking
-        ranking = {}
-        try:
-            ranking_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}/ranking", timeout=10)
-            ranking_soup = BeautifulSoup(ranking_resp.text, "html.parser")
-            table = ranking_soup.find("table")
-            if table:
-                for row in table.find_all("tr")[1:]:
-                    th = row.find("th", scope="row")
-                    tds = row.find_all("td")
-                    if th and len(tds) >= 2:
-                        category = th.get_text(strip=True)
-                        if category:
-                            ranking[category] = {"rank": tds[0].get_text(strip=True), "points": tds[1].get_text(strip=True)}
-        except Exception:
-            pass
-
-        return jsonify(success=True, gender=gender, email=email, phone=phone, ranking=ranking)
+        details = bwf_client.get_player_details(profile_url)
+        return jsonify(success=True, **details)
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
 
@@ -5869,70 +5294,11 @@ def results_page():
 def search_tournaments():
     """Search tournaments by date range and status."""
     try:
-        import re
         start = request.args.get("start", "")
         end = request.args.get("end", "")
         status = request.args.get("status", "")  # 2=reg open, 3=upcoming, 4=finished
 
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        start_fmt = f"{start}T00:00" if start else ""
-        end_fmt = f"{end}T00:00" if end else ""
-
-        url = f"https://badmintonsweden.tournamentsoftware.com/find?DateFilterType=0&StartDate={start_fmt}&EndDate={end_fmt}&Distance=10&page=1&SportID=2"
-        if status:
-            url += f"&StatusFilterID={status}"
-
-        resp = s.get(url, timeout=10)
-        page_soup = BeautifulSoup(resp.text, "html.parser")
-        form = page_soup.select_one("#form_globalsearch")
-        form_data = {}
-        if form:
-            for inp in form.find_all("input"):
-                name = inp.get("name", "")
-                value = inp.get("value", "")
-                if name:
-                    form_data[name] = value
-        if status:
-            form_data["TournamentExtendedFilter.StatusFilterID"] = status
-
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data=form_data,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        tournaments = []
-        for item in soup.select("li.list__item"):
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            status_el = item.select_one(".tournament-status, .media__status")
-            status_text = status_el.get_text(strip=True) if status_el else ""
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tid = tid_match.group(1) if tid_match else ""
-
-            tournaments.append({
-                "id": tid,
-                "name": name,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end,
-                "status": status_text
-            })
+        tournaments = bwf_client.search_tournaments(start, end, status)
 
         return jsonify(success=True, tournaments=tournaments)
     except Exception as e:
@@ -5949,39 +5315,11 @@ def tournament_detail_page():
 def tournament_medals():
     """Get medal winners from tournament winners page."""
     try:
-        import re
         tournament_id = request.args.get("id", "")
         if not tournament_id:
             return jsonify(success=False, error="No tournament ID"), 400
 
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/winners.aspx?id={tournament_id}", timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        medals = []
-        for table in soup.find_all("table"):
-            event_name = ""
-            for row in table.find_all("tr"):
-                cells = row.find_all(["td", "th"])
-                if len(cells) == 1:
-                    event_name = cells[0].get_text(strip=True)
-                    continue
-                if len(cells) >= 2:
-                    placement = cells[0].get_text(strip=True)
-                    player_links = cells[1].find_all("a")
-                    for a in player_links:
-                        txt = a.get_text(strip=True)
-                        if txt and not re.match(r"^\[.*\]$", txt) and len(txt) > 3:
-                            clean = re.sub(r"\s*\[\d+(/\d+)?\]\s*$", "", txt).strip()
-                            if clean:
-                                medals.append({"name": clean, "event": event_name, "placement": placement})
-
-        return jsonify(success=True, medals=medals)
+        return jsonify(success=True, medals=bwf_client.get_tournament_medals(tournament_id))
     except Exception as e:
         return jsonify(success=False, error=str(e), medals=[]), 500
 
@@ -5992,26 +5330,7 @@ def tournament_player_id():
     try:
         tournament_id = request.args.get("id", "")
         name = request.args.get("name", "")
-
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Players/GetPlayersContent",
-            headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        import re
-        for a in soup.find_all("a", href=True):
-            if a.get_text(strip=True) == name or name in a.get_text(strip=True):
-                href = a.get("href", "")
-                match = re.search(r"player=(\d+)", href)
-                if match:
-                    return jsonify(success=True, player_id=match.group(1))
-
-        return jsonify(success=True, player_id="")
+        return jsonify(success=True, player_id=bwf_client.get_tournament_player_id(tournament_id, name))
     except Exception as e:
         return jsonify(success=False, error=str(e), player_id=""), 500
 
@@ -6025,72 +5344,8 @@ def tournament_player_results():
         if not tournament_id or not player_id:
             return jsonify(success=False, error="Missing parameters"), 400
 
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/player/{player_id}", timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Parse stats table
-        stats = []
-        stats_table = soup.select_one("table")
-        if stats_table:
-            for row in stats_table.select("tr")[1:]:
-                cells = [c.get_text(strip=True) for c in row.find_all("td")]
-                if len(cells) >= 5:
-                    stats.append({
-                        "category": cells[0],
-                        "played": cells[1],
-                        "win_loss": cells[2],
-                        "sets": cells[3],
-                        "points": cells[4]
-                    })
-
-        # Parse matches
-        matches = []
-        for match_el in soup.select(".match"):
-            # Round and event
-            header_items = match_el.select(".match__header-title-item .nav-link__value")
-            round_name = header_items[0].get_text(strip=True) if header_items else ""
-            event = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
-
-            # Teams
-            rows = match_el.select(".match__row")
-            team1 = ""
-            team2 = ""
-            team1_won = False
-            for i, row in enumerate(rows):
-                players = [el.get_text(strip=True) for el in row.select(".nav-link__value") if el.get_text(strip=True)]
-                is_won = "has-won" in row.get("class", [])
-                name = " / ".join(players) if players else row.get_text(strip=True).strip()
-                if i == 0:
-                    team1 = name
-                    team1_won = is_won
-                else:
-                    team2 = name
-
-            # Scores from ul.points > li.points__cell
-            score_sets = []
-            points_lists = match_el.select("ul.points")
-            for pts in points_lists:
-                cells = pts.select("li.points__cell")
-                if len(cells) == 2:
-                    score_sets.append(f"{cells[0].get_text(strip=True)}-{cells[1].get_text(strip=True)}")
-
-            if team1 or team2:
-                matches.append({
-                    "round": round_name,
-                    "event": event,
-                    "team1": team1,
-                    "team2": team2,
-                    "team1_won": team1_won,
-                    "score": " ".join(score_sets)
-                })
-
-        return jsonify(success=True, stats=stats, matches=matches)
+        result = bwf_client.get_tournament_player_results(tournament_id, player_id)
+        return jsonify(success=True, stats=result["stats"], matches=result["matches"])
     except Exception as e:
         return jsonify(success=False, error=str(e), stats=[], matches=[]), 500
 
@@ -6103,50 +5358,7 @@ def tournament_clubs():
         if not tournament_id:
             return jsonify(success=False, error="No tournament ID"), 400
 
-        s = ext_requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-            "ReturnUrl": "/",
-            "SettingsOpen": "false",
-            "CookieWallCategoryPreferences": "1,2,3"
-        }, allow_redirects=True, timeout=5)
-
-        url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Players/GetPlayersContent"
-        resp = s.get(url, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        players = []
-        for item in soup.select("li"):
-            name_el = item.select_one("a")
-            if not name_el:
-                continue
-            name = name_el.get_text(strip=True)
-            if not name or len(name) < 3:
-                continue
-            # Get player ID from href
-            import re as re_mod
-            href = name_el.get("href", "")
-            pid_match = re_mod.search(r"player=(\d+)", href)
-            player_id = pid_match.group(1) if pid_match else ""
-            # Club is the text in the li that's not the player name
-            all_text = [t.strip() for t in item.get_text(separator="|", strip=True).split("|") if t.strip()]
-            club = ""
-            for t in all_text:
-                if t != name and len(t) > 2 and not t.startswith("("):
-                    club = t
-                    break
-            players.append({"name": name, "club": club, "player_id": player_id})
-
-        # Deduplicate
-        seen = set()
-        unique_players = []
-        for p in players:
-            key = p["name"]
-            if key not in seen:
-                seen.add(key)
-                unique_players.append(p)
-
-        return jsonify(success=True, players=unique_players)
+        return jsonify(success=True, players=bwf_client.get_tournament_clubs(tournament_id))
     except Exception as e:
         return jsonify(success=False, error=str(e), players=[]), 500
 
@@ -6662,7 +5874,7 @@ def get_reminders_sent_status():
     tournament_name = request.args.get("tournament", "").strip()
     if not tournament_name:
         return jsonify(success=True, sent_types=[])
-    
+
     try:
         conn = sqlite3.connect(ADMIN_DB)
         cur = conn.cursor()
@@ -6670,7 +5882,7 @@ def get_reminders_sent_status():
                    (f"{tournament_name}_%",))
         rows = cur.fetchall()
         conn.close()
-        
+
         sent_types = []
         for row in rows:
             # Extract type from "tournament_name_TYPE"
@@ -6678,10 +5890,118 @@ def get_reminders_sent_status():
             if key.startswith(tournament_name + "_"):
                 reminder_type = key[len(tournament_name) + 1:]
                 sent_types.append(reminder_type)
-        
+
         return jsonify(success=True, sent_types=sent_types)
     except Exception as e:
         return jsonify(success=True, sent_types=[])
+
+
+# ==================== LOCAL DEVELOPMENT MODE ====================
+
+DEV_FIXTURE_URL_PREFIX = "https://dev.local/"
+
+
+def _mode_url_clause():
+    """SQL fragment and params restricting tournaments to the current mode.
+
+    Dev fixtures are written into the same local tournaments.db as real ones,
+    so without this a fixture scraped in dev mode keeps showing up in live —
+    and worse, counts towards the "already fetched today" cache check, which
+    then serves fixtures instead of calling the real site at all.
+
+    Provenance is the URL host: every fixture uses https://dev.local/. In
+    production get_mode() is always "live", so this is always the NOT LIKE
+    branch, which no real tournament URL matches.
+    """
+    pattern = DEV_FIXTURE_URL_PREFIX + "%"
+    if bwf_client.get_mode() == "dev":
+        return "tournament_url LIKE ?", (pattern,)
+    return "tournament_url NOT LIKE ?", (pattern,)
+
+
+@app.before_request
+def _drop_session_from_another_mode():
+    """End any session created under a different backend than the current one.
+
+    A session belongs to the backend that made it: a stub persona has no
+    meaning against the real site, and a real login has none against the
+    stubs. Enforcing that here rather than only in the mode-switch handler
+    covers the cases that handler cannot see — another browser or tab holding
+    a session when someone else flips the mode, and a server restart, which
+    resets the mode to "live" while the signed session cookie survives.
+
+    Sessions predating this stamp carry no "bwf_mode" and are left alone.
+    In production dev_tools_enabled() is false, so this never runs.
+    """
+    if not bwf_client.dev_tools_enabled():
+        return
+    # An unstamped session predates the stamp, and the process always boots in
+    # live mode, so treating it as live is what it actually is. Grandfathering it
+    # instead left a hole: set_dev_mode would report signed_out while the session
+    # survived, so Back returned you to a live-origin session against stub data.
+    stamped = session.get("bwf_mode", "live")
+    if session and stamped != bwf_client.get_mode():
+        logger.info(f"🔀 Dropping session for {session.get('bwf_login')} — "
+                    f"created in {stamped} mode, server is now {bwf_client.get_mode()}")
+        session.clear()
+
+
+@app.route("/api/dev-mode", methods=["GET"])
+def get_dev_mode():
+    """Report whether dev tools exist on this server, and the mode in effect."""
+    if not bwf_client.dev_tools_enabled():
+        return jsonify(success=False, error="Not found"), 404
+    return jsonify(dev_tools=True, mode=bwf_client.get_mode())
+
+
+@app.route("/api/dev-personas", methods=["GET"])
+def get_dev_personas():
+    """List the stub accounts the login page offers as a picker.
+
+    404s when DEV_TOOLS is unset, exactly like the mode routes. Returns an
+    empty list while the mode is live, because these usernames only resolve
+    against the stub backend -- offering them in live mode would just produce
+    failed logins against the real Badminton Sweden site.
+    """
+    if not bwf_client.dev_tools_enabled():
+        return jsonify(success=False, error="Not found"), 404
+
+    return jsonify(success=True, mode=bwf_client.get_mode(),
+                   personas=bwf_client.list_personas())
+
+
+@app.route("/api/dev-mode", methods=["POST"])
+def set_dev_mode():
+    """Switch between live and dev.
+
+    Deliberately no session["admin"] check: the 404 above IS the access
+    control -- this route only exists when DEV_TOOLS is set, which happens
+    only on a developer's own machine (see run-local.ps1), never in
+    production. Gating it behind admin too would be circular: session["admin"]
+    is only ever set by a successful login against the real Badminton Sweden
+    site, which is exactly the credential-free workflow dev mode exists to
+    provide. Requiring it here would make the switch permanently unreachable
+    on the machine it was built for.
+    """
+    if not bwf_client.dev_tools_enabled():
+        return jsonify(success=False, error="Not found"), 404
+
+    previous = bwf_client.get_mode()
+    mode = (request.json or {}).get("mode", "")
+    try:
+        active = bwf_client.set_mode(mode)
+    except ValueError as e:
+        logger.warning(f"⚠️  Rejected dev-mode switch: {e}")
+        return jsonify(success=False, error=str(e)), 400
+
+    # The session is not cleared here: _drop_session_from_another_mode() does it
+    # on the next request, for every session rather than just this caller's.
+    # We only report whether the caller is about to lose theirs, so the UI can
+    # send them to the login page instead of a page they can no longer use.
+    signed_out = bool(session.get("bwf_login")) and active != previous
+
+    logger.info(f"🔀 Mode switched to {active}")
+    return jsonify(success=True, mode=active, signed_out=signed_out)
 
 
 if __name__ == "__main__":

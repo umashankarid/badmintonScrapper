@@ -8,6 +8,146 @@
 
 ## [Unreleased]
 
+### Added - Dev-Mode Test-Account Picker and Session/Mode Coupling
+- **Problem**: the stub backend serves eight personas chosen to exercise specific
+  domain rules, but their usernames had to be memorised or read out of `bwf_dev.py`.
+  Separately, a session created under one backend stayed valid after the mode
+  changed — a stub persona could act against real Badminton Sweden data, and a
+  real login could act against the stubs.
+
+- **`bwf_dev.py`**: each persona gained a `description` naming the rule it exercises
+  (under-13 dispens, the MJT/SJT split, points above maximum, and so on).
+
+- **`bwf_client.py`**: new `list_personas()`, returning `[]` in live mode.
+  It lives here rather than in `app.py` so the one-boundary rule holds — `app.py`
+  never imports a backend directly.
+
+- **`app.py`**: new `GET /api/dev-personas`, 404 when `DEV_TOOLS` is unset.
+  Login now stamps `session["bwf_mode"]`, and a new `before_request` guard
+  (`_drop_session_from_another_mode`) ends any session whose stamped mode no longer
+  matches the server's.
+  Before: switching modes left the existing session intact.
+  After: the session is dropped on the next request, in both directions.
+  Enforcing it per-request rather than in the switch handler also covers what that
+  handler cannot see — other tabs and browsers holding sessions when someone else
+  flips the mode, and a server restart, which resets the mode to `"live"` while the
+  signed cookie survives. Sessions predating the stamp are grandfathered.
+
+- **`static/devbar.js`**: the picker is a "Sign in as…" dropdown in the bar, so it
+  is available on every page rather than only the login form. It re-checks the mode
+  immediately before signing in, because the mode is process-wide and can have moved
+  to live in another tab — posting a stub username then would forward it to the real
+  site as a failed login. All fetches go through helpers that return `null` on any
+  failure, so an HTML error page from the debugger can no longer throw out of an
+  event handler and leave a control permanently disabled.
+
+- **Tests**: 20 added in `test_dev_mode.py` (58 total) covering the personas
+  endpoint, sign-out on mode change in both directions, the per-request guard
+  including the restart case, and that production never drops a session.
+  `pytest test_dev_mode.py test_bwf_client.py` → 181 passed; `run_tests.py` →
+  Ran 10 tests - OK.
+  Two of the new tests sign in as a persona, which persists it to `players.db`;
+  they purge `DEV-%` rows in setUp and tearDown, because a plain `pytest` run has
+  no `DATA_DIR` set and would otherwise inject a fake child into the real Komet
+  roster and its `LEVEL 3-5` group.
+
+- **Impact**:
+  - Users: none — every route added here 404s when `DEV_TOOLS` is unset, and the
+    session guard returns immediately in production
+  - Database: no schema changes
+  - Deployment: none
+
+### Added - Local Development Mode (BWF Boundary, Live/Dev Toggle, Fake Fixtures)
+- **Problem**: Every route that needed player or tournament data called Badminton Sweden
+  directly, so working on the app locally meant real network calls, borrowed real
+  credentials, and no safe way to exercise edge cases (the under-13 dispens popup, a closed
+  tournament, an SJT-only tournament) without waiting for the real thing to occur.
+
+- **bwf_live.py** (new) — every Badminton Sweden HTTP call, moved verbatim out of `app.py`.
+  18 public functions covering login, player search/ranking, tournament scraping and
+  registration submission. Imports neither `flask` nor `sqlite3` — enforced by a test.
+
+- **bwf_dev.py** (new) — a same-name, same-signature stub for every `bwf_live` function,
+  backed by in-memory fixtures: 8 player personas (an under-13, a junior, an adult, and the
+  club account `sbf04959`, among others) and 4 tournament fixtures (open, SJT, closed, an
+  accommodation case). Imports no network library — enforced by a test that checks both the
+  source text and the module's own `__dict__`.
+
+- **bwf_client.py** (new) — the boundary `app.py` now calls instead of touching Badminton
+  Sweden directly. Dispatches each call to `bwf_live` or `bwf_dev` depending on `get_mode()`,
+  which reads `"live"` unconditionally whenever `DEV_TOOLS` is unset — no call to
+  `set_mode()` can move production off live.
+
+- **app.py**
+  Before: 33 lines of direct `tournamentsoftware.com` requests spread across login, search,
+  tournament scraping and registration submission.
+  After: every one of those goes through `bwf_client`; 3 lines remain — a short-partner-name
+  licence lookup inside `_register_partner` and a by-name profile lookup inside
+  `player_details` — deliberately not extracted (documented in AGENTS.md) and pinned by a
+  guard test so a new leak, or a third one, fails the build instead of passing silently.
+
+- **`/api/dev-mode`** (new) — `GET` reports `{dev_tools, mode}`; `POST` switches the mode.
+  Both 404 when `DEV_TOOLS` is unset -- that 404 is the only access control on `POST`. No
+  session check: `session["admin"]` is only ever set by a successful login against the real
+  Badminton Sweden site, so requiring it here would make the switch unreachable on exactly the
+  credential-free machine dev mode exists for.
+
+- Dev-mode toggle bar and "FAKE" markers in the templates for any row carrying `_fake: true`.
+
+- **run-local.ps1** — now also sets `DEV_TOOLS=1`, alongside the existing `PORT`, `DEBUG`,
+  `DATA_DIR` and `EMAIL_ENABLED`. Local-only; never set in production.
+
+- **AGENTS.md** — documents the boundary (`app.py` → `bwf_client` → `bwf_live`/`bwf_dev`)
+  and the two-lookup gap above.
+
+- **test_dev_mode.py::TestGuards** (new) — the tests that make the above trustworthy: every
+  one of `bwf_live`'s 18 public functions still returns real-shaped data through
+  `bwf_client` with `requests.get`/`.post`/`.Session` all patched to raise; `bwf_dev` has a
+  same-name *and* same-signature counterpart for every `bwf_live` function; `get_mode()` and
+  `POST /api/dev-mode` cannot be moved off live without `DEV_TOOLS`; the 3 remaining
+  `tournamentsoftware.com` lines in `app.py` are exactly the two named exemptions above, no
+  more and no fewer.
+
+- **Impact**:
+  - Users: none, no behaviour change in production
+  - Admins: none — the dev-mode bar and toggle endpoint exist only when `DEV_TOOLS` is set,
+    which happens only in `run-local.ps1`
+  - Database: none, no schema change
+  - Deployment: none, Dockerfile and the production environment are untouched; `DEV_TOOLS`
+    is unset there, so `bwf_client.get_mode()` always returns `"live"`
+
+- **Tests**: `python3 -m pytest test_dev_mode.py test_bwf_client.py -v` → 164 passed
+  (41 in `test_dev_mode.py`, including the 5 `TestGuards` tests above).
+  `python3 run_tests.py` → Ran 10 tests - OK.
+
+- **Final fix wave** (before merge) — a whole-branch review found the toggle above was
+  unreachable on the machine it was built for, plus five smaller gaps. All seven fixed:
+  1. `set_dev_mode` no longer checks `session["admin"]` (see the `/api/dev-mode` note above);
+     the 404 gate is the only access control it ever needed.
+  2. `test_dev_mode_makes_no_network_calls` renamed to
+     `test_bwf_client_functions_complete_without_network_in_dev_mode` -- it never touched a
+     Flask route, so the old name overclaimed. A new route-level test,
+     `test_player_details_name_lookup_leaks_to_the_live_site_in_dev_mode`, proves (rather than
+     assumes) that `player_details`' by-name lookup still reaches the live site in dev mode.
+  3. The `bwf_dev`/`bwf_live` signature-parity guard now also checks `bwf_client`'s
+     forwarders, and its docstring no longer credits it with catching a forwarder-body bug
+     (dropped `session`) that only a call-through test, not a signature comparison, can catch.
+  4. `_persist_login_profile` now writes a dev persona's `groups` to `kometPlayers.groups`,
+     gated on `bwf_client.get_mode() == "dev"` so it can never fire in production -- without
+     this, a dev login as a `LEVEL 3-5` persona never actually became a `LEVEL 3-5` player.
+  5. `/api/open-tournaments`' `_fake` flag is now keyed off provenance (the row's URL starting
+     with `https://dev.local/`), not the mode in effect at request time -- the old logic
+     tagged a real tournament FAKE whenever dev mode happened to be on, and untagged a dev
+     fixture the moment the toggle flipped back.
+  6. `bwf_dev.get_player_ranking_by_profile` no longer puts `"_fake": True` inside the ranking
+     dict it returns -- `_register_partner` `json.dumps`s that dict straight into
+     `players.ranking`, so the old code persisted a bogus ranking category into the database.
+  7. This section's test counts, corrected above (were 39/162, are 41/164).
+  All six guards (1, 3, 4, 5, 6, and the leak-pin in 2) were mutation-tested: each one was
+  broken by hand and confirmed to fail before being restored.
+  Tests: `python3 -m pytest test_dev_mode.py test_bwf_client.py -v` → 168 passed
+  (45 in `test_dev_mode.py`). `python3 run_tests.py` → Ran 10 tests - OK.
+
 ### Added - Local Development Setup (Configurable Port, Data Directory, Email Kill Switch)
 - **Problem**: Several web projects run on this machine and port 3000 was hardcoded, so the app
   collided with them. Running locally also wrote databases into the repo root and, with a Brevo
