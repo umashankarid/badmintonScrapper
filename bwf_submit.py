@@ -106,9 +106,29 @@ def _build_event_player_map(registrations: list[dict]) -> dict:
     """
     singles_map = {}  # event_name -> [player_name, ...]
     doubles_map = {}  # event_name -> [(player1_name, player2_name), ...]
+    doubles_seen = {}  # event_name -> set of license-based pair keys (for dedup)
+
+    # Build a name -> license_id map so we can dedup pairs by stable license IDs
+    # (name-based dedup breaks when a partner's name is missing/inconsistent).
+    name_to_license = {}
+    for reg in registrations:
+        if reg["player_name"]:
+            name_to_license[reg["player_name"]] = reg["license_id"]
+
+    def pair_license_key(name_a, license_a, partner_name):
+        """Stable key for a pair using license IDs, falling back to names."""
+        partner_license = name_to_license.get(partner_name, partner_name)
+        return tuple(sorted([str(license_a or name_a or ""), str(partner_license or "")]))
 
     for reg in registrations:
         player_name = reg["player_name"]
+        license_id = reg["license_id"]
+
+        # Skip records with no resolved player name — the mirror record for the
+        # same pair (with proper names) will cover it. Prevents submitting a
+        # broken pair like (None, "Partner Name").
+        if not player_name:
+            continue
 
         # Singles events
         if reg["singles_levels"]:
@@ -117,7 +137,8 @@ def _build_event_player_map(registrations: list[dict]) -> dict:
                 if event:
                     if event not in singles_map:
                         singles_map[event] = []
-                    singles_map[event].append(player_name)
+                    if player_name not in singles_map[event]:
+                        singles_map[event].append(player_name)
 
         # Doubles events
         if reg["doubles_levels"]:
@@ -127,8 +148,12 @@ def _build_event_player_map(registrations: list[dict]) -> dict:
                 if event and partner:
                     if event not in doubles_map:
                         doubles_map[event] = []
+                    key = pair_license_key(player_name, license_id, partner)
                     pair = tuple(sorted([player_name, partner]))
-                    if pair not in doubles_map[event]:
+                    # Dedup on license-based key
+                    seen_keys = doubles_seen.setdefault(event, set())
+                    if key not in seen_keys:
+                        seen_keys.add(key)
                         doubles_map[event].append(pair)
 
         # Mixed events
@@ -139,8 +164,11 @@ def _build_event_player_map(registrations: list[dict]) -> dict:
                 if event and partner:
                     if event not in doubles_map:
                         doubles_map[event] = []
+                    key = pair_license_key(player_name, license_id, partner)
                     pair = tuple(sorted([player_name, partner]))
-                    if pair not in doubles_map[event]:
+                    seen_keys = doubles_seen.setdefault(event, set())
+                    if key not in seen_keys:
+                        seen_keys.add(key)
                         doubles_map[event].append(pair)
 
     return {"singles": singles_map, "doubles": doubles_map}
