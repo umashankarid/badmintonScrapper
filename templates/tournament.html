@@ -451,7 +451,25 @@
                     // Group players by category (exclude non-Komet players - they only appear as partners)
                     const categories = {};
                     const kometPlayers = players.filter(p => !p.club || p.club.toLowerCase().includes("komet"));
+                    // Process rows with a known player name first, so a proper row always wins
+                    // the pair de-dup over an "Unknown" mirror row.
+                    kometPlayers.sort((a, b) => {
+                        const aUnknown = (!a.player_name || a.player_name === "Unknown") ? 1 : 0;
+                        const bUnknown = (!b.player_name || b.player_name === "Unknown") ? 1 : 0;
+                        return aUnknown - bUnknown;
+                    });
                     const nonKometIds = new Set(players.filter(p => p.club && !p.club.toLowerCase().includes("komet")).map(p => p.license_id));
+                    // Track pairs already added per category so we don't show both mirror rows (A+B and B+A).
+                    // Key on the sorted pair of LICENSE IDs (stable even when a name is "Unknown").
+                    const seenPairs = {};
+                    function partnerLicenseOf(partnerName) {
+                        if (!partnerName) return "";
+                        const e = players.find(x => x.player_name === partnerName);
+                        return e ? e.license_id : "";
+                    }
+                    function pairKey(cat, licA, licB) {
+                        return cat + "||" + [licA || "", licB || ""].sort().join("::");
+                    }
                     
                     kometPlayers.forEach(p => {
                         if (p.singles_levels) {
@@ -468,9 +486,13 @@
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
-                                    // Find partner license from players list
-                                    const partnerEntry = players.find(x => x.player_name === p.doubles_partner);
-                                    const partnerLicense = partnerEntry ? partnerEntry.license_id : "";
+                                    const partnerLicense = partnerLicenseOf(p.doubles_partner);
+                                    // Skip the mirror row if this pair is already shown in this category
+                                    if (p.doubles_partner) {
+                                        const key = pairKey(lvl, p.license_id, partnerLicense);
+                                        if (seenPairs[key]) return;
+                                        seenPairs[key] = true;
+                                    }
                                     categories[lvl].push({...p, partner: p.doubles_partner || "", partnerLicense, catType: "doubles"});
                                 }
                             });
@@ -480,8 +502,13 @@
                                 lvl = lvl.trim();
                                 if (lvl) {
                                     if (!categories[lvl]) categories[lvl] = [];
-                                    const partnerEntry = players.find(x => x.player_name === p.mixed_partner);
-                                    const partnerLicense = partnerEntry ? partnerEntry.license_id : "";
+                                    const partnerLicense = partnerLicenseOf(p.mixed_partner);
+                                    // Skip the mirror row if this pair is already shown in this category
+                                    if (p.mixed_partner) {
+                                        const key = pairKey(lvl, p.license_id, partnerLicense);
+                                        if (seenPairs[key]) return;
+                                        seenPairs[key] = true;
+                                    }
                                     categories[lvl].push({...p, partner: p.mixed_partner || "", partnerLicense, catType: "mixed"});
                                 }
                             });
