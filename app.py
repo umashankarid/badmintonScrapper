@@ -4880,9 +4880,9 @@ def cleanup_old_tournaments_endpoint():
     if not session.get("admin"):
         return jsonify(success=False, error="Unauthorized"), 401
     try:
-        grace_days = int(request.args.get("grace_days", 30))
+        grace_days = int(request.args.get("grace_days", 0))
     except Exception:
-        grace_days = 30
+        grace_days = 0
 
     from datetime import datetime, timedelta
     cutoff = (datetime.now() - timedelta(days=grace_days)).strftime("%Y-%m-%d")
@@ -4905,7 +4905,7 @@ def cleanup_old_tournaments_endpoint():
                     preview.append(f"{name} (ended {end_date}, {cnt} registrations)")
             conn.close()
             return jsonify(success=True, grace_days=grace_days, would_remove=preview,
-                           message=f"{len(preview)} tournament(s) ended more than {grace_days} days ago.")
+                           message=f"{len(preview)} tournament(s) have ended (end date passed).")
         except Exception as e:
             return jsonify(success=False, error=str(e))
 
@@ -6024,9 +6024,10 @@ def _cleanup_old_backups(keep_days=10):
             logger.error(f"Error deleting old backup {old}: {e}")
 
 
-def cleanup_old_tournaments(grace_days=30):
-    """Delete tournaments (and their related rows) whose competition ended more than
-    `grace_days` ago, to keep the DB from growing without bound.
+def cleanup_old_tournaments(grace_days=0):
+    """Delete tournaments (and their related rows) whose end date has passed,
+    to keep the DB from growing without bound. With grace_days=0 (default) a
+    tournament is removed the day after its competition_end (or date_end).
 
     Removes matching rows from:
       - tournaments.db: tournaments, tournament_registrations, reminder_opt_out
@@ -6104,8 +6105,8 @@ def daily_backup_scheduler():
             if not already_today:
                 _do_backup(prefix="auto_")
                 _cleanup_old_backups(keep_days=10)
-                # After the safety backup, purge tournaments that ended > 30 days ago
-                cleanup_old_tournaments(grace_days=30)
+                # After the safety backup, purge tournaments whose end date has passed
+                cleanup_old_tournaments(grace_days=0)
         except Exception as e:
             logger.error(f"❌ Error in daily backup: {e}")
         time.sleep(6 * 3600)  # Check every 6 hours (makes 1 backup per day)

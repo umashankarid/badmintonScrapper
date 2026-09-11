@@ -437,7 +437,7 @@
                     <div id="repair-result" style="margin-top:10px;font-size:0.9em;"></div>
                     <hr style="border:none;border-top:1px solid #eee;margin:15px 0;">
                     <button onclick="cleanupOldTournaments()" style="padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9em;">🗓️ Remove Old Tournaments</button>
-                    <p style="color:#666;font-size:0.85em;margin:8px 0 0;">Deletes tournaments (and their registrations, opt-outs, reminder records) that ended more than 30 days ago. Runs automatically each day; a backup is taken first. Click to preview and run now.</p>
+                    <p style="color:#666;font-size:0.85em;margin:8px 0 0;">Deletes tournaments (and their registrations, opt-outs, reminder records) once their end date has passed. Runs automatically each day; a backup is taken first. Click to preview and run now.</p>
                     <div id="oldtour-result" style="margin-top:10px;font-size:0.9em;"></div>
                 </div>
             </div>
@@ -561,7 +561,7 @@
                     return;
                 }
                 const ok = confirm(
-                    `The following ${preview.would_remove.length} tournament(s) ended more than ${preview.grace_days} days ago and will be permanently removed (a backup is kept):\n\n` +
+                    `The following ${preview.would_remove.length} tournament(s) have ended and will be permanently removed (a backup is kept):\n\n` +
                     preview.would_remove.join("\n") +
                     "\n\nProceed?"
                 );
