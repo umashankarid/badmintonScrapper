@@ -187,6 +187,12 @@ def init_tournaments_db():
         conn.execute("ALTER TABLE tournament_registrations ADD COLUMN offer_transport_seats INTEGER DEFAULT 0")
     except Exception:
         pass
+    # Stores point re-validation flags (JSON): per-category warnings when a player's
+    # points no longer fit their registered level (set by the pre-reminder re-check).
+    try:
+        conn.execute("ALTER TABLE tournament_registrations ADD COLUMN points_flags TEXT")
+    except Exception:
+        pass
     
     conn.commit()
     conn.close()
@@ -2959,7 +2965,7 @@ def get_tournament_players():
                        tr.singles_levels, tr.doubles_levels, 
                        tr.mixed_levels, tr.doubles_partner, tr.mixed_partner, tr.registration_date,
                        tr.need_accommodation, tr.accommodation_count, tr.accommodation_ages, tr.need_transport, tr.transport_count,
-                       tr.offer_transport, tr.offer_transport_seats
+                       tr.offer_transport, tr.offer_transport_seats, tr.points_flags
                 FROM tournament_registrations tr
                 LEFT JOIN players_db.players p ON tr.license_id = p.license_id
                 WHERE tr.tournament_name = ? 
@@ -5102,6 +5108,32 @@ def cleanup_old_tournaments_endpoint():
     return jsonify(success=True, message=f"Removed {len(removed)} old tournament(s) and their data.", details=removed)
 
 
+@app.route("/api/revalidate-points", methods=["POST"])
+def revalidate_points_endpoint():
+    """Manually run point re-validation for a tournament (fetches fresh points from SBF,
+    flags mismatches for admin, optionally notifies players). Admin only."""
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+    data = request.json or {}
+    tournament_name = data.get("dbFile") or data.get("tournament_name")
+    notify = bool(data.get("notify", False))
+    if not tournament_name:
+        return jsonify(success=False, error="Tournament name required"), 400
+    try:
+        affected = revalidate_tournament_points(tournament_name)
+        if notify and affected:
+            _notify_points_invalid(tournament_name, affected)
+        details = []
+        for a in affected:
+            evs = ", ".join(f"{i['event']} ({i['status']})" for i in a["issues"])
+            details.append(f"{a['player_name'] or a['license_id']}: {evs}")
+        return jsonify(success=True,
+                       message=f"Re-validated. {len(affected)} player(s) flagged." + (" Players notified." if (notify and affected) else ""),
+                       details=details)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+
 @app.route("/api/repair-player-names", methods=["GET", "POST"])
 def repair_player_names():
     """Re-fetch names for players with missing/placeholder names from SBF search. Admin only.
@@ -5475,6 +5507,177 @@ def _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date):
         logger.error(f"❌ Error sending admin notification: {e}")
 
 
+def _check_points_band(license_id, event_class):
+    """Pure point-band check for re-validation. Returns a dict:
+       {status: 'ok'|'too_high'|'too_low'|'unknown', message: str, points: int|None}
+    - too_high: player's points exceed the level's max (e.g. A-strength in B) — must move up
+    - too_low: player's points are below the level's min (e.g. C-strength in B) — must move down
+    Only applies to adult classes (Elit/A/B/C/D). Age classes return 'ok'.
+    """
+    try:
+        parts = event_class.strip().split(" ", 1)
+        if len(parts) != 2:
+            return {"status": "ok", "message": "", "points": None}
+        category, level = parts[0], parts[1]
+        if level not in {"Elit", "A", "B", "C", "D"}:
+            return {"status": "ok", "message": "", "points": None}
+
+        conn_p = sqlite3.connect(PLAYERS_DB)
+        cur_p = conn_p.cursor()
+        cur_p.execute("SELECT ranking FROM players WHERE license_id = ?", (license_id,))
+        row = cur_p.fetchone()
+        conn_p.close()
+        if not row or not row[0]:
+            return {"status": "unknown", "message": "No ranking data available.", "points": None}
+
+        ranking = json.loads(row[0])
+        if isinstance(ranking, str):
+            ranking = json.loads(ranking)
+        points_str = ranking.get(category, {}).get("points", "")
+        if not points_str:
+            return {"status": "unknown", "message": f"No {category} ranking points available.", "points": None}
+        points = int(points_str)
+
+        conn_r = sqlite3.connect(POINTS_DB)
+        conn_r.row_factory = sqlite3.Row
+        cur_r = conn_r.cursor()
+        cur_r.execute("SELECT * FROM point_rules WHERE klass=?", (level,))
+        rule = cur_r.fetchone()
+        conn_r.close()
+        if not rule:
+            return {"status": "ok", "message": "", "points": points}
+
+        min_pts = rule[f"{category.lower()}_min"]
+        max_pts = rule[f"{category.lower()}_max"]
+        if max_pts is not None and points > max_pts:
+            return {"status": "too_high", "points": points,
+                    "message": f"{category} points ({points}) now exceed the maximum ({max_pts}) for class {level}."}
+        if min_pts is not None and points < min_pts:
+            return {"status": "too_low", "points": points,
+                    "message": f"{category} points ({points}) are now below the minimum ({min_pts}) for class {level}."}
+        return {"status": "ok", "message": "", "points": points}
+    except Exception as e:
+        logger.debug(f"_check_points_band error for {license_id}/{event_class}: {e}")
+        return {"status": "unknown", "message": "", "points": None}
+
+
+def revalidate_tournament_points(tournament_name):
+    """Re-check every registration in a tournament against current points.
+    Writes a JSON summary into tournament_registrations.points_flags for the admin,
+    and returns a list of dicts describing players who no longer fit a category:
+        {license_id, player_name, email, secondary_email, issues:[{category, level, status, message}]}
+    Does NOT auto-remove anything (admin may allow wild cards).
+    """
+    affected = []
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        conn.execute(f"ATTACH DATABASE '{PLAYERS_DB}' AS players_db")
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT tr.id, tr.license_id, tr.singles_levels, tr.doubles_levels, tr.mixed_levels,
+                   COALESCE(p.name, '') AS name, COALESCE(p.email,'') AS email,
+                   COALESCE(p.secondary_email,'') AS secondary_email
+            FROM tournament_registrations tr
+            LEFT JOIN players_db.players p ON tr.license_id = p.license_id
+            WHERE tr.tournament_name = ?
+        """, (tournament_name,))
+        rows = cur.fetchall()
+
+        # Refresh each registered player's ranking from their public SBF profile FIRST,
+        # so the check uses current points even if the player never logged back in.
+        # (scrape_player_by_license_id fetches by license id, no login required, and
+        #  updates players.db.)
+        try:
+            from players_scraper import scrape_player_by_license_id
+        except Exception:
+            scrape_player_by_license_id = None
+        if scrape_player_by_license_id:
+            refreshed = set()
+            for r in rows:
+                lic = r["license_id"]
+                if lic and lic not in refreshed:
+                    refreshed.add(lic)
+                    try:
+                        scrape_player_by_license_id(lic)
+                    except Exception as e:
+                        logger.debug(f"Could not refresh points for {lic}: {e}")
+
+        for r in rows:
+            issues = []
+            for field in ("singles_levels", "doubles_levels", "mixed_levels"):
+                levels = (r[field] or "").strip()
+                if not levels:
+                    continue
+                for ev in [x.strip() for x in levels.split(",") if x.strip()]:
+                    res = _check_points_band(r["license_id"], ev)
+                    if res["status"] in ("too_high", "too_low"):
+                        parts = ev.split(" ", 1)
+                        issues.append({
+                            "category": parts[0],
+                            "level": parts[1] if len(parts) > 1 else "",
+                            "event": ev,
+                            "status": res["status"],
+                            "message": res["message"],
+                        })
+            # Persist the flag on the registration (or clear it if now ok)
+            flags_json = json.dumps(issues) if issues else None
+            cur.execute("UPDATE tournament_registrations SET points_flags = ? WHERE id = ?", (flags_json, r["id"]))
+            if issues:
+                affected.append({
+                    "license_id": r["license_id"],
+                    "player_name": r["name"],
+                    "email": r["email"],
+                    "secondary_email": r["secondary_email"],
+                    "issues": issues,
+                })
+        conn.commit()
+        conn.close()
+        logger.info(f"🔎 Point re-validation for '{tournament_name}': {len(affected)} player(s) flagged")
+    except Exception as e:
+        logger.error(f"❌ Error in revalidate_tournament_points({tournament_name}): {e}")
+    return affected
+
+
+def _notify_points_invalid(tournament_name, affected):
+    """Email each affected player that their points no longer fit a registered category."""
+    date_line = _tournament_dates_line(tournament_name)
+    for a in affected:
+        if not (a.get("email") or a.get("secondary_email")):
+            continue
+        lines_sv = []
+        lines_en = []
+        for iss in a["issues"]:
+            if iss["status"] == "too_high":
+                lines_sv.append(f"• {iss['event']}: dina poäng är nu för höga för klassen (spela en högre klass).")
+                lines_en.append(f"• {iss['event']}: your points are now too high for this class (play a higher class).")
+            else:
+                lines_sv.append(f"• {iss['event']}: dina poäng är nu för låga för klassen (spela en lägre klass).")
+                lines_en.append(f"• {iss['event']}: your points are now too low for this class (play a lower class).")
+        subject = f"⚠️ Kontrollera din anmälan / Please review your entry: {tournament_name}"
+        body = (f"Hej {a['player_name']},\n\n"
+                f"Efter en ny poängkontroll för '{tournament_name}' verkar följande kategori(er) "
+                f"inte längre stämma med dina aktuella rankingpoäng:\n"
+                + "\n".join(lines_sv) + "\n"
+                f"{date_line}\n\n"
+                f"Logga in för att ändra din anmälan. Om du anser att du bör få spela ändå "
+                f"(t.ex. wild card), kontakta tavlingar@bmkkomet.se.\n\n"
+                f"— — —\n\n"
+                f"Hi {a['player_name']},\n\n"
+                f"After a fresh points check for '{tournament_name}', the following category/categories "
+                f"no longer match your current ranking points:\n"
+                + "\n".join(lines_en) + "\n"
+                f"{date_line}\n\n"
+                f"Please log in to adjust your entry. If you believe you should still be allowed "
+                f"(e.g. a wild card), contact tavlingar@bmkkomet.se.\n"
+                f"https://tournament-registration.bmkkomet.se\n\n"
+                f"Med vänliga hälsningar / Best regards,\nBMK Komet")
+        for addr in (a.get("email"), a.get("secondary_email")):
+            if addr:
+                send_email(addr, subject, body)
+                logger.info(f"📧 Points-invalid notice sent to {addr} ({a['player_name']}) for {tournament_name}")
+
+
 def send_reminders():
     """
     Auto-email reminders to eligible players (based on tournament groups).
@@ -5512,6 +5715,33 @@ def send_reminders():
             # Send admin notification the day AFTER registration closes (e.g. deadline=17th, send on 18th)
             if days_left == -1:
                 _send_admin_reg_closed_notification(tournament_name, admin_reg_end_date)
+
+            # BEFORE the 3-day player reminder: re-validate all registrations against current
+            # points, flag mismatches for the admin, and notify affected players. Runs once.
+            if days_left == 3:
+                revalidation_key = f"{tournament_name}_points_revalidated"
+                try:
+                    conn_chk = sqlite3.connect(ADMIN_DB)
+                    cur_chk = conn_chk.cursor()
+                    cur_chk.execute("SELECT 1 FROM reminders_sent WHERE tournament_db = ? LIMIT 1", (revalidation_key,))
+                    already = cur_chk.fetchone() is not None
+                    conn_chk.close()
+                except Exception:
+                    already = False
+                if not already:
+                    affected = revalidate_tournament_points(tournament_name)
+                    if affected:
+                        _notify_points_invalid(tournament_name, affected)
+                    try:
+                        conn_mark = sqlite3.connect(ADMIN_DB)
+                        conn_mark.execute(
+                            "INSERT INTO reminders_sent (tournament_db, player_email, sent_at) VALUES (?, ?, ?)",
+                            (revalidation_key, "system", datetime.now().isoformat())
+                        )
+                        conn_mark.commit()
+                        conn_mark.close()
+                    except Exception as e:
+                        logger.error(f"❌ Could not mark points revalidation: {e}")
             
             # Only send player reminders at 3 days and on the last day (0 days)
             if days_left not in (3, 0):

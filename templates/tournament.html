@@ -147,6 +147,7 @@
         <h2 id="players-heading" style="margin:0;">Registered Players</h2>
         <button id="download-csv-btn" onclick="downloadCSV()" style="display:none;width:auto;padding:6px 14px;background:#28a745;font-size:0.85em;">📥 Download CSV</button>
         <button id="submit-bwf-btn" onclick="submitToBWF()" style="display:none;width:auto;padding:6px 14px;background:#0d47a1;color:white;font-size:0.85em;" disabled>🏸 Submit to SBF</button>
+        <button id="revalidate-btn" onclick="revalidatePoints()" style="display:none;width:auto;padding:6px 14px;background:#6a1b9a;color:white;font-size:0.85em;" title="Fetch current points from Badminton Sweden and flag registrations that no longer fit their class">🔎 Re-check Points</button>
     </div>
     <div id="category-view" style="display:none;margin-top:15px;"></div>
     <div id="admin-player-search" style="display:none;margin-bottom:10px;margin-top:10px;">
@@ -562,6 +563,19 @@
                     };
                     const defaultColor = {bg: '#f5f5f5', header: '#e0e0e0', border: '#bdbdbd'};
                     
+                    // Build a ⚠️ badge if this player's points no longer fit the given category.
+                    function pointsFlagBadge(p, cat) {
+                        if (!p.points_flags) return "";
+                        let flags;
+                        try { flags = JSON.parse(p.points_flags); } catch(e) { return ""; }
+                        if (!flags || !flags.length) return "";
+                        const match = flags.find(f => f.event === cat);
+                        if (!match) return "";
+                        const dir = match.status === "too_high" ? "points now too HIGH for this class" : "points now too LOW for this class";
+                        const safe = (match.message || dir).replace(/"/g, "&quot;");
+                        return ` <span title="${safe}" style="background:#ffebee;color:#b71c1c;border:1px solid #ef9a9a;border-radius:4px;padding:1px 6px;font-size:0.75em;font-weight:700;">⚠️ POINTS</span>`;
+                    }
+                    
                     sortedCategories.forEach(cat => {
                         const catPlayers = categories[cat];
                         const isDoubles = cat.startsWith("HD") || cat.startsWith("DD") || cat.startsWith("MD");
@@ -595,7 +609,7 @@
                                     </tr></thead>
                                     <tbody>
                                         ${catPlayers.map(p => `<tr>
-                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${p.need_accommodation ? ' <span title="Accommodation: '+p.accommodation_count+' persons, ages: '+(p.accommodation_ages||'N/A')+'">🏨</span>' : ''}${p.need_transport ? ' <span title="Need transport: '+p.transport_count+' persons">🚗</span>' : ''}${p.offer_transport ? ' <span title="Offer transport: '+p.offer_transport_seats+' seats">🚙</span>' : ''}</td>
+                                            <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.player_name || ""}${pointsFlagBadge(p, cat)}${p.need_accommodation ? ' <span title="Accommodation: '+p.accommodation_count+' persons, ages: '+(p.accommodation_ages||'N/A')+'">🏨</span>' : ''}${p.need_transport ? ' <span title="Need transport: '+p.transport_count+' persons">🚗</span>' : ''}${p.offer_transport ? ' <span title="Offer transport: '+p.offer_transport_seats+' seats">🚙</span>' : ''}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.license_id || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.club || ""}</td>
                                             <td style="padding:8px 10px;border-top:1px solid ${colors.border};">${p.gender === "F" ? "Female" : p.gender === "M" ? "Male" : ""}</td>
@@ -885,6 +899,37 @@
                 return;
             }
             loadPlayers();
+        }
+
+        async function revalidatePoints() {
+            const notify = confirm(
+                "Re-check all registrations against current Badminton Sweden points?\n\n" +
+                "This fetches each player's latest points. Click OK to ALSO email affected " +
+                "players, or Cancel to just flag them for admin without emailing."
+            );
+            const btn = document.getElementById("revalidate-btn");
+            const original = btn.textContent;
+            btn.disabled = true; btn.textContent = "⏳ Checking...";
+            try {
+                const res = await fetch("/api/revalidate-points", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({dbFile, notify})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    let msg = data.message;
+                    if (data.details && data.details.length) msg += "\n\n" + data.details.join("\n");
+                    alert(msg);
+                    loadPlayers();
+                } else {
+                    alert("Error: " + (data.error || "could not re-validate"));
+                }
+            } catch(e) {
+                alert("Error: " + e.message);
+            } finally {
+                btn.disabled = false; btn.textContent = original;
+            }
         }
 
         function setupLiveSearch(inputId, resultsId, onSelect) {
@@ -1944,6 +1989,7 @@
                 await loadAdminLevels();
                 document.getElementById("download-csv-btn").style.display = "inline-block";
                 document.getElementById("submit-bwf-btn").style.display = "inline-block";
+                document.getElementById("revalidate-btn").style.display = "inline-block";
                 document.getElementById("admin-player-search").style.display = "block";
                 document.getElementById("search-registered").addEventListener("input", (e) => {
                     const q = e.target.value.trim().toLowerCase();
