@@ -99,6 +99,24 @@ Concretely, these break browser tests and are easy to do without noticing:
 
 If the flow you changed has no test, add one rather than leaving the gap. If you deliberately remove coverage, say so in the commit message; a test quietly deleted to make a change pass is worse than no test at all.
 
-**Do not commit plans or specs.** Design documents, implementation plans, task breakdowns and similar planning artifacts stay local — `docs/superpowers/` is gitignored for this reason. They are working notes for a single piece of work, they go stale the moment the code moves on, and this repository already carries a dozen abandoned `*_PLAN.md` and `*_SUMMARY.md` files that prove the point. Put the reasoning that outlives the task in the commit message, in `CHANGES.md`, or here.
+**A PR that changes the UI carries a test plan and screenshots.** Two skills in
+`.claude/skills/` do this, and both are run from the repo root with the project
+venv:
+
+- `pr-screenshots` renders every page the branch touched at 375 and 1280 and
+  embeds them in the PR body. A change to `static/design-system.css` or
+  `static/devbar.js` counts as touching every page.
+- `pr-testplan` publishes `docs/manual-test-plan.md` as a GitHub issue of
+  clickable checkboxes, so the pass can be done from a phone, and re-publishes
+  without losing boxes already ticked.
+
+The test plan is the exception to the rule below: it is committed, because it
+describes what a human must check that no test can, and it outlives the task.
+Keep it current with the UI — a plan that tells the tester to look for something
+that moved is worse than no plan.
+
+**Do not commit other plans or specs.** Design documents, implementation plans,
+task breakdowns and similar planning artifacts stay local — `docs/superpowers/`
+is gitignored for this reason. They are working notes for a single piece of work, they go stale the moment the code moves on, and this repository already carries a dozen abandoned `*_PLAN.md` and `*_SUMMARY.md` files that prove the point. Put the reasoning that outlives the task in the commit message, in `CHANGES.md`, or here.
 
 Most other root-level `.md` files (`FINAL_STATUS.md`, `SESSION_SUMMARY.md`, `PHASE_5_COMPLETE.md`, `PROGRESS_SUMMARY.md`, `*_PLAN.md`, …) are historical session logs from past refactors and are stale — `ACTUAL_DB_STRUCTURE.md` in particular still claims `tournaments.db` doesn't exist and that per-tournament `.db` files are in use. That migration is done: registrations live in `tournaments.db`, and `get_tournament_db()` is a deprecated stub that returns `None`. Read those files as history, not as spec.
