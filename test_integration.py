@@ -26,13 +26,15 @@ class TestDatabaseIntegration(unittest.TestCase):
         self.setup_db()
     
     def tearDown(self):
-        """Clean up"""
-        shutil.rmtree(self.test_dir)
-    
+        """Clean up. ignore_errors because Windows holds the sqlite file open
+        until the connection is garbage-collected, and the directory is a
+        temporary one either way."""
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
     def setup_db(self):
         """Initialize test database"""
         conn = sqlite3.connect(self.db_path)
-        
+
         # Create tournaments table
         conn.execute("""
             CREATE TABLE tournaments (
@@ -47,15 +49,19 @@ class TestDatabaseIntegration(unittest.TestCase):
                 last_updated TIMESTAMP
             )
         """)
-        
-        # Create tournament_registrations table
+
+        # Create tournament_registrations table. Columns mirror app.py's real
+        # schema (tournament_name, singles_levels/doubles_levels/mixed_levels,
+        # plural) - the old singular names here were stale and never matched
+        # what the test below actually inserts/selects.
         conn.execute("""
-            CREATE TABLE tournament_1_registrations (
+            CREATE TABLE tournament_registrations (
                 id INTEGER PRIMARY KEY,
+                tournament_name TEXT NOT NULL,
                 license_id TEXT NOT NULL,
-                singles_level TEXT,
-                doubles_level TEXT,
-                mixed_level TEXT,
+                singles_levels TEXT,
+                doubles_levels TEXT,
+                mixed_levels TEXT,
                 registration_date TIMESTAMP
             )
         """)

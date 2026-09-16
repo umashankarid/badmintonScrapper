@@ -113,20 +113,25 @@ class TestDatabaseViewerEndpoints(unittest.TestCase):
         self.assertIn('name', columns)
     
     def test_get_table_data_endpoint_returns_rows(self):
-        """Test: GET /api/database/<db>/table/<table> returns data rows"""
+        """Test: GET /api/database/<db>/table/<table> returns data rows.
+
+        point_rules is seeded with five rows on every startup, so it is the
+        one table guaranteed to be non-empty regardless of environment
+        (players.db is empty on a clean checkout).
+        """
         self.login_as_admin()
-        response = self.client.get('/api/database/players.db/table/players')
+        response = self.client.get('/api/database/point_rules.db/table/point_rules')
         data = response.get_json()
-        
+
         # Verify rows
         rows = data['rows']
         self.assertIsInstance(rows, list)
         self.assertGreater(len(rows), 0)
-        
+
         # Verify each row has expected columns
         for row in rows:
-            self.assertIn('license_id', row)
-            self.assertIn('name', row)
+            self.assertIn('id', row)
+            self.assertIn('klass', row)
     
     def test_get_table_data_endpoint_pagination(self):
         """Test: GET /api/database/<db>/table/<table> returns pagination info"""
@@ -160,12 +165,17 @@ class TestDatabaseViewerEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
     
     def test_export_endpoint_json_format(self):
-        """Test: Export table as JSON"""
+        """Test: Export table as JSON.
+
+        point_rules is seeded with five rows on every startup, so it is the
+        one table guaranteed to be non-empty regardless of environment
+        (players.db is empty on a clean checkout).
+        """
         self.login_as_admin()
-        response = self.client.get('/api/database/players.db/table/players/export?format=json')
+        response = self.client.get('/api/database/point_rules.db/table/point_rules/export?format=json')
         self.assertEqual(response.status_code, 200)
         self.assertIn('Content-Disposition', response.headers)
-        self.assertIn('players.json', response.headers['Content-Disposition'])
+        self.assertIn('point_rules.json', response.headers['Content-Disposition'])
         # Verify it's valid JSON
         import json
         data = json.loads(response.data)
@@ -224,29 +234,31 @@ class TestDatabaseViewerEndpoints(unittest.TestCase):
         5. Verify data is returned correctly with proper structure
         """
         self.login_as_admin()
-        
+
         # Step 1: Get databases
         response = self.client.get('/api/databases')
         self.assertEqual(response.status_code, 200)
         databases = response.get_json()['databases']
         self.assertGreater(len(databases), 0)
-        
+
         # Step 2: Find a database that exists
         existing_db = next((db for db in databases if db['exists']), None)
         self.assertIsNotNone(existing_db)
-        
+
         # Step 3: List tables using right endpoint
         response = self.client.get(f'/api/database/{existing_db["name"]}/tables')
         self.assertEqual(response.status_code, 200)
         tables = response.get_json()['tables']
         self.assertGreater(len(tables), 0)
-        
-        # Step 4: View first table using right endpoint
-        first_table = tables[0]
-        response = self.client.get(f'/api/database/{existing_db["name"]}/table/{first_table["name"]}')
+
+        # Step 4: View table contents. point_rules is seeded with five rows on
+        # every startup, so it is the one table guaranteed to be non-empty
+        # regardless of environment - the original picked tables[0], whichever
+        # table that happened to be, so it depended on ambient data.
+        response = self.client.get('/api/database/point_rules.db/table/point_rules')
         self.assertEqual(response.status_code, 200)
         table_data = response.get_json()
-        
+
         # Step 5: Verify data structure
         self.assertTrue(table_data['success'])
         self.assertGreater(len(table_data['columns']), 0)

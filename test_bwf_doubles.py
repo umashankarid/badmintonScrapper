@@ -7,6 +7,10 @@ Clicks Avbryt at the end (no save).
 import asyncio
 import sys
 
+import pytest
+
+pytestmark = pytest.mark.live
+
 BASE_URL = "https://badmintonsweden.tournamentsoftware.com"
 TOURNAMENT_ID = "A2AB5259-7C92-4A4D-88C1-CC7A0C6DCD4F"
 CLUB_LOGIN = "sbf04959"

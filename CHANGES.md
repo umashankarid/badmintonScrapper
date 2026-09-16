@@ -1,12 +1,96 @@
 # Changes Log - badmintonScrapPython
 
 **Format**: Follows semantic versioning and conventional commits  
-**Last Updated**: 2026-08-13  
+**Last Updated**: 2026-09-09  
 **Maintainer**: AI Agent (following CODE_GUIDELINES.md)
 
 ---
 
 ## [Unreleased]
+
+### Added - Browser End-to-End Test Suite and CI
+- **Problem**: the existing suite (`test_badminton.py` plus the other `test_*.py` files) exercises
+  routes and SQL directly, so a broken selector, a JS console error, or a registration that never
+  reaches the database would ship unnoticed — nothing actually drove the app in a browser. There
+  was also no CI: every gate ran only when someone remembered to run it locally.
+
+- **`tests/e2e/`** (new package, 29 tests) — Playwright-driven browser tests against a real running
+  instance of `app.py`:
+  - `conftest.py`: `app_server` boots `app.py` as a subprocess in dev mode (`DEV_TOOLS=1`) with its
+    own temporary `DATA_DIR` and outbound HTTP blocked, and drains the subprocess's stdout/stderr on
+    a background thread so the OS pipe buffer never fills and freezes the child. `console_errors`
+    captures browser console errors for assertions.
+  - `seed.py`: the only file in the suite allowed to know the database schema. Every piece of test
+    state (tournaments, players, registrations, personas) is written by calling a builder here —
+    `tests/e2e/seed.py` — rather than inline SQL in a test, so a schema change breaks one file
+    instead of many. New state builders belong here.
+  - `test_smoke.py`: every public and admin page loads without a console error (parametrized), plus
+    the tournament list and tournament-detail pages.
+  - `test_player.py`: registration and withdrawal round-trip to the database, the under-13 dispens
+    confirmation popup, the SJT-only block, the points-above-maximum block, and that a non-Komet
+    member cannot sign in.
+  - `test_admin.py`: the admin registrations view, hiding a tournament from the home page via the
+    real save flow, and orphaned-registration cleanup from the database viewer.
+  - `test_seed.py`: a self-check that `seed.py`'s builders themselves work correctly.
+
+- **`pytest.ini`** (new) — `testpaths = .` plus a `live` marker: "reaches the real Badminton Sweden
+  site or needs a server already running. Deselected in CI with `-m \"not live\"`, because CI is
+  offline by design." Applied to `test_bwf_steps.py`, `test_bwf_doubles.py`, and
+  `test_live_ensure_tournament.py` — the three files that reach the real site.
+
+- **Three pre-existing test failures fixed**, found only under a clean checkout with no `DATA_DIR`
+  set (CI's exact situation — the whole-tree run had previously only ever been exercised against a
+  local machine's pre-populated `.db` files):
+  - `test_integration.py`: its private throwaway schema created `tournament_1_registrations`
+    (a table name from the old per-tournament-database era) while every query in the file used
+    `tournament_registrations`; renamed it, and aligned its column list
+    (`singles_level`/`doubles_level`/`mixed_level` → `tournament_name` added,
+    `singles_levels`/`doubles_levels`/`mixed_levels`) to match the real production schema in
+    `app.py`. Its Windows teardown also failed intermittently with `PermissionError: [WinError 32]`
+    because SQLite could still hold the file handle after `.close()`; `shutil.rmtree` now passes
+    `ignore_errors=True`.
+  - `test_db_viewer_endpoints.py`: three assertions (`test_read_complete_workflow`,
+    `test_export_endpoint_json_format`, `test_get_table_data_endpoint_returns_rows`) depended on
+    ambient rows in `players.db` that only exist on a machine that has already run the app; on a
+    clean checkout `players.db` is created empty. All three were repointed at
+    `point_rules.db`/`point_rules`, which `init_point_rules_db()` always seeds with 5 rows
+    regardless of environment, with the column/filename assertions updated to match
+    (`id`/`klass`, `point_rules.json`).
+  - `test_players_data.py`: `test_has_players_with_complete_data` asserted against whatever real
+    data happened to be in `players.db` — production data, not code under test. It was replaced
+    with `test_query_finds_players_with_complete_data`, a self-contained test against its own
+    throwaway `players.db`. That replacement was itself deleted in a later commit on this branch
+    (`ab5a8f5`) because it touched no application code and stood in for nothing — a permanently
+    green test that exercised nothing. Net effect on this branch for that test: a pure deletion,
+    not a replacement.
+  - All three fixes are confined to the test files themselves; no production code or schema
+    changed.
+
+- **`.github/workflows/ci.yml`** (new) — two jobs on GitHub-hosted `ubuntu-latest`
+  (free: the repository is public), both pinned to Python 3.10 to match the
+  production `python:3.10-slim` image (the runner ships 3.12 by default, which would otherwise gate
+  on a version that's never actually deployed):
+  - `unit`: `pip install -r requirements-dev.txt`, then
+    `pytest -m "not live" --ignore=tests/e2e -q` — the offline suite.
+  - `e2e`: same install, then caches `~/.cache/ms-playwright` keyed on
+    `hashFiles('requirements.txt')` (so it invalidates exactly when the `playwright==1.45.0` pin
+    moves and never otherwise), runs `playwright install --with-deps chromium`, then
+    `pytest tests/e2e -q`. Uploads `test-results/` as an artifact on failure for trace debugging.
+
+- **`AGENTS.md`** — documents the three new pytest invocations, how the browser suite boots and
+  seeds the app, and that `tests/e2e/seed.py` owns all schema knowledge for the suite.
+
+- **Tests**: verified locally with `DATA_DIR` unset (the CI situation — clean checkout, no
+  pre-existing database files):
+  `pytest -m "not live" --ignore=tests/e2e -q` → 290 passed, 3 deselected (the `live`-marked files).
+  `pytest tests/e2e -q` → 29 passed.
+
+- **Impact**:
+  - Users: none — no production behaviour change; all changes are test files, test configuration,
+    and CI workflow
+  - Database: no schema change — the two schema-shaped fixes above touch only a test's own private
+    throwaway SQLite files, never `app.py`'s real schema
+  - Deployment: none — `Dockerfile` and the production environment are untouched
 
 ### Added - Dev-Mode Test-Account Picker and Session/Mode Coupling
 - **Problem**: the stub backend serves eight personas chosen to exercise specific

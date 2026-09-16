@@ -6,17 +6,62 @@ Tests that player records have non-null name, club, email, phone when scraped
 import unittest
 import sqlite3
 import os
+import tempfile
 
-PLAYERS_DB = "players.db"
+# Needed only for its real init_players_db(), to build this test's fixture
+# against the application's actual schema instead of a hand-written copy
+# (see setUp). Every other test_*.py in this repo already imports app the
+# same plain way, sharing whatever DATA_DIR/PLAYERS_DB it resolved to on
+# first import in this process -- setUp never writes there; it always
+# points app.PLAYERS_DB at its own throwaway file first (see below).
+import app
+
 
 class TestPlayersData(unittest.TestCase):
-    """Test player data integrity"""
-    
+    """Test player data integrity against a throwaway players.db this test
+    builds itself.
+
+    players.db is gitignored, so a fresh clone has none -- pointing setUp at
+    the real file made this module error out on its own on a clean checkout,
+    and only "pass" in CI because some other module happened to import app.py
+    first and create an empty file as a side effect. Asserting against
+    whatever real data is on a developer's machine would test that data, not
+    this code, anyway.
+    """
+
     def setUp(self):
-        self.db_path = PLAYERS_DB
-        if not os.path.exists(self.db_path):
-            raise Exception(f"Players database not found at {self.db_path}")
-    
+        # Built with the application's own init_players_db(), not a
+        # hand-written CREATE TABLE: a hand-written copy silently drifts from
+        # app.py's actual schema (app.py:466-513 -- 13 columns, name TEXT
+        # NOT NULL, profile_url UNIQUE, plus an ALTER-added secondary_email),
+        # which stops this test from ever catching real schema drift again.
+        # init_players_db() always writes to the module-level PLAYERS_DB, so
+        # swap it to our throwaway file for the call and put it back after.
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        original_players_db = app.PLAYERS_DB
+        app.PLAYERS_DB = self.db_path
+        try:
+            app.init_players_db()
+        finally:
+            app.PLAYERS_DB = original_players_db
+
+        conn = sqlite3.connect(self.db_path)
+        # name is NOT NULL in the real schema, so unlike the old hand-written
+        # copy this fixture can't include a NULL-name placeholder row -- that
+        # state is impossible in production. One complete row is enough for
+        # every assertion below (temp_* rows are never in it either way).
+        conn.execute(
+            "INSERT INTO players (license_id, name, club, gender, email, phone) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("DEV-9001", "Complete Player", "BMK Komet", "M", "player@example.com", "0701234567"),
+        )
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        os.remove(self.db_path)
+
     def test_players_table_structure(self):
         """Verify players table has expected columns"""
         conn = sqlite3.connect(self.db_path)
@@ -46,25 +91,6 @@ class TestPlayersData(unittest.TestCase):
         
         conn.close()
     
-    def test_has_players_with_complete_data(self):
-        """Verify at least some players have complete data"""
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        
-        # Check for players with non-null name, license_id, and at least email or phone
-        cur.execute("""
-            SELECT COUNT(*) FROM players 
-            WHERE license_id IS NOT NULL 
-            AND name IS NOT NULL 
-            AND name NOT LIKE 'temp_%'
-            AND (email IS NOT NULL OR phone IS NOT NULL OR club IS NOT NULL)
-        """)
-        count = cur.fetchone()[0]
-        
-        self.assertGreater(count, 0, "No players with complete data found - player scraper may not be working")
-        
-        conn.close()
-    
     def test_players_with_license_id_have_data(self):
         """Verify players with license_id have proper name and contact info"""
         conn = sqlite3.connect(self.db_path)
@@ -79,18 +105,22 @@ class TestPlayersData(unittest.TestCase):
         
         rows = cur.fetchall()
         conn.close()
-        
-        if rows:
-            for license_id, name, email, phone, club in rows:
-                # At least name should be populated, or email/phone/club
-                has_name = name and name != f"Player {license_id}"
-                has_contact = email or phone
-                has_club = club
-                
-                self.assertTrue(
-                    has_name or has_contact or has_club,
-                    f"Player {license_id} has no useful data: name={name}, email={email}, phone={phone}, club={club}"
-                )
+
+        # Not wrapped in "if rows:" -- that made this assertion vacuous on an
+        # empty table (which is exactly what a fresh checkout's players.db
+        # used to be). The fixture always seeds at least one non-temp row, so
+        # this must actually run the check below.
+        self.assertTrue(rows, "fixture produced no non-temp rows to check")
+        for license_id, name, email, phone, club in rows:
+            # At least name should be populated, or email/phone/club
+            has_name = name and name != f"Player {license_id}"
+            has_contact = email or phone
+            has_club = club
+
+            self.assertTrue(
+                has_name or has_contact or has_club,
+                f"Player {license_id} has no useful data: name={name}, email={email}, phone={phone}, club={club}"
+            )
 
 if __name__ == '__main__':
     unittest.main()
