@@ -3153,6 +3153,39 @@ def _check_points_too_high(license_id, event_class):
         return False, ""
 
 
+def _player_gender(license_id):
+    """Return a player's gender ('M'/'F'/'') from players.db, or '' if unknown/missing."""
+    if not license_id:
+        return ""
+    try:
+        conn = sqlite3.connect(PLAYERS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT gender FROM players WHERE license_id = ?", (license_id,))
+        row = cur.fetchone()
+        conn.close()
+        return (row[0] or "").strip().upper() if row else ""
+    except Exception:
+        return ""
+
+
+def _check_mixed_gender(player_gender, partner_license_id, partner_name):
+    """For mixed doubles the pair must be one man + one woman. Enforce ONLY when both
+    genders are known (partner exists in players.db with gender). If either is unknown,
+    allow (we can't verify).
+    Returns (ok: bool, message: str).
+    """
+    pg = (player_gender or "").strip().upper()
+    partner_gender = _player_gender(partner_license_id)
+    if pg not in ("M", "F") or partner_gender not in ("M", "F"):
+        return True, ""  # unknown gender on one side — cannot enforce
+    if pg == partner_gender:
+        return False, (
+            f"Mixed (MD) måste vara en dam och en herr. {partner_name} har samma kön som du.\n\n"
+            f"Mixed (MD) must be one woman and one man. {partner_name} is the same gender as you."
+        )
+    return True, ""
+
+
 def _check_partner_availability(tournament_name, partner_license_id, partner_name, category_type, requesting_player_name):
     """
     Check if a partner is already registered for the same category with another player.
@@ -3209,9 +3242,16 @@ def validate_partner():
     partner_name = data.get("partner_name", "")
     category_type = data.get("category_type", "")  # 'doubles' or 'mixed'
     requesting_player_name = data.get("requesting_player_name", "")
+    requesting_gender = data.get("requesting_gender", "")  # 'M'/'F' of the player adding the partner
     
     if not tournament_name or not partner_license_id or not category_type:
         return jsonify(success=True, available=True)
+    
+    # Mixed doubles: enforce opposite-gender pair when both genders are known
+    if category_type == "mixed":
+        ok_gender, gender_msg = _check_mixed_gender(requesting_gender, partner_license_id, partner_name)
+        if not ok_gender:
+            return jsonify(success=True, available=False, message=gender_msg)
     
     available, message = _check_partner_availability(
         tournament_name, partner_license_id, partner_name, category_type, requesting_player_name
@@ -4074,6 +4114,12 @@ def add_player():
         mixed_partner_license = player.get("mixed_partner_license_id", "").strip()
         mixed_level = player.get("mixed_levels", "")
         if mixed_partner_name and mixed_partner_license and mixed_level:
+            # Mixed doubles must be one man + one woman (enforced when both genders known)
+            requester_gender = (player.get("gender") or "").strip().upper() or _player_gender(license_id)
+            ok_gender, gender_msg = _check_mixed_gender(requester_gender, mixed_partner_license, mixed_partner_name)
+            if not ok_gender:
+                return jsonify(success=False, error=gender_msg)
+            
             # Check partner points too high (hard block)
             blocked, block_msg = _check_points_too_high(mixed_partner_license, mixed_level)
             if blocked:

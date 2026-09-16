@@ -1188,7 +1188,8 @@
                     partner_license_id: player.license_id,
                     partner_name: player.name,
                     category_type: "mixed",
-                    requesting_player_name: playerName
+                    requesting_player_name: playerName,
+                    requesting_gender: (loggedInPlayer && loggedInPlayer.gender) || ""
                 })
             });
             const result = await res.json();
