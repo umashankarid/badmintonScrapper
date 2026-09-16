@@ -256,7 +256,10 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     min-height: 44px;
     cursor: pointer;
 }
-.check-row input { flex: none; }
+/* margin: 0 drops the browser's default 4px checkbox inset so the box sits on
+   the same left edge as the field labels and inputs around it. The row's gap
+   already provides the spacing to the label text. */
+.check-row input { flex: none; margin: 0; }
 
 /* When the label runs to several lines, centring puts the box beside the
    second line instead of the name it ticks. The nudge lines it up with the
@@ -504,7 +507,10 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 
 .pick-row { display: flex; flex-direction: column; gap: var(--sp-3); }
 .pick-row > .check-row { flex: 1; min-width: 0; }
-.pick-row__controls { max-width: 260px; }
+/* Full width when stacked (a phone), so the date field and Groups box run to
+   the same right edge as the text above them; the 260px column is set in the
+   768px block where the row is horizontal. */
+.pick-row__controls { max-width: none; }
 
 /* ============================================================
    >= 768px
