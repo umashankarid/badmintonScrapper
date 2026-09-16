@@ -34,6 +34,18 @@ Docker: `python:3.10-slim` + Playwright Chromium, `CMD python app.py`, port 3000
 - `scraper.py` — standalone legacy A–Z player crawler, writes an older `players` schema. Not wired into the app.
 - `REFACTORED_ENDPOINTS.py` — reference snippets from an old refactor, not imported.
 
+**Badminton Sweden access goes through one boundary.** `app.py` calls `bwf_client`,
+which dispatches every call to `bwf_live` (real scraping) or `bwf_dev` (fixtures and
+stubs), depending on the mode. The mode is `"live"` unless `DEV_TOOLS` is set, which
+happens only in `run-local.ps1` — production never sets it, so `bwf_client.get_mode()`
+always returns `"live"` there. New scraping code belongs in `bwf_live`, with a matching
+stub added to `bwf_dev` (`test_dev_mode.py::TestGuards` fails the build if the two drift,
+by name or by signature). Known gap: two by-name lookups were never moved behind the
+boundary — `_register_partner`'s short-partner-name safeguard and `player_details`'s
+`if not profile_url:` branch — so those two still call `tournamentsoftware.com` directly
+and hit the live site even when dev mode is on. A guard test pins that to exactly those
+two functions so a third leak would fail the build.
+
 **Four SQLite databases**, all under `DATA_DIR` (env var, defaults to the repo dir; set to a persistent volume in production):
 
 | DB | Holds |
@@ -69,5 +81,7 @@ User-facing error messages are bilingual: Swedish first, blank line, then Englis
 ## Repo conventions
 
 `CODE_GUIDELINES.md` is the active working agreement and its rules apply here: write the test first, log every operation (INFO for events, ERROR for failures, the codebase uses ✅/❌/📧 emoji prefixes consistently), update `CHANGES.md` with every commit, and **never push without explicit user approval**.
+
+**Do not commit plans or specs.** Design documents, implementation plans, task breakdowns and similar planning artifacts stay local — `docs/superpowers/` is gitignored for this reason. They are working notes for a single piece of work, they go stale the moment the code moves on, and this repository already carries a dozen abandoned `*_PLAN.md` and `*_SUMMARY.md` files that prove the point. Put the reasoning that outlives the task in the commit message, in `CHANGES.md`, or here.
 
 Most other root-level `.md` files (`FINAL_STATUS.md`, `SESSION_SUMMARY.md`, `PHASE_5_COMPLETE.md`, `PROGRESS_SUMMARY.md`, `*_PLAN.md`, …) are historical session logs from past refactors and are stale — `ACTUAL_DB_STRUCTURE.md` in particular still claims `tournaments.db` doesn't exist and that per-tournament `.db` files are in use. That migration is done: registrations live in `tournaments.db`, and `get_tournament_db()` is a deprecated stub that returns `None`. Read those files as history, not as spec.

@@ -204,11 +204,12 @@
                     }
                 }
                 
+                const fakeTag = t._fake ? ' <span style="background:#c2410c;color:#fff;padding:0 5px;border-radius:3px;font-size:0.75em">FAKE</span>' : "";
                 return `
                 <div class="tournament-card" style="${urgentStyle}padding:0;overflow:hidden;">
                     ${daysCounter ? `<div style="padding:8px 15px;text-align:center;">${daysCounter}</div>` : ''}
                     <div style="padding:15px;${daysCounter ? 'padding-top:0;' : ''}">
-                        <h2 style="margin:0 0 8px 0;"><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a> ${badge}</h2>
+                        <h2 style="margin:0 0 8px 0;"><a href="/tournament.html?url=${encodeURIComponent(t.url)}">${t.name}</a>${fakeTag} ${badge}</h2>
                         <div class="details">
                             <span class="location">${t.location}</span>
                             <span class="date">📅 Competition: ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</span>
@@ -265,5 +266,6 @@
     <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
         <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
     </footer>
+<script src="/static/devbar.js"></script>
 </body>
 </html>
