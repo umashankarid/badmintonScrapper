@@ -73,6 +73,11 @@ Page: **Add/Remove** in the admin nav (`/add-remove-tournaments.html`).
       page width — it is no longer capped at 960px.
 - [ ] The checkbox lines up with the **first** line of its label (the
       tournament name), not the second.
+- [ ] Under each name, three labelled facts — **PLAYS**, **REGISTRATION
+      CLOSES**, **CLASSES** — not three grey lines. Classes are pills, one per
+      class. The deadline reads *2026-09-24 · in N days*, and turns amber only
+      when N is 7 or less. At 1280 the labels sit in a column to the left of
+      their values; at 375 each label sits above its value.
 - [ ] At 375 the same row stacks vertically and nothing scrolls sideways.
 - [ ] Tick **Dev Open**, **Dev SJT Cup**, **Dev Away Weekend**. Leave Dev Past
       Cup unticked.

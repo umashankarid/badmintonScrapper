@@ -146,6 +146,12 @@
                         // but all three level arrays were empty. allLevels.length drops the line
                         // entirely in that case instead of leaving an empty label.
                         const hasCategories = allLevels.length > 0;
+                        // Same day-count the tournament list shows; amber inside a week.
+                        const closeDate = t.registration_closes ? new Date(t.registration_closes) : null;
+                        const daysLeft = closeDate ? Math.ceil((closeDate - new Date()) / 86400000) : null;
+                        const closesSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
+                        const daysText = daysLeft === null ? '' : daysLeft < 0 ? ' &middot; closed'
+                            : daysLeft === 0 ? ' &middot; today' : ` &middot; in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
 
                         return `
                         <div class="card__row pick-row">
@@ -164,9 +170,12 @@
                                     ${t.selected_for_view ? 'checked' : ''}>
                                 <div>
                                     <strong>${t.name}</strong>${ageBadges}
-                                    <div class="muted">${t.location} &middot; ${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}</div>
-                                    ${t.registration_closes ? `<div class="muted">Registration closes ${t.registration_closes}</div>` : ''}
-                                    ${hasCategories ? `<div class="muted">Categories: ${allLevels.join(', ')}</div>` : ''}
+                                    <dl class="facts">
+                                        <dt class="label">Plays</dt>
+                                        <dd>${t.date_start}${t.date_end ? ' to ' + t.date_end : ''}${t.location ? ` <span class="muted">&middot; ${t.location}</span>` : ''}</dd>
+                                        ${t.registration_closes ? `<dt class="label">Registration closes</dt><dd${closesSoon ? ' class="facts__soon"' : ''}>${t.registration_closes}${daysText}</dd>` : ''}
+                                        ${hasCategories ? `<dt class="label">Classes</dt><dd>${allLevels.map(l => `<span class="badge badge--outline">${l}</span>`).join('')}</dd>` : ''}
+                                    </dl>
                                 </div>
                             </label>
                             <div class="stack pick-row__controls">

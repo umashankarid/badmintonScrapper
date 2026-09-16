@@ -506,6 +506,14 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 /* ---------- BWF tournament picker row (add-remove-tournaments) ---------- */
 
 .pick-row { display: flex; flex-direction: column; gap: var(--sp-3); }
+/* The text block must be allowed to shrink or the class chips cannot wrap. */
+.pick-row .check-row > div { flex: 1; min-width: 0; }
+/* Labelled facts under a picker row: label above value on a phone, a
+   two-column grid with the labels aligned from 768px. */
+.facts { display: grid; gap: var(--sp-2) var(--sp-4); margin: var(--sp-2) 0 0; }
+.facts dt, .facts dd { margin: 0; }
+.facts dd .badge { margin: 0 var(--sp-1) var(--sp-1) 0; }
+.facts__soon { color: var(--warn); font-weight: 600; }
 .pick-row > .check-row { flex: 1; min-width: 0; }
 /* Full width when stacked (a phone), so the date field and Groups box run to
    the same right edge as the text above them; the 260px column is set in the
@@ -537,6 +545,7 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
        per-tournament controls in a fixed column on the right. Stacked, each
        row was ~400px tall and used a third of a 1280px page. */
     .pick-row { flex-direction: row; align-items: flex-start; gap: var(--sp-5); }
+    .facts { grid-template-columns: max-content 1fr; align-items: baseline; }
     .pick-row__controls { flex: none; width: 260px; }
 }
 
