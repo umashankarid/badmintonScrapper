@@ -184,17 +184,17 @@
                                     </dl>
                                 </div>
                             </label>
-                            <div class="stack pick-row__controls">
-                                <div class="field">
+                            <div class="pick-row__controls">
+                                <div class="field field--deadline">
                                     <label class="field__label">Reg. deadline</label>
                                     <input type="date" class="reg-end-date"
                                         data-tournament-name="${safeName}"
                                         value="${t.admin_reg_end_date || ''}"
                                         onchange="saveRegDate(this)">
                                 </div>
-                                <div class="field">
+                                <div class="field field--groups">
                                     <label class="field__label">Groups</label>
-                                    <select class="tournament-groups" multiple
+                                    <select class="tournament-groups" multiple size="3"
                                         data-tournament-name="${safeName}"
                                         onchange="saveGroups(this)">
                                         ${allPlayerGroups.map(g => `<option value="${g}" ${(t.tournament_groups || []).includes(g) ? 'selected' : ''}>${g}</option>`).join("")}

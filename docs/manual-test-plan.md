@@ -67,10 +67,13 @@ don't file those as regressions.
 
 Page: **Add/Remove** in the admin nav (`/add-remove-tournaments.html`).
 
-- [ ] At 1280 each tournament is one **horizontal** row: checkbox and name on
-      the left, Reg. deadline / Groups / Accommodation on the right. Rows are
-      not 400px tall with empty space on the right. The row now uses the full
-      page width — it is no longer capped at 960px.
+- [ ] **On a wide screen (1280+):** each tournament is one row — checkbox,
+      name and facts on the left; **Reg. deadline / Groups / Accommodation as
+      one horizontal strip immediately beside them**, not pushed to the far
+      edge. The row is about as tall as the facts, not twice that.
+- [ ] **Narrow the window to ~900px** (a laptop, or half a screen): the strip
+      no longer fits beside the facts and drops **underneath** them, still
+      horizontal. Nothing else changes — no new breakpoint, the row decides.
 - [ ] The checkbox lines up with the **first** line of its label (the
       tournament name), not the second.
 - [ ] Under each name, three labelled facts — **PLAYS**, **REGISTRATION

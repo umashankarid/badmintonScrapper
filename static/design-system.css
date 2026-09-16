@@ -540,11 +540,19 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     .groups-rules { display: none; }
     .groups-table { display: table; }
 }
-.pick-row > .check-row { flex: 1; min-width: 0; }
-/* Full width when stacked (a phone), so the date field and Groups box run to
-   the same right edge as the text above them; the 260px column is set in the
-   768px block where the row is horizontal. */
-.pick-row__controls { max-width: none; }
+.pick-row > .check-row { min-width: 0; }
+/* The picker row's three controls are one strip. On a phone it stacks under
+   the facts behind a hairline; from 768px it is a horizontal strip that sits
+   beside the facts when there is room and wraps beneath them when there is
+   not -- flex-wrap decides, no extra breakpoint. */
+.pick-row__controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--line);
+}
+.pick-row__controls .field { margin: 0; }
 
 /* ============================================================
    >= 768px
@@ -570,9 +578,24 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
     /* Tournament picker row turns sideways: tick + details left, the three
        per-tournament controls in a fixed column on the right. Stacked, each
        row was ~400px tall and used a third of a 1280px page. */
-    .pick-row { flex-direction: row; align-items: flex-start; gap: var(--sp-5); }
+    .pick-row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-4) var(--sp-5); }
+    /* Width bases only here: in the phone's column layout a flex-basis would
+       become a height and pad the facts block out to 380px tall. */
+    .pick-row > .check-row { flex: 1 1 380px; }
     .facts { grid-template-columns: max-content 1fr; align-items: baseline; }
-    .pick-row__controls { flex: none; width: 260px; }
+    .pick-row__controls {
+        flex: 1 1 440px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: var(--sp-4);
+        padding-top: 0;
+        border-top: none;
+    }
+    .pick-row__controls .field--deadline { width: 170px; }
+    .pick-row__controls .field--groups { width: 190px; }
+    /* The toggle has no label above it; bottom-align it with the inputs. */
+    .pick-row__controls .check-row { align-self: flex-end; }
 }
 
 /* ============================================================
