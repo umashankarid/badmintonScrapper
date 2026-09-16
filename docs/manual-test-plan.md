@@ -65,6 +65,14 @@ don't file those as regressions.
 
 ## 1. Admin: make the fixtures visible — `sbf04959`
 
+**First, create the groups** — the Groups box on Add/Remove only offers groups
+an admin has defined, and a fresh local DB has none:
+
+- [ ] **Manage → Manage Komet Players → Add Groups** tab. Add three groups,
+      spelled exactly like this, because the dev personas carry these names:
+      `SENIOR`, `LEVEL 3-5`, `LEVEL_6`. Each appears in the list below the
+      form as you add it.
+
 Page: **Add/Remove** in the admin nav (`/add-remove-tournaments.html`).
 
 - [ ] **On a wide screen (1280+):** each tournament is one row — checkbox,
@@ -82,10 +90,15 @@ Page: **Add/Remove** in the admin nav (`/add-remove-tournaments.html`).
       when N is 7 or less. At 1280 the labels sit in a column to the left of
       their values; at 375 each label sits above its value.
 - [ ] At 375 the same row stacks vertically and nothing scrolls sideways.
-- [ ] Tick **Dev Open**, **Dev SJT Cup**, **Dev Away Weekend**. Leave Dev Past
-      Cup unticked.
-- [ ] Groups: for Dev Open and Dev Away Weekend select **SENIOR**; for Dev SJT
-      Cup select **LEVEL 3-5** and **LEVEL_6** (Ctrl-click for multiple).
+- [ ] **Dev Open**, **Dev SJT Cup** and **Dev Away Weekend** are listed. Tick
+      all three. **Dev Past Cup** may or may not be here: the first load of the
+      day fetches it, but the cache write drops it, so every later load that
+      day shows three (pre-existing, see scenario 14, bug 4). Either is fine —
+      if it is there, leave it unticked; it belongs to scenario 10.
+- [ ] Groups: the box now offers the three groups you created. For Dev Open
+      and Dev Away Weekend select **SENIOR**; for Dev SJT Cup select
+      **LEVEL 3-5** and **LEVEL_6** (Ctrl-click for multiple; on a phone,
+      tap each).
 - [ ] For Dev Away Weekend tick **Accommodation & Transport**.
 - [ ] Click **Save Selected Tournaments** → a native confirmation dialog, then
       the page reloads with the boxes still ticked.
@@ -361,5 +374,12 @@ Pages: `/`, `/tournament.html?url=https://dev.local/tournament/DEV-T1`,
    tournament.
 3. **The admin search box on a tournament page filters nothing** — it targets
    a table the admin view never fills.
+4. **Add/Remove shows a different list on the first load of the day than on
+   later loads.** The fresh fetch returns every tournament the feed has
+   (four in dev mode, including the finished Dev Past Cup); but the
+   per-tournament detail fetch fails for a finished tournament, failed
+   fetches are never written to the cache, so every later load that day
+   shows three. Neither is wrong, but they disagree, and Hard Refresh brings
+   the fourth back until the next load.
 
 File anything else you find.
