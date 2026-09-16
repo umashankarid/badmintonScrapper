@@ -280,9 +280,12 @@ Page: **Tournaments for Registration** tab.
       beneath it, then Email, then Groups as pills. Anything missing shows a
       faint **—**, never a blank cell; a player with no licence says *no
       licence*. Edit/Delete hug the right edge of the row.
-- [ ] **375:** each player is a card — name as the title, licence beneath,
-      pills if any, Edit/Delete under that. **No** `NAME` or `ACTIONS`
-      labels; a row with no email simply has no email line.
+- [ ] **375:** each player is a card — name as the title with the licence
+      beneath, pills if any, and **Edit/Delete to the right**, vertically
+      centred, so a card is about as tall as its two text lines. **No** `NAME`,
+      `EMAIL` or `ACTIONS` labels; a row with no email simply has no email
+      line. A long name or email wraps in the text column; the buttons stay
+      put.
 - [ ] Below the list: *N players*. Paging (← Prev / Next →, "Page 1 of 2")
       only appears when there is a second page; with a handful of players
       there is nothing there at all.

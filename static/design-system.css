@@ -631,14 +631,6 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
        "DOUBLES" with no value under it. Stacked only: on desktop an empty
        cell still holds its column. */
     .table--stack td:empty { display: none; }
-    /* Stacked people lists read as cards: the title cell and the actions cell
-       carry no label, a cell holding only a "none" dash is dropped, and the
-       actions sit left under the details rather than hugging the right. */
-    .table--stack .table__title::before, .table--stack .table__actions-cell::before { content: none; }
-    .table--stack .table__title strong { font-size: var(--fs-body); }
-    .table--stack td:has(> .table__empty:only-child) { display: none; }
-    .table--stack .table__actions-cell { text-align: left; width: auto; white-space: normal; margin-top: var(--sp-2); }
-    .table--stack .table__actions-cell .table__actions { justify-content: flex-start; }
     /* Clipping is a desktop table-width defence; stacked, the cell owns the
        full width and an ellipsis would hide text for no gain. */
     .table--clip.table--stack td { max-width: none; overflow: visible; white-space: normal; }
@@ -651,6 +643,25 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
         text-transform: uppercase;
         color: var(--muted);
     }
+    /* People lists (.table--people) read as cards: details stacked in the left
+       column, the actions cell in the right column spanning every row and
+       vertically centred, no field labels at all -- the name is the label and
+       an address is self-evidently an address. A cell holding only a "none"
+       dash is dropped. */
+    .table--people tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto auto;
+        column-gap: var(--sp-3);
+        align-items: center;
+    }
+    .table--people td { grid-column: 1; }
+    .table--people td + td { margin-top: 2px; }
+    .table--people td[data-label]::before { content: none; }
+    .table--people .table__title strong { font-size: var(--fs-body); }
+    .table--people td:has(> .table__empty:only-child) { display: none; }
+    .table--people .table__actions-cell { grid-column: 2; grid-row: 1 / 4; margin: 0; width: auto; }
+    .table--people .table__actions-cell .btn { padding-left: 12px; padding-right: 12px; }
 }
 
 @media (max-width: 480px) {
