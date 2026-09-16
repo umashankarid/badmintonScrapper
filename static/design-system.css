@@ -370,6 +370,12 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
    Withdraw doubled every row's height for no gain. */
 .table__actions { display: flex; gap: var(--sp-2); white-space: nowrap; }
 .nowrap { white-space: nowrap; }
+/* People lists: the first cell is the row's title (name, licence beneath),
+   "none" is a faint dash rather than a blank, and the actions hug the right. */
+.table__title strong { font-weight: 600; }
+.table__empty { color: var(--faint); }
+.table__actions-cell { text-align: right; width: 1%; white-space: nowrap; }
+.table__actions-cell .table__actions { justify-content: flex-end; }
 
 /* A Brevo bounce reason or a raw database cell can run to hundreds of
    characters. .table sets no table-layout, so one long value widens the
@@ -625,6 +631,14 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
        "DOUBLES" with no value under it. Stacked only: on desktop an empty
        cell still holds its column. */
     .table--stack td:empty { display: none; }
+    /* Stacked people lists read as cards: the title cell and the actions cell
+       carry no label, a cell holding only a "none" dash is dropped, and the
+       actions sit left under the details rather than hugging the right. */
+    .table--stack .table__title::before, .table--stack .table__actions-cell::before { content: none; }
+    .table--stack .table__title strong { font-size: var(--fs-body); }
+    .table--stack td:has(> .table__empty:only-child) { display: none; }
+    .table--stack .table__actions-cell { text-align: left; width: auto; white-space: normal; margin-top: var(--sp-2); }
+    .table--stack .table__actions-cell .table__actions { justify-content: flex-start; }
     /* Clipping is a desktop table-width defence; stacked, the cell owns the
        full width and an ellipsis would hide text for no gain. */
     .table--clip.table--stack td { max-width: none; overflow: visible; white-space: normal; }

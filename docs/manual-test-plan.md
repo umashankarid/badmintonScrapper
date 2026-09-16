@@ -275,8 +275,17 @@ Page: **Tournaments for Registration** tab.
 
 **Manage Komet Players**
 - [ ] Tabs with an active state. Search box and group filter each work (they
-      now have labels for screen readers; you won't see them). Group chips on
-      a player are readable pills. Pagination ← → works. 375: table stacks.
+      have labels for screen readers; you won't see them).
+- [ ] **1280:** each row is a person — name in bold with the licence in grey
+      beneath it, then Email, then Groups as pills. Anything missing shows a
+      faint **—**, never a blank cell; a player with no licence says *no
+      licence*. Edit/Delete hug the right edge of the row.
+- [ ] **375:** each player is a card — name as the title, licence beneath,
+      pills if any, Edit/Delete under that. **No** `NAME` or `ACTIONS`
+      labels; a row with no email simply has no email line.
+- [ ] Below the list: *N players*. Paging (← Prev / Next →, "Page 1 of 2")
+      only appears when there is a second page; with a handful of players
+      there is nothing there at all.
 
 **Manage Database**
 - [ ] Statistics as four boxes with big blue numbers; the small captions under

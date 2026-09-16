@@ -239,7 +239,7 @@
                 return;
             }
 
-            document.getElementById("player-count").textContent = `${data.total} player${data.total !== 1 ? 's' : ''} total`;
+            document.getElementById("player-count").textContent = `${data.total} player${data.total !== 1 ? 's' : ''}`;
 
             if (!data.players.length) {
                 container.innerHTML = '<p class="muted">No players found.</p>';
@@ -250,7 +250,7 @@
             container.innerHTML = `
                 <table class="table table--stack">
                     <thead>
-                        <tr><th>Name</th><th>License ID</th><th>Email</th><th>Groups</th><th>Actions</th></tr>
+                        <tr><th>Player</th><th>Email</th><th>Groups</th><th class="table__actions-cell"><span class="sr-only">Actions</span></th></tr>
                     </thead>
                     <tbody>
                         ${data.players.map(p => {
@@ -258,14 +258,16 @@
                             try { groups = p.groups ? JSON.parse(p.groups) : []; } catch(e) {}
                             const groupTags = groups.map(g => `<span class="badge badge--neutral">${g}</span>`).join("");
                             const secondaryEmail = p.secondary_email ? `<br><span class="muted">${p.secondary_email}</span>` : "";
+                            // An empty cell reads as data that failed to load; a dash reads
+                            // as "none". Stacked, a dash-only cell is hidden instead.
+                            const none = '<span class="table__empty">&mdash;</span>';
                             return `
                             <tr>
-                                <td data-label="Name">${p.name}</td>
-                                <td data-label="License ID">${p.license_id || ""}</td>
-                                <td data-label="Email">${p.email || ""}${secondaryEmail}</td>
-                                <td data-label="Groups">${groupTags}</td>
-                                <td data-label="Actions">
-                                    <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+                                <td data-label="" class="table__title"><strong>${p.name}</strong><div class="muted">${p.license_id || '<span class="table__empty">no licence</span>'}</div></td>
+                                <td data-label="Email">${p.email ? p.email + secondaryEmail : none}</td>
+                                <td data-label="Groups">${groupTags || none}</td>
+                                <td data-label="" class="table__actions-cell">
+                                    <div class="table__actions">
                                         <button onclick='editPlayer(${JSON.stringify(p)})' class="btn btn--secondary">Edit</button>
                                         <button onclick="deletePlayer(${p.id}, '${(p.name||'').replace(/'/g,"\\'")}')" class="btn btn--danger">Delete</button>
                                     </div>
@@ -277,7 +279,8 @@
             `;
 
             const totalPages = Math.ceil(data.total / pageSize);
-            let pagHtml = `<span class="muted">Page ${page} of ${totalPages}</span>`;
+            // "Page 1 of 1" is noise; paging appears only when there is somewhere to go.
+            let pagHtml = totalPages > 1 ? `<span class="muted">Page ${page} of ${totalPages}</span>` : "";
             if (page > 1) pagHtml += `<button onclick="loadPlayers(${page-1}, document.getElementById('search-input').value)" class="btn btn--secondary">← Prev</button>`;
             if (page < totalPages) pagHtml += `<button onclick="loadPlayers(${page+1}, document.getElementById('search-input').value)" class="btn btn--secondary">Next →</button>`;
             document.getElementById("pagination").innerHTML = pagHtml;
