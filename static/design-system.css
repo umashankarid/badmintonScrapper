@@ -156,7 +156,9 @@ a.card:hover { border-color: var(--blue); text-decoration: none; }
    .html's editTournament()/closeEditModal()), and each caller keeps its
    own background opacity and z-index inline since neither is a token
    today. */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow-y: auto; }
+/* Inset padding so the modal card inside never sits flush against a phone's
+   screen edge. */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow-y: auto; padding: var(--sp-4); }
 
 /* The "Submit to BWF" progress bar (tournament.html and
    manage-tournaments.html build the same two-div track/bar pair via
