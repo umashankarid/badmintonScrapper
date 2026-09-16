@@ -35,43 +35,49 @@
     <h1 class="page-title">Available Tournaments from Badminton Sweden</h1>
     <p class="muted">Check the tournaments you want to appear in the available tournaments list for the players.</p>
 
-    <details class="inset" style="margin:var(--sp-4) 0">
-        <summary><strong>How Groups Work</strong></summary>
-        <table class="table table--stack" style="margin-top:var(--sp-3)">
+    <details class="inset groups-help">
+        <summary><strong>How groups work</strong></summary>
+
+        <!-- Below 768px: the rules as three sentences. -->
+        <div class="groups-rules">
+            <div class="rule"><div class="rule__who">With groups</div><div>Shown only to players in <em>one of those</em> groups.</div></div>
+            <div class="rule"><div class="rule__who">No groups</div><div>Shown only to players who have <em>no</em> group.</div></div>
+            <div class="rule"><div class="rule__who">Admins</div><div>See every tournament.</div></div>
+        </div>
+
+        <!-- 768px and up: the same rules as a table, pivoted so a cell says
+             who sees it rather than "Hidden". -->
+        <table class="table groups-table">
             <thead>
-                <tr>
-                    <th>Player</th>
-                    <th>Tournament WITH groups</th>
-                    <th>Tournament with NO groups</th>
-                </tr>
+                <tr><th>Tournament</th><th>Who sees it</th><th>Who does not</th></tr>
             </thead>
             <tbody>
                 <tr>
-                    <td data-label="Player">Player in groups LEVEL_2, JUNIOR</td>
-                    <td data-label="Tournament WITH groups">Sees it if LEVEL_2 or JUNIOR matches</td>
-                    <td data-label="Tournament with NO groups">Hidden</td>
+                    <td>Has groups, e.g. <span class="badge badge--outline">LEVEL_2</span> <span class="badge badge--outline">JUNIOR</span></td>
+                    <td class="groups-ok">Players in LEVEL_2 or JUNIOR</td>
+                    <td class="groups-no">Everyone else, including players with no group</td>
                 </tr>
                 <tr>
-                    <td data-label="Player">Player with no groups</td>
-                    <td data-label="Tournament WITH groups">Hidden</td>
-                    <td data-label="Tournament with NO groups">Sees it</td>
+                    <td>Has no groups</td>
+                    <td class="groups-ok">Players with no group</td>
+                    <td class="groups-no">Any player who has a group</td>
                 </tr>
                 <tr>
-                    <td data-label="Player">Admin</td>
-                    <td data-label="Tournament WITH groups">Sees all</td>
-                    <td data-label="Tournament with NO groups">Sees all</td>
+                    <td>Any</td>
+                    <td class="groups-ok">Admins</td>
+                    <td class="muted">&mdash;</td>
                 </tr>
             </tbody>
         </table>
 
-        <p style="margin-top:var(--sp-3)"><strong>Examples:</strong></p>
-        <ul>
-            <li><em>Komet Hösttävling</em> with groups <strong>LEVEL_2, LEVEL_5</strong> → Only players in LEVEL_2 or LEVEL_5 will see it.</li>
-            <li><em>Vikingaslaget</em> with groups <strong>SENIOR, LEVEL_6</strong> → Only players in SENIOR or LEVEL_6 will see it.</li>
-            <li><em>Spånga Open</em> with <strong>no groups</strong> → Only players who have no groups assigned will see it.</li>
-            <li><em>Träningscup</em> with groups <strong>JUNIOR</strong> → Only players in JUNIOR group will see it.</li>
-        </ul>
-        <p class="muted">Tip: Hold Ctrl/Cmd to select multiple groups. To deselect all groups, hold Ctrl/Cmd and click the selected group(s).</p>
+        <div class="label groups-examples-title">Examples</div>
+        <div class="groups-examples">
+            <div class="rule"><div class="rule__who"><em>Komet Hösttävling</em></div><div><span class="badge badge--outline">LEVEL_2</span> <span class="badge badge--outline">LEVEL_5</span> <span class="muted">&rarr; players in LEVEL_2 or LEVEL_5</span></div></div>
+            <div class="rule"><div class="rule__who"><em>Vikingaslaget</em></div><div><span class="badge badge--outline">SENIOR</span> <span class="badge badge--outline">LEVEL_6</span> <span class="muted">&rarr; players in SENIOR or LEVEL_6</span></div></div>
+            <div class="rule"><div class="rule__who"><em>Spånga Open</em></div><div><span class="badge badge--outline">no groups</span> <span class="muted">&rarr; players with no group</span></div></div>
+            <div class="rule"><div class="rule__who"><em>Träningscup</em></div><div><span class="badge badge--outline">JUNIOR</span> <span class="muted">&rarr; players in JUNIOR</span></div></div>
+        </div>
+        <p class="muted groups-tip">On a computer, hold Ctrl (Cmd on a Mac) to pick more than one group, or to unpick one.</p>
     </details>
 
     <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-4)">

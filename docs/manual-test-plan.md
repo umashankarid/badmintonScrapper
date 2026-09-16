@@ -86,8 +86,12 @@ Page: **Add/Remove** in the admin nav (`/add-remove-tournaments.html`).
 - [ ] For Dev Away Weekend tick **Accommodation & Transport**.
 - [ ] Click **Save Selected Tournaments** → a native confirmation dialog, then
       the page reloads with the boxes still ticked.
-- [ ] Open **How Groups Work** → the explanation table reads as a table at 1280
-      and as stacked label:value rows at 375.
+- [ ] Open **How groups work**. **375:** three rules — *With groups / No
+      groups / Admins* — as short sentences, no table. **1280:** a table
+      instead, whose columns are *Who sees it* (green) and *Who does not*
+      (red), so no cell just says "Hidden". Both widths: four examples with
+      the groups as pills, and a one-line Ctrl/Cmd tip that reads as advice
+      for a computer, not an instruction on a phone.
 
 ## 2. Player: tournament list — `adam`
 

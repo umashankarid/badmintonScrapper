@@ -514,6 +514,32 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
 .facts dt, .facts dd { margin: 0; }
 .facts dd .badge { margin: 0 var(--sp-1) var(--sp-1) 0; }
 .facts__soon { color: var(--warn); font-weight: 600; }
+
+/* "How groups work" help box on the tournament picker. Two rules and one
+   exception: three sentences on a phone, a pivoted table from 768px. The
+   examples and tip are shared by both. */
+.groups-help { margin: var(--sp-4) 0; }
+.groups-help summary { cursor: pointer; }
+.rule { display: flex; gap: var(--sp-3); padding: var(--sp-2) 0; border-top: 1px solid #dde8fa; }
+.groups-rules { margin-top: var(--sp-2); }
+.groups-rules .rule:first-child { border-top: none; }
+.rule__who { flex: none; width: 120px; font-weight: 600; }
+.groups-examples .rule { border-top: none; padding: var(--sp-1) 0; }
+.groups-examples .rule__who { width: 150px; }
+.groups-examples-title { margin-top: var(--sp-3); }
+.groups-table { display: none; margin-top: var(--sp-3); background: #fff; border: 1px solid #dde8fa; border-radius: var(--r-inner); overflow: hidden; }
+.groups-ok { color: var(--ok); font-weight: 600; }
+.groups-no { color: var(--bad); font-weight: 600; }
+.groups-tip { margin: var(--sp-3) 0 0; }
+@media (max-width: 767.98px) {
+    /* Stack each example: name on one line, chips and who-sees-it under it. */
+    .groups-examples .rule { flex-direction: column; gap: 2px; }
+    .groups-examples .rule__who { width: auto; }
+}
+@media (min-width: 768px) {
+    .groups-rules { display: none; }
+    .groups-table { display: table; }
+}
 .pick-row > .check-row { flex: 1; min-width: 0; }
 /* Full width when stacked (a phone), so the date field and Groups box run to
    the same right edge as the text above them; the 260px column is set in the

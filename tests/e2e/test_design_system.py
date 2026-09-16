@@ -230,7 +230,7 @@ def test_templates_carry_almost_no_inline_styles():
         if n:
             counts[p.name] = n
     total = sum(counts.values())
-    assert total <= 220, (
-        f"{total} inline style= attributes across templates, budget is 220: "
+    assert total <= 217, (
+        f"{total} inline style= attributes across templates, budget is 217: "
         f"{dict(counts.most_common())}. Put appearance in "
         "static/design-system.css.")
