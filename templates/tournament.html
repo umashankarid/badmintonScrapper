@@ -995,7 +995,7 @@
             const res = await fetch("/api/validate-registration", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({level, category, points, age: loggedInPlayer.age, dob: loggedInPlayer.dob, competition_date: window.tournamentCompDate || ""})
+                body: JSON.stringify({level, category, points, age: loggedInPlayer.age, dob: loggedInPlayer.dob, competition_date: window.tournamentCompDate || "", gender: loggedInPlayer.gender || ""})
             });
             const data = await res.json();
             if (!data.allowed) {
@@ -1047,7 +1047,8 @@
                         points: null,
                         age: dobData.age || null,
                         dob: dobData.dob,
-                        competition_date: window.tournamentCompDate || ""
+                        competition_date: window.tournamentCompDate || "",
+                        gender: dobData.gender || ""
                     })
                 });
                 const valData = await valRes.json();

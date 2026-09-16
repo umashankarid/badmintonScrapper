@@ -968,9 +968,21 @@ def validate_registration():
     age = data.get("age")  # player's age
     dob = data.get("dob", "")  # player's date of birth
     competition_date = data.get("competition_date", "")  # tournament competition start date
+    gender = (data.get("gender") or "").strip().upper()  # "M" or "F"
 
     if not level or not category:
         return jsonify(success=True, allowed=True)
+
+    # GENDER RULE (hard block): women (F) may play men's categories, but men (M)
+    # may NOT play women's categories. Women's categories are DS (Damsingel) and
+    # DD (Damdubbel). MD (mixed) is open to both. HS/HD are men's but women are
+    # allowed to play up, so no block there.
+    women_only = {"DS", "DD"}
+    if gender == "M" and category in women_only:
+        cat_name = "Damsingel (women's singles)" if category == "DS" else "Damdubbel (women's doubles)"
+        return jsonify(success=True, allowed=False, hard_block=True,
+            message=(f"Herrar kan inte spela {cat_name}. Endast damer får spela damklasser.\n\n"
+                     f"Men cannot play {cat_name}. Only women may play women's categories."))
 
     # Age-based levels (U9, U11, U13, U15, U17, U19)
     # Player must be UNDER that age to play
@@ -3543,6 +3555,42 @@ def add_player():
     if not license_id:
         return jsonify(success=False, error="license_id required"), 400
     
+    # SERVER-SIDE VALIDATION: Gender-based category rule (hard block, cannot be overridden).
+    # Women (F) may play men's categories, but men (M) may NOT play women's categories.
+    # Women's categories: DS (Damsingel), DD (Damdubbel). MD (mixed) open to both.
+    try:
+        # Resolve gender: prefer the submitted value, else players.db
+        gender = (player.get("gender") or "").strip().upper()
+        if not gender:
+            conn_g = sqlite3.connect(PLAYERS_DB)
+            cur_g = conn_g.cursor()
+            cur_g.execute("SELECT gender FROM players WHERE license_id = ?", (license_id,))
+            gr = cur_g.fetchone()
+            conn_g.close()
+            gender = (gr[0] or "").strip().upper() if gr else ""
+
+        if gender == "M":
+            women_only = {"DS", "DD"}
+            import re as _reg
+            for lvl_str in [player.get("singles_levels", ""), player.get("doubles_levels", ""), player.get("mixed_levels", "")]:
+                if not lvl_str:
+                    continue
+                for lvl in lvl_str.split(","):
+                    lvl = lvl.strip()
+                    if not lvl:
+                        continue
+                    _m = _reg.match(r'^(HS|DS|HD|DD|MD)[\s\-_]*', lvl)
+                    if _m and _m.group(1) in women_only:
+                        cat = _m.group(1)
+                        cat_name = "Damsingel (women's singles)" if cat == "DS" else "Damdubbel (women's doubles)"
+                        return jsonify(success=False,
+                            error=(f"Registrering nekad: herrar kan inte spela {cat_name}. "
+                                   f"Endast damer får spela damklasser.\n\n"
+                                   f"Registration rejected: men cannot play {cat_name}. "
+                                   f"Only women may play women's categories."))
+    except Exception as e:
+        logger.debug(f"Could not validate gender on server: {e}")
+    
     # SERVER-SIDE VALIDATION: Reject if player's points exceed max for any selected category
     # This is a hard block — cannot be overridden
     try:
@@ -4455,15 +4503,15 @@ def get_player_dob():
     try:
         conn = sqlite3.connect(PLAYERS_DB)
         cur = conn.cursor()
-        cur.execute("SELECT dob, age FROM players WHERE license_id = ?", (license_id,))
+        cur.execute("SELECT dob, age, gender FROM players WHERE license_id = ?", (license_id,))
         row = cur.fetchone()
         conn.close()
         
-        if row and row[0]:
-            return jsonify(success=True, dob=row[0], age=row[1] or "")
-        return jsonify(success=True, dob="", age="")
+        if row:
+            return jsonify(success=True, dob=row[0] or "", age=row[1] or "", gender=(row[2] or ""))
+        return jsonify(success=True, dob="", age="", gender="")
     except Exception as e:
-        return jsonify(success=True, dob="", age="")
+        return jsonify(success=True, dob="", age="", gender="")
 
 
 @app.route("/api/player-groups", methods=["GET"])
