@@ -682,8 +682,8 @@ def manage_db_page():
 @app.route("/api/bwf-login", methods=["POST"])
 def bwf_login():
     data = request.json
-    login = data.get("login", "")
-    password = data.get("password", "")
+    login = (data.get("login", "") or "").strip()  # trim stray spaces from username/email (common paste issue)
+    password = data.get("password", "")  # do NOT trim password — preserve exactly as typed
     if not login or not password:
         return jsonify(success=False, error="Login and password required"), 400
 

@@ -11,28 +11,60 @@
     <p style="color:#555;font-size:0.9em;">Use the same login credentials as your Badminton Sweden account to access tournaments and manage your registrations.</p>
     <form id="login-form">
         <input type="text" id="login" placeholder="Email / Username" required>
-        <input type="password" id="password" placeholder="Password" required>
+        <div style="position:relative;">
+            <input type="password" id="password" placeholder="Password" required style="padding-right:70px;">
+            <button type="button" id="toggle-pw" onclick="togglePw()"
+                style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:6px 10px;font-size:0.8em;background:#eef2f7;color:#0d47a1;box-shadow:none;">👁 Show</button>
+        </div>
+        <p style="color:#888;font-size:0.8em;margin:2px 0 0;">Tip: klicka "Show" för att kontrollera specialtecken innan du loggar in. / Click "Show" to check special characters before logging in.</p>
         <button type="submit">Login</button>
     </form>
-    <p id="error" style="color:red;display:none;"></p>
+    <p id="error" style="color:red;display:none;white-space:pre-line;"></p>
+    <div id="fail-detail" style="display:none;margin:10px 0;padding:12px 15px;background:#fff8e1;border:1px solid #ffe082;border-radius:8px;font-size:0.9em;color:#5b4b00;"></div>
     <script>
+        function togglePw() {
+            const pw = document.getElementById("password");
+            const btn = document.getElementById("toggle-pw");
+            if (pw.type === "password") { pw.type = "text"; btn.textContent = "🙈 Hide"; }
+            else { pw.type = "password"; btn.textContent = "👁 Show"; }
+        }
+
+        function escapeHtml(s) {
+            return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+        }
+
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const errEl = document.getElementById("error");
+            const failEl = document.getElementById("fail-detail");
             errEl.style.display = "none";
+            failEl.style.display = "none";
+            const loginVal = document.getElementById("login").value;
+            const pwVal = document.getElementById("password").value;
             const res = await fetch("/api/bwf-login", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({
-                    login: document.getElementById("login").value,
-                    password: document.getElementById("password").value
-                })
+                body: JSON.stringify({ login: loginVal, password: pwVal })
             });
             const data = await res.json();
             if (data.success) window.location.href = "/admin.html";
             else {
                 errEl.textContent = data.error || "Login failed";
                 errEl.style.display = "block";
+                // Help the user spot typos: show the username in plain text and let them
+                // reveal exactly what they typed as the password (opt-in, on this device only).
+                failEl.innerHTML =
+                    "<strong>Kontrollera vad du skrev / Check what you entered:</strong><br>" +
+                    "👤 Användarnamn / Username: <code>" + escapeHtml(loginVal) + "</code><br>" +
+                    "🔑 Lösenord / Password: <span style='letter-spacing:2px;'>" + "•".repeat(pwVal.length) +
+                    "</span> (" + pwVal.length + " tecken/chars) " +
+                    "<button type='button' id='reveal-pw' style='width:auto;margin:0 0 0 8px;padding:4px 10px;font-size:0.8em;background:#eef2f7;color:#0d47a1;box-shadow:none;'>👁 Visa / Show</button>" +
+                    "<div id='revealed-pw' style='margin-top:6px;'></div>";
+                failEl.style.display = "block";
+                document.getElementById("reveal-pw").addEventListener("click", () => {
+                    document.getElementById("revealed-pw").innerHTML =
+                        "🔑 <code style='background:#fff;padding:2px 6px;border-radius:4px;'>" + escapeHtml(pwVal) + "</code>";
+                });
             }
         });
     </script>
