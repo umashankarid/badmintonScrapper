@@ -6534,6 +6534,11 @@ def live_matches():
         except Exception as e:
             logger.debug(f"Could not load komet names: {e}")
 
+        # A match can only be "ongoing" if we're viewing TODAY's day page.
+        # If no day links exist (single-day default page), treat it as today.
+        today_compact = _dt.now().strftime("%Y%m%d")
+        is_today_page = (selected_day == today_compact) or (not selected_day)
+
         matches = []
         for m in soup.select(".match"):
             header_items = m.select(".match__header-title-item .nav-link__value")
@@ -6575,11 +6580,11 @@ def live_matches():
 
             # Derive status:
             #  - has score -> done
-            #  - court has a specific number (contains ' - NN') -> ongoing/on court
-            #  - else -> upcoming
+            #  - court has a specific number AND we're viewing today's page -> ongoing
+            #  - otherwise -> upcoming
             if score:
                 status = "done"
-            elif court and _re.search(r"-\s*\d+\s*$", court):
+            elif court and _re.search(r"-\s*\d+\s*$", court) and is_today_page:
                 status = "ongoing"
             else:
                 status = "upcoming"
