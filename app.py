@@ -2558,6 +2558,51 @@ def open_tournaments():
         return jsonify(tournaments=[])
 
 
+@app.route("/api/current-tournaments", methods=["GET"])
+def current_tournaments():
+    """Return tournaments happening TODAY (today within competition/date range).
+    Includes the tournamentsoftware GUID (parsed from the URL) for live lookups."""
+    from datetime import datetime as _dt
+    import re as _re
+    today = _dt.now().strftime("%Y-%m-%d")
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT tournament_name, tournament_url, location,
+                   COALESCE(NULLIF(competition_start,''), NULLIF(date_start,'')) AS start_d,
+                   COALESCE(NULLIF(competition_end,''),   NULLIF(date_end,''))   AS end_d
+            FROM tournaments
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        result = []
+        for name, url, location, start_d, end_d in rows:
+            if not start_d:
+                continue
+            # end defaults to start when missing (single-day event)
+            e = end_d or start_d
+            if start_d <= today <= e:
+                guid = ""
+                if url:
+                    m = _re.search(r'/tournament/([0-9A-Fa-f-]{36})', url) or _re.search(r'id=([A-Fa-f0-9-]+)', url)
+                    if m:
+                        guid = m.group(1)
+                result.append({
+                    "name": name,
+                    "url": url or "",
+                    "tournament_id": guid,
+                    "location": location or "",
+                    "date_start": start_d,
+                    "date_end": e,
+                })
+        return jsonify(success=True, tournaments=result)
+    except Exception as e:
+        logger.error(f"Error fetching current tournaments: {e}")
+        return jsonify(success=False, error=str(e), tournaments=[])
+
+
 @app.route("/api/my-registrations", methods=["GET"])
 def my_registrations():
     """Check which tournaments the logged-in player is registered in."""
@@ -6187,6 +6232,12 @@ def send_reminders():
 def results_page():
     from flask import render_template
     return render_template("results.html")
+
+
+@app.route("/current-tournament.html")
+def current_tournament_page():
+    from flask import render_template
+    return render_template("current-tournament.html")
 
 
 @app.route("/api/search-tournaments", methods=["GET"])

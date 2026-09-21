@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Current Tournament</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .ct-card { border:1px solid #e0e0e0; border-radius:10px; padding:15px; margin-bottom:10px; background:#fff; box-shadow:0 2px 10px rgba(26,35,126,0.06); }
+        .ct-card.selected { border-color:#0d47a1; box-shadow:0 4px 18px rgba(13,71,161,0.18); }
+        .ct-card h3 { margin:0 0 5px; color:#0d47a1; }
+        .ct-card p { margin:2px 0; color:#666; font-size:0.9em; }
+        .section-block { background:#fff; border-radius:12px; padding:20px; margin:15px 0; box-shadow:0 2px 10px rgba(26,35,126,0.06); }
+        .section-block h2 { margin-top:0; color:#1a237e; font-size:1.2em; }
+        .komet-table { width:100%; border-collapse:collapse; }
+        .komet-table th, .komet-table td { padding:8px 12px; text-align:left; border-bottom:1px solid #eee; }
+        .komet-table th { background:#f8f9fa; }
+        .komet-table tr:hover { background:#f0f8ff; cursor:pointer; }
+        .stats-table { width:100%; border-collapse:collapse; margin:10px 0; }
+        .stats-table th, .stats-table td { padding:8px; text-align:left; border-bottom:1px solid #eee; }
+        .stats-table th { background:#f8f9fa; }
+        .match-card { border:1px solid #e0e0e0; border-radius:8px; padding:12px; margin-bottom:8px; }
+        .match-card .round { font-size:0.85em; color:#888; }
+        .won { font-weight:700; color:#28a745; }
+        .lost { color:#666; }
+        .placeholder { padding:15px; background:#fff8e1; border:1px dashed #ffca28; border-radius:8px; color:#7a5b00; font-size:0.9em; }
+        .live-match { display:flex; gap:12px; align-items:center; padding:10px 12px; border-bottom:1px solid #eee; }
+        .live-time { font-weight:700; color:#0d47a1; min-width:56px; }
+        .live-court { background:#e8f5e9; color:#1b5e20; border-radius:6px; padding:2px 8px; font-size:0.8em; font-weight:600; }
+    </style>
+</head>
+<body>
+    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
+        <span style="font-weight:bold;font-size:0.9em;color:#333;" id="admin-header-name"></span>
+        <button id="logout-btn" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;border:none;border-radius:4px;color:white;cursor:pointer;">Logout</button>
+    </div>
+    <nav style="display:flex;border-bottom:2px solid #e0e0e0;gap:0;margin-bottom:20px;flex-wrap:wrap;">
+        <a href="/" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Tournaments for Registration</a>
+        <a href="/current-tournament.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Current Tournament</a>
+        <a href="/results.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Previous Tournaments</a>
+        <a href="/manage.html" style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">Manage</a>
+    </nav>
+
+    <h1>🏸 Current Tournament</h1>
+    <p style="color:#666;">Tävlingar som pågår idag / Tournaments happening today.</p>
+
+    <div id="today-list"><p id="loading-today">Loading today's tournaments...</p></div>
+
+    <div id="detail" style="display:none;">
+        <!-- Komet players -->
+        <div class="section-block">
+            <h2>🟦 BMK Komet Players</h2>
+            <input type="text" id="komet-search" placeholder="Search Komet player..." style="margin-bottom:10px;">
+            <div id="komet-players"><p style="color:#666;">Loading players...</p></div>
+        </div>
+
+        <!-- Live / upcoming matches (court + time) -->
+        <div class="section-block">
+            <h2>⏱️ Upcoming & Ongoing Matches (by time)</h2>
+            <div id="live-matches">
+                <div class="placeholder">
+                    Live match schedule with court and time will appear here.
+                    This is wired to <code>/api/live-matches</code> and will be enabled once a live
+                    tournament order-of-play is available. (Currently no live schedule data.)
+                </div>
+            </div>
+        </div>
+
+        <!-- Player results -->
+        <div class="section-block" id="player-results-block" style="display:none;">
+            <a href="#" onclick="closePlayer();return false;" style="color:#0d47a1;text-decoration:none;">← Back to players</a>
+            <h2 id="pr-name" style="margin-top:8px;"></h2>
+            <table class="stats-table" id="pr-stats"></table>
+            <h3 style="margin-top:16px;">Matches</h3>
+            <div id="pr-matches"></div>
+        </div>
+    </div>
+
+    <script>
+        // Auth header + logout (page is open to logged-in users)
+        fetch("/api/bwf-status").then(r=>r.json()).then(d=>{
+            const el = document.getElementById("admin-header-name");
+            if (el && d.logged_in) el.textContent = (d.is_admin ? "Admin: " : "") + d.player_name;
+        });
+        document.getElementById("logout-btn").onclick = async () => {
+            await fetch("/api/bwf-logout", {method:"POST"});
+            window.location.href = "/";
+        };
+
+        let selectedTournamentId = "";
+        let kometPlayers = [];
+
+        function isKomet(club) {
+            return club && club.toLowerCase().includes("komet");
+        }
+
+        async function loadToday() {
+            const res = await fetch("/api/current-tournaments");
+            const data = await res.json();
+            const list = document.getElementById("today-list");
+            if (!data.success || !data.tournaments.length) {
+                list.innerHTML = '<p style="color:#666;">Inga tävlingar pågår idag. / No tournaments happening today.</p>';
+                return;
+            }
+            list.innerHTML = data.tournaments.map((t, i) => `
+                <div class="ct-card" id="ct-${i}" onclick="selectTournament('${t.tournament_id}', ${i}, '${(t.name||'').replace(/'/g,"\\'")}')">
+                    <h3>${t.name}</h3>
+                    <p>📍 ${t.location || ''}</p>
+                    <p>📅 ${t.date_start}${t.date_end && t.date_end !== t.date_start ? ' → ' + t.date_end : ''}</p>
+                    ${t.tournament_id ? '' : '<p style="color:#c62828;">No live data link available for this tournament.</p>'}
+                </div>
+            `).join("");
+            // Auto-select if only one
+            if (data.tournaments.length === 1 && data.tournaments[0].tournament_id) {
+                selectTournament(data.tournaments[0].tournament_id, 0, data.tournaments[0].name);
+            }
+        }
+
+        async function selectTournament(tid, idx, name) {
+            if (!tid) { alert("No live data link for this tournament."); return; }
+            selectedTournamentId = tid;
+            document.querySelectorAll(".ct-card").forEach(c => c.classList.remove("selected"));
+            const card = document.getElementById("ct-" + idx);
+            if (card) card.classList.add("selected");
+            document.getElementById("detail").style.display = "";
+            document.getElementById("player-results-block").style.display = "none";
+            await loadKometPlayers();
+            loadLiveMatches();
+        }
+
+        async function loadKometPlayers() {
+            const box = document.getElementById("komet-players");
+            box.innerHTML = '<p style="color:#666;">Loading players...</p>';
+            const res = await fetch(`/api/tournament-clubs?id=${selectedTournamentId}`);
+            const data = await res.json();
+            if (!data.success) { box.innerHTML = '<p style="color:#c62828;">Could not load players.</p>'; return; }
+            kometPlayers = (data.players || []).filter(p => isKomet(p.club));
+            renderKomet(kometPlayers);
+        }
+
+        function renderKomet(players) {
+            const box = document.getElementById("komet-players");
+            if (!players.length) {
+                box.innerHTML = '<p style="color:#666;">No BMK Komet players found in this tournament.</p>';
+                return;
+            }
+            box.innerHTML = '<table class="komet-table"><thead><tr><th>Name</th><th>Club</th><th></th></tr></thead><tbody>' +
+                players.map(p => `<tr onclick="showPlayer('${p.player_id || ''}', '${(p.name||'').replace(/'/g,"\\'")}')">
+                    <td>${p.name}</td><td>${p.club || ''}</td><td style="color:#0d47a1;">View results →</td>
+                </tr>`).join('') + '</tbody></table>';
+        }
+
+        document.getElementById("komet-search").addEventListener("input", (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            renderKomet(kometPlayers.filter(p => (p.name||'').toLowerCase().includes(q)));
+        });
+
+        async function loadLiveMatches() {
+            // Placeholder: attempt the (not-yet-available) live endpoint; keep placeholder on failure.
+            const box = document.getElementById("live-matches");
+            try {
+                const res = await fetch(`/api/live-matches?id=${selectedTournamentId}`);
+                if (!res.ok) return; // keep placeholder
+                const data = await res.json();
+                if (!data.success || !data.matches || !data.matches.length) return; // keep placeholder
+                // Sort by time, render court + time
+                const matches = data.matches.slice().sort((a,b) => (a.time||'').localeCompare(b.time||''));
+                box.innerHTML = matches.map(m => `
+                    <div class="live-match">
+                        <span class="live-time">${m.time || '--:--'}</span>
+                        <span class="live-court">${m.court || 'Court ?'}</span>
+                        <span>${m.event || ''}: <strong>${m.player || ''}</strong> ${m.opponent ? 'vs ' + m.opponent : ''} ${m.status ? '('+m.status+')' : ''}</span>
+                    </div>
+                `).join("");
+            } catch (e) {
+                // keep placeholder
+            }
+        }
+
+        async function showPlayer(playerId, name) {
+            document.getElementById("player-results-block").style.display = "";
+            document.getElementById("pr-name").textContent = name;
+            document.getElementById("pr-stats").innerHTML = '<tr><td>Loading...</td></tr>';
+            document.getElementById("pr-matches").innerHTML = "";
+            window.scrollTo({top: document.getElementById("player-results-block").offsetTop - 20, behavior: "smooth"});
+
+            if (!playerId) {
+                const idRes = await fetch(`/api/tournament-player-id?id=${selectedTournamentId}&name=${encodeURIComponent(name)}`);
+                const idData = await idRes.json();
+                playerId = idData.player_id || "";
+            }
+            if (!playerId) {
+                document.getElementById("pr-stats").innerHTML = '<tr><td>Player details not available yet.</td></tr>';
+                return;
+            }
+
+            const res = await fetch(`/api/tournament-player-results?id=${selectedTournamentId}&player=${playerId}`);
+            const data = await res.json();
+            if (!data.success) { document.getElementById("pr-stats").innerHTML = '<tr><td>No results available.</td></tr>'; return; }
+
+            document.getElementById("pr-stats").innerHTML =
+                '<thead><tr><th></th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr></thead><tbody>' +
+                (data.stats||[]).map(s => `<tr><td><strong>${s.category}</strong></td><td>${s.played}</td><td>${s.win_loss}</td><td>${s.sets}</td><td>${s.points}</td></tr>`).join('') +
+                '</tbody>';
+
+            document.getElementById("pr-matches").innerHTML = (data.matches||[]).map(m => `
+                <div class="match-card">
+                    <div class="round">${m.round} · ${m.event}</div>
+                    <div><span class="${m.team1_won ? 'won' : 'lost'}">${m.team1} ${m.team1_won ? '✓' : ''}</span></div>
+                    <div><span class="${!m.team1_won ? 'won' : 'lost'}">${m.team2} ${!m.team1_won ? '✓' : ''}</span></div>
+                    ${m.score ? `<div style="font-weight:700;color:#0066cc;margin-top:4px;">${m.score}</div>` : ''}
+                </div>
+            `).join('') || '<p style="color:#666;">No match results yet.</p>';
+        }
+
+        function closePlayer() {
+            document.getElementById("player-results-block").style.display = "none";
+        }
+
+        loadToday();
+    </script>
+
+    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    </footer>
+</body>
+</html>
