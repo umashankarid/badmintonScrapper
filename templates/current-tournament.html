@@ -151,21 +151,47 @@
             renderKomet(kometPlayers.filter(p => (p.name||'').toLowerCase().includes(q)));
         });
 
-        async function loadLiveMatches() {
+        async function loadLiveMatches(day) {
             const box = document.getElementById("live-matches");
             box.innerHTML = '<p style="color:#666;">Loading matches...</p>';
             try {
-                const res = await fetch(`/api/live-matches?id=${selectedTournamentId}`);
+                let u = `/api/live-matches?id=${selectedTournamentId}`;
+                if (day) u += `&date=${day}`;
+                const res = await fetch(u);
                 const data = await res.json();
-                if (!data.success || !data.matches || !data.matches.length) {
-                    box.innerHTML = '<div class="placeholder">No match schedule available yet for this tournament.</div>';
+                if (!data.success) {
+                    box.innerHTML = '<div class="placeholder">Could not load matches.</div>';
                     return;
                 }
-                window._allMatches = data.matches;
+                window._allMatches = data.matches || [];
+                window._matchDays = data.days || [];
+                window._selectedDay = data.selected_day || "";
+                if (!window._allMatches.length) {
+                    box.innerHTML = daySelectorHtml() + '<div class="placeholder">No matches for this day.</div>';
+                    return;
+                }
                 renderMatches();
             } catch (e) {
                 box.innerHTML = '<div class="placeholder">Could not load matches.</div>';
             }
+        }
+
+        function fmtDay(d) {
+            // 'YYYYMMDD' -> 'YYYY-MM-DD'
+            if (!d || d.length !== 8) return d || "";
+            return d.slice(0,4) + "-" + d.slice(4,6) + "-" + d.slice(6,8);
+        }
+
+        function daySelectorHtml() {
+            const days = window._matchDays || [];
+            if (days.length < 2) return "";
+            return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">' +
+                '<span style="font-size:0.85em;color:#666;">Day:</span>' +
+                days.map(function(d) {
+                    const active = d === window._selectedDay;
+                    return '<button onclick="loadLiveMatches(\'' + d + '\')" style="width:auto;margin:0;padding:5px 12px;font-size:0.8em;' +
+                        (active ? 'background:#0d47a1;color:#fff;' : 'background:#eef2f7;color:#0d47a1;') + 'box-shadow:none;">' + fmtDay(d) + '</button>';
+                }).join("") + '</div>';
         }
 
         function renderMatches() {
@@ -188,7 +214,7 @@
                 done: (window._allMatches || []).filter(m => m.status === 'done').length,
             };
 
-            const controls = `
+            const controls = daySelectorHtml() + `
                 <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;font-size:0.85em;">
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
                         <input type="checkbox" id="komet-only-matches" ${onlyKomet ? 'checked' : ''} onchange="renderMatches()" style="width:auto;margin:0;"> Only BMK Komet matches

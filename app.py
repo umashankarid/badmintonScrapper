@@ -6472,11 +6472,19 @@ def tournament_player_results():
 
 @app.route("/api/live-matches", methods=["GET"])
 def live_matches():
-    """Parse a tournament's /Matches page: done, ongoing and upcoming matches with
+    """Parse a tournament's Matches page: done, ongoing and upcoming matches with
     court + duration, players, score and status. Also flags matches involving BMK
-    Komet players (matched by name against kometPlayers/players)."""
+    Komet players. Handles multi-day tournaments via /matches/YYYYMMDD pages.
+
+    Query params:
+      id   (required) tournament GUID
+      date (optional) YYYYMMDD to fetch a specific day. If omitted, uses today's
+           date when it's one of the tournament days, else the most recent day.
+    """
     import re as _re
+    from datetime import datetime as _dt
     tournament_id = request.args.get("id", "").strip()
+    req_date = request.args.get("date", "").strip()
     if not tournament_id:
         return jsonify(success=False, error="No tournament ID", matches=[]), 400
     try:
@@ -6485,8 +6493,29 @@ def live_matches():
         s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
             "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
         }, allow_redirects=True, timeout=8)
-        url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Matches"
-        resp = s.get(url, timeout=25)
+
+        base = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}"
+
+        # 1) Load the default matches page to discover available day dates
+        index_resp = s.get(base + "/matches", timeout=25)
+        available_days = sorted(set(_re.findall(r"/matches/(\d{8})", index_resp.text)))
+
+        # 2) Decide which day to fetch
+        selected_day = ""
+        if req_date and req_date in available_days:
+            selected_day = req_date
+        elif available_days:
+            today_compact = _dt.now().strftime("%Y%m%d")
+            if today_compact in available_days:
+                selected_day = today_compact
+            else:
+                selected_day = available_days[-1]  # most recent day
+
+        # 3) Fetch the chosen day's page (or the default page if no day links)
+        if selected_day:
+            resp = s.get(f"{base}/matches/{selected_day}", timeout=25)
+        else:
+            resp = index_resp
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # Build a set of Komet player names (lowercased, normalized) for flagging
@@ -6572,7 +6601,7 @@ def live_matches():
                     "score": score, "status": status, "has_komet": has_komet,
                 })
 
-        return jsonify(success=True, matches=matches)
+        return jsonify(success=True, matches=matches, days=available_days, selected_day=selected_day)
     except Exception as e:
         logger.error(f"❌ Error fetching live matches: {e}")
         return jsonify(success=False, error=str(e), matches=[]), 500
