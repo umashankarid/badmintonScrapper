@@ -6470,6 +6470,126 @@ def tournament_player_results():
         return jsonify(success=False, error=str(e), stats=[], matches=[]), 500
 
 
+@app.route("/api/live-matches", methods=["GET"])
+def live_matches():
+    """Parse a tournament's /Matches page: done, ongoing and upcoming matches with
+    court + duration, players, score and status. Also flags matches involving BMK
+    Komet players (matched by name against kometPlayers/players)."""
+    import re as _re
+    tournament_id = request.args.get("id", "").strip()
+    if not tournament_id:
+        return jsonify(success=False, error="No tournament ID", matches=[]), 400
+    try:
+        s = ext_requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+            "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+        }, allow_redirects=True, timeout=8)
+        url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tournament_id}/Matches"
+        resp = s.get(url, timeout=25)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Build a set of Komet player names (lowercased, normalized) for flagging
+        komet_names = set()
+        try:
+            conn = sqlite3.connect(PLAYERS_DB)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM kometPlayers WHERE name IS NOT NULL AND name != ''")
+            for (nm,) in cur.fetchall():
+                komet_names.add(_normalize_name_for_match(nm))
+            # also include players table rows whose club contains 'komet'
+            cur.execute("SELECT name FROM players WHERE club LIKE '%omet%' AND name IS NOT NULL AND name != ''")
+            for (nm,) in cur.fetchall():
+                komet_names.add(_normalize_name_for_match(nm))
+            conn.close()
+        except Exception as e:
+            logger.debug(f"Could not load komet names: {e}")
+
+        matches = []
+        for m in soup.select(".match"):
+            header_items = m.select(".match__header-title-item .nav-link__value")
+            event = header_items[0].get_text(strip=True) if header_items else ""
+            round_name = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
+
+            aside = m.select_one("span.match__header-aside-block")
+            aside_title = (aside.get("title") if aside else "") or ""
+            # Parse "Spelperiod: 13m | Baldershallen 1-2 - 04" OR just a court string
+            duration = ""
+            court = ""
+            if aside_title:
+                if "|" in aside_title:
+                    left, right = aside_title.split("|", 1)
+                    dm = _re.search(r"(\d+\s*m)", left)
+                    duration = dm.group(1).replace(" ", "") if dm else left.replace("Spelperiod:", "").strip()
+                    court = right.strip()
+                else:
+                    court = aside_title.strip()
+
+            # Teams / players
+            teams = []
+            team_won = []
+            for row in m.select(".match__row"):
+                names = [el.get_text(strip=True) for el in row.select(".nav-link__value") if el.get_text(strip=True)]
+                teams.append(" / ".join(names) if names else row.get_text(strip=True).strip())
+                team_won.append("has-won" in (row.get("class") or []))
+            team1 = teams[0] if teams else ""
+            team2 = teams[1] if len(teams) > 1 else ""
+            team1_won = team_won[0] if team_won else False
+
+            # Score
+            score_sets = []
+            for pts in m.select("ul.points"):
+                cells = pts.select("li.points__cell")
+                if len(cells) == 2:
+                    score_sets.append(f"{cells[0].get_text(strip=True)}-{cells[1].get_text(strip=True)}")
+            score = " ".join(score_sets)
+
+            # Derive status:
+            #  - has score -> done
+            #  - court has a specific number (contains ' - NN') -> ongoing/on court
+            #  - else -> upcoming
+            if score:
+                status = "done"
+            elif court and _re.search(r"-\s*\d+\s*$", court):
+                status = "ongoing"
+            else:
+                status = "upcoming"
+
+            # Komet involvement
+            all_names = []
+            for row in m.select(".match__row"):
+                for el in row.select(".nav-link__value"):
+                    t = el.get_text(strip=True)
+                    if t:
+                        all_names.append(t)
+            has_komet = any(_normalize_name_for_match(n) in komet_names for n in all_names)
+
+            if event or team1 or team2:
+                matches.append({
+                    "event": event, "round": round_name,
+                    "court": court, "duration": duration,
+                    "team1": team1, "team2": team2, "team1_won": team1_won,
+                    "score": score, "status": status, "has_komet": has_komet,
+                })
+
+        return jsonify(success=True, matches=matches)
+    except Exception as e:
+        logger.error(f"❌ Error fetching live matches: {e}")
+        return jsonify(success=False, error=str(e), matches=[]), 500
+
+
+def _normalize_name_for_match(name):
+    """Normalize a player name for comparison ('Lastname, Firstname' or 'Firstname Lastname')."""
+    if not name:
+        return ""
+    name = name.strip()
+    if "," in name:
+        parts = [p.strip() for p in name.split(",")]
+        if len(parts) == 2:
+            name = parts[1] + " " + parts[0]
+    return " ".join(name.lower().split())
+
+
 @app.route("/api/tournament-clubs", methods=["GET"])
 def tournament_clubs():
     """Get all players and their clubs from a tournament's player list."""

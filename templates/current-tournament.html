@@ -54,15 +54,11 @@
             <div id="komet-players"><p style="color:#666;">Loading players...</p></div>
         </div>
 
-        <!-- Live / upcoming matches (court + time) -->
+        <!-- Matches: done, ongoing, upcoming (court + duration) -->
         <div class="section-block">
-            <h2>⏱️ Upcoming & Ongoing Matches (by time)</h2>
+            <h2>⏱️ Matches (ongoing, upcoming & results)</h2>
             <div id="live-matches">
-                <div class="placeholder">
-                    Live match schedule with court and time will appear here.
-                    This is wired to <code>/api/live-matches</code> and will be enabled once a live
-                    tournament order-of-play is available. (Currently no live schedule data.)
-                </div>
+                <div class="placeholder">Select a tournament above to load matches.</div>
             </div>
         </div>
 
@@ -156,25 +152,76 @@
         });
 
         async function loadLiveMatches() {
-            // Placeholder: attempt the (not-yet-available) live endpoint; keep placeholder on failure.
             const box = document.getElementById("live-matches");
+            box.innerHTML = '<p style="color:#666;">Loading matches...</p>';
             try {
                 const res = await fetch(`/api/live-matches?id=${selectedTournamentId}`);
-                if (!res.ok) return; // keep placeholder
                 const data = await res.json();
-                if (!data.success || !data.matches || !data.matches.length) return; // keep placeholder
-                // Sort by time, render court + time
-                const matches = data.matches.slice().sort((a,b) => (a.time||'').localeCompare(b.time||''));
-                box.innerHTML = matches.map(m => `
-                    <div class="live-match">
-                        <span class="live-time">${m.time || '--:--'}</span>
-                        <span class="live-court">${m.court || 'Court ?'}</span>
-                        <span>${m.event || ''}: <strong>${m.player || ''}</strong> ${m.opponent ? 'vs ' + m.opponent : ''} ${m.status ? '('+m.status+')' : ''}</span>
-                    </div>
-                `).join("");
+                if (!data.success || !data.matches || !data.matches.length) {
+                    box.innerHTML = '<div class="placeholder">No match schedule available yet for this tournament.</div>';
+                    return;
+                }
+                window._allMatches = data.matches;
+                renderMatches();
             } catch (e) {
-                // keep placeholder
+                box.innerHTML = '<div class="placeholder">Could not load matches.</div>';
             }
+        }
+
+        function renderMatches() {
+            const box = document.getElementById("live-matches");
+            const onlyKomet = document.getElementById("komet-only-matches") && document.getElementById("komet-only-matches").checked;
+            let matches = window._allMatches || [];
+            if (onlyKomet) matches = matches.filter(m => m.has_komet);
+
+            // Order: ongoing first, then upcoming, then done. Within each, keep source order.
+            const order = { ongoing: 0, upcoming: 1, done: 2 };
+            matches = matches.slice().sort(function(a, b) {
+                var oa = (order[a.status] === undefined) ? 3 : order[a.status];
+                var ob = (order[b.status] === undefined) ? 3 : order[b.status];
+                return oa - ob;
+            });
+
+            const counts = {
+                ongoing: (window._allMatches || []).filter(m => m.status === 'ongoing').length,
+                upcoming: (window._allMatches || []).filter(m => m.status === 'upcoming').length,
+                done: (window._allMatches || []).filter(m => m.status === 'done').length,
+            };
+
+            const controls = `
+                <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;font-size:0.85em;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="komet-only-matches" ${onlyKomet ? 'checked' : ''} onchange="renderMatches()" style="width:auto;margin:0;"> Only BMK Komet matches
+                    </label>
+                    <span style="color:#888;">🟢 Ongoing: ${counts.ongoing} · 🕒 Upcoming: ${counts.upcoming} · ✅ Done: ${counts.done}</span>
+                </div>`;
+
+            if (!matches.length) {
+                box.innerHTML = controls + '<p style="color:#666;">No matches to show.</p>';
+                return;
+            }
+
+            const statusBadge = (st) => {
+                if (st === 'ongoing') return '<span style="background:#e8f5e9;color:#1b5e20;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:700;">🟢 ONGOING</span>';
+                if (st === 'upcoming') return '<span style="background:#e3f2fd;color:#0d47a1;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:700;">🕒 UPCOMING</span>';
+                return '<span style="background:#f5f5f5;color:#666;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:700;">✅ DONE</span>';
+            };
+
+            box.innerHTML = controls + matches.map(m => `
+                <div class="match-card" style="${m.has_komet ? 'border-left:4px solid #0d47a1;background:#f7faff;' : ''}">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <div class="round">${m.event}${m.round ? ' · ' + m.round : ''}</div>
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            ${m.court ? '<span class="live-court">🏟️ ' + m.court + '</span>' : ''}
+                            ${m.duration ? '<span style="color:#888;font-size:0.8em;">⏱ ' + m.duration + '</span>' : ''}
+                            ${statusBadge(m.status)}
+                        </div>
+                    </div>
+                    <div style="margin-top:4px;"><span class="${m.team1_won ? 'won' : (m.status==='done' ? 'lost' : '')}">${m.team1} ${m.team1_won ? '✓' : ''}</span></div>
+                    <div><span class="${(!m.team1_won && m.status==='done') ? 'won' : (m.status==='done' ? 'lost' : '')}">${m.team2} ${(!m.team1_won && m.status==='done') ? '✓' : ''}</span></div>
+                    ${m.score ? `<div style="font-weight:700;color:#0066cc;margin-top:4px;">${m.score}</div>` : ''}
+                </div>
+            `).join("");
         }
 
         async function showPlayer(playerId, name) {
