@@ -6594,12 +6594,14 @@ def live_matches():
             score = " ".join(score_sets)
 
             # Derive status:
-            #  - has score -> done
-            #  - a specific court is assigned AND we're viewing today's page -> ongoing
-            #  - otherwise -> upcoming
+            #  - has score -> done (a finished match always has a score)
+            #  - no score + a specific court assigned (" - NN") -> ongoing (it's on court now)
+            #  - otherwise -> upcoming (scheduled, no court yet)
+            # Note: a court assignment without a score means the match is live, so we
+            # don't gate this on the day page — that previously hid real ongoing matches.
             if score:
                 status = "done"
-            elif court_assigned and is_today_page:
+            elif court_assigned:
                 status = "ongoing"
             else:
                 status = "upcoming"
