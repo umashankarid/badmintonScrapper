@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament — Live</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .tabs { display:flex; gap:4px; border-bottom:2px solid #e0e0e0; margin:20px 0; flex-wrap:wrap; }
+        .tab-btn { width:auto; margin:0; padding:10px 18px; background:none; border:none; border-bottom:3px solid transparent; color:#555; font-weight:600; font-size:0.9em; cursor:pointer; box-shadow:none; }
+        .tab-btn:hover { color:#1a237e; background:#f3f6fc; transform:none; box-shadow:none; filter:none; }
+        .tab-btn.active { color:#0d47a1; border-bottom-color:#0d47a1; background:#f3f6fc; }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; }
+        .komet-table { width:100%; border-collapse:collapse; }
+        .komet-table th, .komet-table td { padding:8px 12px; text-align:left; border-bottom:1px solid #eee; }
+        .komet-table th { background:#f8f9fa; }
+        .komet-table tr:hover { background:#f0f8ff; cursor:pointer; }
+        .stats-table { width:100%; border-collapse:collapse; margin:10px 0; }
+        .stats-table th, .stats-table td { padding:8px; text-align:left; border-bottom:1px solid #eee; }
+        .stats-table th { background:#f8f9fa; }
+        .match-card { border:1px solid #e0e0e0; border-radius:8px; padding:12px; margin-bottom:8px; background:#fff; }
+        .match-card.komet { border-left:4px solid #0d47a1; background:#f7faff; }
+        .match-card .round { font-size:0.85em; color:#888; }
+        .won { font-weight:700; color:#28a745; }
+        .lost { color:#666; }
+        .live-court { background:#e8f5e9; color:#1b5e20; border-radius:6px; padding:2px 8px; font-size:0.8em; font-weight:600; }
+        .placeholder { padding:15px; background:#f5f5f5; border-radius:8px; color:#666; }
+        .filterbar { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap:wrap; font-size:0.85em; }
+        .daybtn { width:auto; margin:0; padding:5px 12px; font-size:0.8em; box-shadow:none; }
+    </style>
+</head>
+<body>
+    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
+        <span style="font-weight:bold;font-size:0.9em;color:#333;" id="admin-header-name"></span>
+        <button id="logout-btn" style="width:auto;padding:6px 14px;background:#666;font-size:0.85em;border:none;border-radius:4px;color:white;cursor:pointer;">Logout</button>
+    </div>
+    <a href="/current-tournament.html" style="color:#0d47a1;text-decoration:none;">← Back to current tournaments</a>
+    <h1 id="t-name" style="margin:8px 0 2px;">Loading...</h1>
+    <p id="t-info" style="color:#666;margin:0;"></p>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="players" onclick="switchTab('players')">👥 Players</button>
+        <button class="tab-btn" data-tab="ongoing" onclick="switchTab('ongoing')">🟢 Ongoing <span id="c-ongoing"></span></button>
+        <button class="tab-btn" data-tab="upcoming" onclick="switchTab('upcoming')">🕒 Upcoming <span id="c-upcoming"></span></button>
+        <button class="tab-btn" data-tab="finished" onclick="switchTab('finished')">✅ Finished <span id="c-finished"></span></button>
+    </div>
+
+    <!-- day selector (multi-day) -->
+    <div id="day-selector" style="margin-bottom:12px;"></div>
+
+    <!-- PLAYERS TAB -->
+    <div id="tab-players" class="tab-content active">
+        <input type="text" id="komet-search" placeholder="Search Komet player..." style="margin-bottom:10px;">
+        <div id="komet-players"><p style="color:#666;">Loading players...</p></div>
+
+        <div id="player-results-block" style="display:none;margin-top:16px;padding:15px;border:1px solid #e0e0e0;border-radius:10px;background:#fff;">
+            <a href="#" onclick="closePlayer();return false;" style="color:#0d47a1;text-decoration:none;">← Back to players</a>
+            <h2 id="pr-name" style="margin-top:8px;"></h2>
+            <table class="stats-table" id="pr-stats"></table>
+            <h3 style="margin-top:16px;">Matches</h3>
+            <div id="pr-matches"></div>
+        </div>
+    </div>
+
+    <!-- MATCH TABS -->
+    <div id="tab-ongoing" class="tab-content">
+        <div class="filterbar"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-ongoing" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label></div>
+        <div id="list-ongoing"></div>
+    </div>
+    <div id="tab-upcoming" class="tab-content">
+        <div class="filterbar"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-upcoming" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label></div>
+        <div id="list-upcoming"></div>
+    </div>
+    <div id="tab-finished" class="tab-content">
+        <div class="filterbar"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-finished" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label></div>
+        <div id="list-finished"></div>
+    </div>
+
+    <script>
+        var params = new URLSearchParams(window.location.search);
+        var tournamentId = params.get("id") || "";
+        document.getElementById("t-name").textContent = decodeURIComponent(params.get("name") || "Tournament");
+        document.getElementById("t-info").textContent = decodeURIComponent(params.get("info") || "");
+        document.title = decodeURIComponent(params.get("name") || "Tournament");
+
+        var kometPlayers = [];
+        var allMatches = [];
+        var matchDays = [];
+        var selectedDay = "";
+
+        fetch("/api/bwf-status").then(function(r){return r.json();}).then(function(d){
+            var el = document.getElementById("admin-header-name");
+            if (el && d.logged_in) el.textContent = (d.is_admin ? "Admin: " : "") + d.player_name;
+        });
+        document.getElementById("logout-btn").onclick = async function(){
+            await fetch("/api/bwf-logout", {method:"POST"});
+            window.location.href = "/";
+        };
+
+        function switchTab(tab) {
+            document.querySelectorAll(".tab-content").forEach(function(el){ el.classList.remove("active"); });
+            document.querySelectorAll(".tab-btn").forEach(function(el){ el.classList.remove("active"); });
+            document.getElementById("tab-" + tab).classList.add("active");
+            document.querySelector('.tab-btn[data-tab="' + tab + '"]').classList.add("active");
+        }
+
+        function isKomet(club) { return club && club.toLowerCase().indexOf("komet") !== -1; }
+
+        // ---------- Players ----------
+        async function loadKometPlayers() {
+            var box = document.getElementById("komet-players");
+            box.innerHTML = '<p style="color:#666;">Loading players...</p>';
+            var res = await fetch("/api/tournament-clubs?id=" + tournamentId);
+            var data = await res.json();
+            if (!data.success) { box.innerHTML = '<p style="color:#c62828;">Could not load players.</p>'; return; }
+            kometPlayers = (data.players || []).filter(function(p){ return isKomet(p.club); });
+            renderKomet(kometPlayers);
+        }
+        function renderKomet(players) {
+            var box = document.getElementById("komet-players");
+            if (!players.length) { box.innerHTML = '<p style="color:#666;">No BMK Komet players found in this tournament.</p>'; return; }
+            box.innerHTML = '<table class="komet-table"><thead><tr><th>Name</th><th>Club</th><th></th></tr></thead><tbody>' +
+                players.map(function(p){
+                    return '<tr onclick="showPlayer(\'' + (p.player_id||'') + '\', \'' + (p.name||'').replace(/'/g,"\\'") + '\')">' +
+                        '<td>' + p.name + '</td><td>' + (p.club||'') + '</td><td style="color:#0d47a1;">View results →</td></tr>';
+                }).join('') + '</tbody></table>';
+        }
+        document.getElementById("komet-search").addEventListener("input", function(e){
+            var q = e.target.value.trim().toLowerCase();
+            renderKomet(kometPlayers.filter(function(p){ return (p.name||'').toLowerCase().indexOf(q) !== -1; }));
+        });
+
+        async function showPlayer(playerId, name) {
+            document.getElementById("player-results-block").style.display = "";
+            document.getElementById("pr-name").textContent = name;
+            document.getElementById("pr-stats").innerHTML = '<tr><td>Loading...</td></tr>';
+            document.getElementById("pr-matches").innerHTML = "";
+            if (!playerId) {
+                var idData = await (await fetch("/api/tournament-player-id?id=" + tournamentId + "&name=" + encodeURIComponent(name))).json();
+                playerId = idData.player_id || "";
+            }
+            if (!playerId) { document.getElementById("pr-stats").innerHTML = '<tr><td>Player details not available.</td></tr>'; return; }
+            var data = await (await fetch("/api/tournament-player-results?id=" + tournamentId + "&player=" + playerId)).json();
+            if (!data.success) { document.getElementById("pr-stats").innerHTML = '<tr><td>No results available.</td></tr>'; return; }
+            document.getElementById("pr-stats").innerHTML =
+                '<thead><tr><th></th><th>Played</th><th>W-L</th><th>Sets</th><th>Points</th></tr></thead><tbody>' +
+                (data.stats||[]).map(function(sx){ return '<tr><td><strong>'+sx.category+'</strong></td><td>'+sx.played+'</td><td>'+sx.win_loss+'</td><td>'+sx.sets+'</td><td>'+sx.points+'</td></tr>'; }).join('') + '</tbody>';
+            document.getElementById("pr-matches").innerHTML = (data.matches||[]).map(function(m){
+                return '<div class="match-card"><div class="round">'+m.round+' · '+m.event+'</div>' +
+                    '<div><span class="'+(m.team1_won?'won':'lost')+'">'+m.team1+' '+(m.team1_won?'✓':'')+'</span></div>' +
+                    '<div><span class="'+(!m.team1_won?'won':'lost')+'">'+m.team2+' '+(!m.team1_won?'✓':'')+'</span></div>' +
+                    (m.score ? '<div style="font-weight:700;color:#0066cc;margin-top:4px;">'+m.score+'</div>' : '') + '</div>';
+            }).join('') || '<p style="color:#666;">No match results yet.</p>';
+        }
+        function closePlayer() { document.getElementById("player-results-block").style.display = "none"; }
+
+        // ---------- Matches ----------
+        function fmtDay(d) { return (d && d.length===8) ? d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6,8) : (d||""); }
+
+        function renderDaySelector() {
+            var box = document.getElementById("day-selector");
+            if (!matchDays || matchDays.length < 2) { box.innerHTML = ""; return; }
+            box.innerHTML = '<span style="font-size:0.85em;color:#666;margin-right:6px;">Day:</span>' +
+                matchDays.map(function(d){
+                    var active = d === selectedDay;
+                    return '<button class="daybtn" onclick="loadMatches(\'' + d + '\')" style="' +
+                        (active ? 'background:#0d47a1;color:#fff;' : 'background:#eef2f7;color:#0d47a1;') + '">' + fmtDay(d) + '</button>';
+                }).join(" ");
+        }
+
+        async function loadMatches(day) {
+            var u = "/api/live-matches?id=" + tournamentId;
+            if (day) u += "&date=" + day;
+            document.getElementById("list-ongoing").innerHTML = '<p style="color:#666;">Loading...</p>';
+            try {
+                var data = await (await fetch(u)).json();
+                if (!data.success) { document.getElementById("list-ongoing").innerHTML = '<div class="placeholder">Could not load matches.</div>'; return; }
+                allMatches = data.matches || [];
+                matchDays = data.days || [];
+                selectedDay = data.selected_day || "";
+                renderDaySelector();
+                renderMatchTabs();
+            } catch (e) {
+                document.getElementById("list-ongoing").innerHTML = '<div class="placeholder">Could not load matches.</div>';
+            }
+        }
+
+        function matchCard(m) {
+            var statusBadge = m.status === 'ongoing'
+                ? '<span style="background:#e8f5e9;color:#1b5e20;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:700;">🟢 ONGOING</span>'
+                : (m.status === 'upcoming'
+                    ? '<span style="background:#e3f2fd;color:#0d47a1;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:700;">🕒 UPCOMING</span>'
+                    : '<span style="background:#f5f5f5;color:#666;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:700;">✅ DONE</span>');
+            return '<div class="match-card' + (m.has_komet ? ' komet' : '') + '">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
+                    '<div class="round">' + m.event + (m.round ? ' · ' + m.round : '') + '</div>' +
+                    '<div style="display:flex;gap:6px;align-items:center;">' +
+                        (m.court ? '<span class="live-court">🏟️ ' + m.court + '</span>' : '') +
+                        (m.duration ? '<span style="color:#888;font-size:0.8em;">⏱ ' + m.duration + '</span>' : '') +
+                        statusBadge +
+                    '</div></div>' +
+                '<div style="margin-top:4px;"><span class="' + (m.team1_won ? 'won' : (m.status==='done'?'lost':'')) + '">' + m.team1 + ' ' + (m.team1_won?'✓':'') + '</span></div>' +
+                '<div><span class="' + ((!m.team1_won && m.status==='done') ? 'won' : (m.status==='done'?'lost':'')) + '">' + m.team2 + ' ' + ((!m.team1_won && m.status==='done')?'✓':'') + '</span></div>' +
+                (m.score ? '<div style="font-weight:700;color:#0066cc;margin-top:4px;">' + m.score + '</div>' : '') +
+                '</div>';
+        }
+
+        function renderList(elId, status, kometOnlyId) {
+            var onlyK = document.getElementById(kometOnlyId) && document.getElementById(kometOnlyId).checked;
+            var list = allMatches.filter(function(m){ return m.status === status && (!onlyK || m.has_komet); });
+            var box = document.getElementById(elId);
+            box.innerHTML = list.length ? list.map(matchCard).join("") : '<div class="placeholder">No ' + status + ' matches.</div>';
+        }
+
+        function renderMatchTabs() {
+            renderList("list-ongoing", "ongoing", "k-ongoing");
+            renderList("list-upcoming", "upcoming", "k-upcoming");
+            renderList("list-finished", "done", "k-finished");
+            // counts (unfiltered)
+            document.getElementById("c-ongoing").textContent = "(" + allMatches.filter(function(m){return m.status==='ongoing';}).length + ")";
+            document.getElementById("c-upcoming").textContent = "(" + allMatches.filter(function(m){return m.status==='upcoming';}).length + ")";
+            document.getElementById("c-finished").textContent = "(" + allMatches.filter(function(m){return m.status==='done';}).length + ")";
+        }
+
+        // init
+        if (!tournamentId) {
+            document.getElementById("t-info").textContent = "No tournament id provided.";
+        } else {
+            loadKometPlayers();
+            loadMatches();
+        }
+    </script>
+
+    <footer style="margin-top:40px;padding:20px;text-align:center;border-top:1px solid #e0e0e0;color:#666;font-size:0.85em;">
+        <p>Behöver du hjälp? / Need support? <a href="mailto:support@bmkkomet.se" style="color:#0d47a1;">support@bmkkomet.se</a></p>
+    </footer>
+</body>
+</html>

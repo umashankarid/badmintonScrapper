@@ -6240,6 +6240,12 @@ def current_tournament_page():
     return render_template("current-tournament.html")
 
 
+@app.route("/tournament-live.html")
+def tournament_live_page():
+    from flask import render_template
+    return render_template("tournament-live.html")
+
+
 @app.route("/api/search-tournaments", methods=["GET"])
 def search_tournaments():
     """Search tournaments by date range and status."""
@@ -6546,10 +6552,16 @@ def live_matches():
             round_name = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
 
             aside = m.select_one("span.match__header-aside-block")
-            aside_title = (aside.get("title") if aside else "") or ""
-            # Parse "Spelperiod: 13m | Baldershallen 1-2 - 04" OR just a court string
+            # Court/time live in the title attr in raw HTML (data-original-title is added by JS).
+            aside_title = (aside.get("title") if aside else "") or (aside.get("data-original-title") if aside else "") or ""
+            # Formats seen:
+            #   "Spelperiod: 13m | Baldershallen 1-2 - 04"  (done: duration | venue - court)
+            #   "Komethallen - 17"                          (assigned court)
+            #   "Baldershallen 1-2 - 06"                    (venue range + assigned court)
+            #   "Baldershallen 1-2"                         (venue only, no court assigned)
             duration = ""
-            court = ""
+            court = ""            # full court/venue string to display
+            court_assigned = False  # True only when a specific court number is assigned (" - NN")
             if aside_title:
                 if "|" in aside_title:
                     left, right = aside_title.split("|", 1)
@@ -6558,6 +6570,9 @@ def live_matches():
                     court = right.strip()
                 else:
                     court = aside_title.strip()
+                # An assigned court ends with " - <number>" (space-dash-space-digits),
+                # which is different from a venue range like "Baldershallen 1-2".
+                court_assigned = bool(_re.search(r"\s-\s\d+\s*$", court))
 
             # Teams / players
             teams = []
@@ -6580,11 +6595,11 @@ def live_matches():
 
             # Derive status:
             #  - has score -> done
-            #  - court has a specific number AND we're viewing today's page -> ongoing
+            #  - a specific court is assigned AND we're viewing today's page -> ongoing
             #  - otherwise -> upcoming
             if score:
                 status = "done"
-            elif court and _re.search(r"-\s*\d+\s*$", court) and is_today_page:
+            elif court_assigned and is_today_page:
                 status = "ongoing"
             else:
                 status = "upcoming"
