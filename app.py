@@ -6584,6 +6584,11 @@ def live_matches():
             team1 = teams[0] if teams else ""
             team2 = teams[1] if len(teams) > 1 else ""
             team1_won = team_won[0] if team_won else False
+            has_winner = any(team_won)  # a winner has been decided (score, walkover, WO, retirement)
+
+            # Any per-row status tag text (e.g. "V", "WO", "Retired/Uppgiven", "W.O.")
+            status_tags = [t.get_text(strip=True) for t in m.select(".match__status") if t.get_text(strip=True)]
+            status_text = " ".join(status_tags)
 
             # Score
             score_sets = []
@@ -6592,14 +6597,15 @@ def live_matches():
                 if len(cells) == 2:
                     score_sets.append(f"{cells[0].get_text(strip=True)}-{cells[1].get_text(strip=True)}")
             score = " ".join(score_sets)
+            # If there's no numeric score but a winner was decided, it's a walkover/retirement.
+            if not score and has_winner:
+                score = status_text or "W.O."
 
             # Derive status:
-            #  - has score -> done (a finished match always has a score)
-            #  - no score + a specific court assigned (" - NN") -> ongoing (it's on court now)
+            #  - a winner decided OR a numeric score -> done (incl. walkover/WO/retirement)
+            #  - no result + a specific court assigned (" - NN") -> ongoing (on court now)
             #  - otherwise -> upcoming (scheduled, no court yet)
-            # Note: a court assignment without a score means the match is live, so we
-            # don't gate this on the day page — that previously hid real ongoing matches.
-            if score:
+            if score_sets or has_winner:
                 status = "done"
             elif court_assigned:
                 status = "ongoing"
