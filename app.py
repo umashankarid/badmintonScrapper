@@ -6551,28 +6551,33 @@ def live_matches():
             event = header_items[0].get_text(strip=True) if header_items else ""
             round_name = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
 
-            aside = m.select_one("span.match__header-aside-block")
-            # Court/time live in the title attr in raw HTML (data-original-title is added by JS).
-            aside_title = (aside.get("title") if aside else "") or (aside.get("data-original-title") if aside else "") or ""
-            # Formats seen:
-            #   "Spelperiod: 13m | Baldershallen 1-2 - 04"  (done: duration | venue - court)
-            #   "Komethallen - 17"                          (assigned court)
-            #   "Baldershallen 1-2 - 06"                    (venue range + assigned court)
-            #   "Baldershallen 1-2"                         (venue only, no court assigned)
-            duration = ""
+            # There can be MULTIPLE aside blocks:
+            #  - a "Now playing" primary indicator (class --primary, icon-sport2), and/or
+            #  - the court/time block, e.g. title "Komethallen - 04" or
+            #    "Spelperiod: 13m | Baldershallen 1-2 - 04".
+            # Collect all titles; identify the live indicator and the court separately.
+            aside_blocks = m.select("span.match__header-aside-block")
+            now_playing = False
             court = ""            # full court/venue string to display
-            court_assigned = False  # True only when a specific court number is assigned (" - NN")
-            if aside_title:
-                if "|" in aside_title:
-                    left, right = aside_title.split("|", 1)
+            duration = ""
+            court_assigned = False  # True when a specific court number is assigned (" - NN")
+            for ab in aside_blocks:
+                t = (ab.get("title") or ab.get("data-original-title") or "").strip()
+                if not t:
+                    continue
+                if t.lower() in ("now playing", "spelas nu", "pågår"):
+                    now_playing = True
+                    continue
+                # Otherwise treat as the court/time block
+                if "|" in t:
+                    left, right = t.split("|", 1)
                     dm = _re.search(r"(\d+\s*m)", left)
                     duration = dm.group(1).replace(" ", "") if dm else left.replace("Spelperiod:", "").strip()
                     court = right.strip()
                 else:
-                    court = aside_title.strip()
-                # An assigned court ends with " - <number>" (space-dash-space-digits),
-                # which is different from a venue range like "Baldershallen 1-2".
-                court_assigned = bool(_re.search(r"\s-\s\d+\s*$", court))
+                    court = t
+                if _re.search(r"\s-\s\d+\s*$", court):
+                    court_assigned = True
 
             # Teams / players
             teams = []
@@ -6603,11 +6608,11 @@ def live_matches():
 
             # Derive status:
             #  - a winner decided OR a numeric score -> done (incl. walkover/WO/retirement)
-            #  - no result + a specific court assigned (" - NN") -> ongoing (on court now)
+            #  - "Now playing" indicator OR a specific court assigned -> ongoing
             #  - otherwise -> upcoming (scheduled, no court yet)
             if score_sets or has_winner:
                 status = "done"
-            elif court_assigned:
+            elif now_playing or court_assigned:
                 status = "ongoing"
             else:
                 status = "upcoming"
