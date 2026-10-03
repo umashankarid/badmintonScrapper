@@ -6544,9 +6544,29 @@ def live_matches():
         # If no day links exist (single-day default page), treat it as today.
         today_compact = _dt.now().strftime("%Y%m%d")
         is_today_page = (selected_day == today_compact) or (not selected_day)
+        import re as _re2
+        # Matches are grouped under time-slot headers:
+        #   <div class="match-group__wrapper"><h5 class="match-group__header">14:00</h5> ...matches... </div>
+        # Build (match_element, slot_time) pairs so each match carries its scheduled time.
+        match_time_pairs = []
+        wrappers = soup.select(".match-group__wrapper")
+        if wrappers:
+            for g in wrappers:
+                h = g.select_one(".match-group__header")
+                slot = ""
+                if h:
+                    htxt = h.get_text(" ", strip=True)
+                    tm = _re2.search(r"\b([0-2]?\d:[0-5]\d)\b", htxt)
+                    slot = tm.group(1) if tm else ""
+                for mm in g.select(".match"):
+                    match_time_pairs.append((mm, slot))
+        else:
+            # Fallback: no group wrappers — iterate flat with no slot time
+            for mm in soup.select(".match"):
+                match_time_pairs.append((mm, ""))
 
         matches = []
-        for m in soup.select(".match"):
+        for m, slot_time in match_time_pairs:
             header_items = m.select(".match__header-title-item .nav-link__value")
             event = header_items[0].get_text(strip=True) if header_items else ""
             round_name = header_items[1].get_text(strip=True) if len(header_items) > 1 else ""
@@ -6561,7 +6581,7 @@ def live_matches():
             court = ""            # full court/venue string to display
             duration = ""
             court_assigned = False  # True when a specific court number is assigned (" - NN")
-            start_time = ""         # scheduled time for an upcoming match (HH:MM), if present
+            start_time = slot_time or ""  # scheduled time from the time-slot group header (HH:MM)
             for ab in aside_blocks:
                 t = (ab.get("title") or ab.get("data-original-title") or "").strip()
                 if not t:
