@@ -205,7 +205,11 @@
                 '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
                     '<div class="round">' + m.event + (m.round ? ' · ' + m.round : '') + '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
-                        (m.start_time ? '<span style="background:#ede7f6;color:#4527a0;border-radius:6px;padding:2px 8px;font-size:0.8em;font-weight:600;">🕐 ' + m.start_time + '</span>' : '') +
+                        (m.start_time
+                            ? '<span style="background:#ede7f6;color:#4527a0;border-radius:6px;padding:2px 8px;font-size:0.8em;font-weight:600;">🕐 ' + m.start_time + '</span>'
+                            : (m.status === 'upcoming'
+                                ? '<span title="Badminton Sweden doesn\'t publish a fixed time for this match — it is played in round order when a court is free." style="background:#f3e5f5;color:#6a1b9a;border-radius:6px;padding:2px 8px;font-size:0.75em;">⏳ By order of play</span>'
+                                : '')) +
                         (m.court ? '<span class="live-court">🏟️ ' + m.court + '</span>' : '') +
                         (m.duration ? '<span style="color:#888;font-size:0.8em;">⏱ ' + m.duration + '</span>' : '') +
                         statusBadge +
