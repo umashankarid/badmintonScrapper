@@ -6561,6 +6561,7 @@ def live_matches():
             court = ""            # full court/venue string to display
             duration = ""
             court_assigned = False  # True when a specific court number is assigned (" - NN")
+            start_time = ""         # scheduled time for an upcoming match (HH:MM), if present
             for ab in aside_blocks:
                 t = (ab.get("title") or ab.get("data-original-title") or "").strip()
                 if not t:
@@ -6578,13 +6579,30 @@ def live_matches():
                     court = t
                 if _re.search(r"\s-\s\d+\s*$", court):
                     court_assigned = True
+                # A scheduled time may appear as HH:MM in the aside title (upcoming matches).
+                tm = _re.search(r"\b([0-2]?\d:[0-5]\d)\b", t)
+                if tm:
+                    start_time = tm.group(1)
+            # Also check any <time> element in the header for a scheduled time/datetime.
+            if not start_time:
+                time_el = m.select_one(".match__header time, time")
+                if time_el:
+                    dt = time_el.get("datetime", "") or time_el.get_text(strip=True)
+                    tm = _re.search(r"([0-2]?\d:[0-5]\d)", dt)
+                    if tm:
+                        start_time = tm.group(1)
 
-            # Teams / players
+            # Teams / players — mark Komet players inline with "(Komet)"
+            def _mark(nm):
+                return (nm + " (Komet)") if _normalize_name_for_match(nm) in komet_names else nm
             teams = []
             team_won = []
             for row in m.select(".match__row"):
                 names = [el.get_text(strip=True) for el in row.select(".nav-link__value") if el.get_text(strip=True)]
-                teams.append(" / ".join(names) if names else row.get_text(strip=True).strip())
+                if names:
+                    teams.append(" / ".join(_mark(n) for n in names))
+                else:
+                    teams.append(row.get_text(strip=True).strip())
                 team_won.append("has-won" in (row.get("class") or []))
             team1 = teams[0] if teams else ""
             team2 = teams[1] if len(teams) > 1 else ""
@@ -6629,7 +6647,7 @@ def live_matches():
             if event or team1 or team2:
                 matches.append({
                     "event": event, "round": round_name,
-                    "court": court, "duration": duration,
+                    "court": court, "duration": duration, "start_time": start_time,
                     "team1": team1, "team2": team2, "team1_won": team1_won,
                     "score": score, "status": status, "has_komet": has_komet,
                 })

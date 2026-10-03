@@ -65,15 +65,24 @@
 
     <!-- MATCH TABS -->
     <div id="tab-ongoing" class="tab-content">
-        <div class="filterbar"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-ongoing" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label></div>
+        <div class="filterbar">
+            <input type="text" id="s-ongoing" placeholder="Filter by player name..." oninput="renderMatchTabs()" style="width:auto;flex:1;min-width:180px;margin:0;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-ongoing" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label>
+        </div>
         <div id="list-ongoing"></div>
     </div>
     <div id="tab-upcoming" class="tab-content">
-        <div class="filterbar"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-upcoming" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label></div>
+        <div class="filterbar">
+            <input type="text" id="s-upcoming" placeholder="Filter by player name..." oninput="renderMatchTabs()" style="width:auto;flex:1;min-width:180px;margin:0;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-upcoming" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label>
+        </div>
         <div id="list-upcoming"></div>
     </div>
     <div id="tab-finished" class="tab-content">
-        <div class="filterbar"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-finished" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label></div>
+        <div class="filterbar">
+            <input type="text" id="s-finished" placeholder="Filter by player name..." oninput="renderMatchTabs()" style="width:auto;flex:1;min-width:180px;margin:0;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="k-finished" onchange="renderMatchTabs()" style="width:auto;margin:0;"> Only BMK Komet</label>
+        </div>
         <div id="list-finished"></div>
     </div>
 
@@ -196,6 +205,7 @@
                 '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
                     '<div class="round">' + m.event + (m.round ? ' · ' + m.round : '') + '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
+                        (m.start_time ? '<span style="background:#ede7f6;color:#4527a0;border-radius:6px;padding:2px 8px;font-size:0.8em;font-weight:600;">🕐 ' + m.start_time + '</span>' : '') +
                         (m.court ? '<span class="live-court">🏟️ ' + m.court + '</span>' : '') +
                         (m.duration ? '<span style="color:#888;font-size:0.8em;">⏱ ' + m.duration + '</span>' : '') +
                         statusBadge +
@@ -206,17 +216,26 @@
                 '</div>';
         }
 
-        function renderList(elId, status, kometOnlyId) {
+        function renderList(elId, status, kometOnlyId, searchId) {
             var onlyK = document.getElementById(kometOnlyId) && document.getElementById(kometOnlyId).checked;
-            var list = allMatches.filter(function(m){ return m.status === status && (!onlyK || m.has_komet); });
+            var q = (document.getElementById(searchId) && document.getElementById(searchId).value || "").trim().toLowerCase();
+            var list = allMatches.filter(function(m){
+                if (m.status !== status) return false;
+                if (onlyK && !m.has_komet) return false;
+                if (q) {
+                    var hay = ((m.team1 || "") + " " + (m.team2 || "")).toLowerCase();
+                    if (hay.indexOf(q) === -1) return false;
+                }
+                return true;
+            });
             var box = document.getElementById(elId);
-            box.innerHTML = list.length ? list.map(matchCard).join("") : '<div class="placeholder">No ' + status + ' matches.</div>';
+            box.innerHTML = list.length ? list.map(matchCard).join("") : '<div class="placeholder">No matching ' + status + ' matches.</div>';
         }
 
         function renderMatchTabs() {
-            renderList("list-ongoing", "ongoing", "k-ongoing");
-            renderList("list-upcoming", "upcoming", "k-upcoming");
-            renderList("list-finished", "done", "k-finished");
+            renderList("list-ongoing", "ongoing", "k-ongoing", "s-ongoing");
+            renderList("list-upcoming", "upcoming", "k-upcoming", "s-upcoming");
+            renderList("list-finished", "done", "k-finished", "s-finished");
             // counts (unfiltered)
             document.getElementById("c-ongoing").textContent = "(" + allMatches.filter(function(m){return m.status==='ongoing';}).length + ")";
             document.getElementById("c-upcoming").textContent = "(" + allMatches.filter(function(m){return m.status==='upcoming';}).length + ")";
