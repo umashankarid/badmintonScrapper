@@ -854,9 +854,52 @@ def bwf_login():
             player_name = login
 
         # RESTRICT: Only Badmintonklubben Komet members can use the internal registration system.
-        # Non-Komet players must ask their Komet partner to register the pair.
-        # (Admin/club accounts are handled earlier and never reach this point.)
-        if not is_admin_user(login) and (not club or "komet" not in club.lower()):
+        # The club from the last-name search can be unreliable (empty / not matched), which would
+        # wrongly block real Komet players. So we verify Komet membership from multiple sources:
+        #   1) club string scraped at login, 2) the player's own profile page, 3) our kometPlayers
+        #      table (authoritative local roster, keyed by license_id or name).
+        def _looks_komet(c):
+            return bool(c) and "komet" in c.lower()
+
+        is_komet_member = _looks_komet(club)
+
+        # 2) Fallback: fetch club from the player's own profile page if not already confirmed
+        if not is_komet_member and profile_url:
+            try:
+                prof_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com{profile_url}", timeout=10)
+                prof_soup = BeautifulSoup(prof_resp.text, "html.parser")
+                # Club usually appears in a subheading / club link on the profile
+                for sel in [".media__subheading span.nav-link__value", "a[href*='club'] span", ".page-content__title-club"]:
+                    el = prof_soup.select_one(sel)
+                    if el:
+                        prof_club = el.get_text(strip=True).split("|")[0].strip()
+                        if prof_club:
+                            if not club:
+                                club = prof_club
+                            if _looks_komet(prof_club):
+                                is_komet_member = True
+                            break
+            except Exception as e:
+                logger.debug(f"Could not fetch club from profile: {e}")
+
+        # 3) Fallback: authoritative local roster (kometPlayers) by license_id or name
+        if not is_komet_member and (license_id or player_name):
+            try:
+                conn_k = sqlite3.connect(PLAYERS_DB)
+                cur_k = conn_k.cursor()
+                if license_id:
+                    cur_k.execute("SELECT 1 FROM kometPlayers WHERE license_id = ?", (license_id,))
+                    if cur_k.fetchone():
+                        is_komet_member = True
+                if not is_komet_member and player_name:
+                    cur_k.execute("SELECT 1 FROM kometPlayers WHERE LOWER(name) = LOWER(?)", (player_name,))
+                    if cur_k.fetchone():
+                        is_komet_member = True
+                conn_k.close()
+            except Exception as e:
+                logger.debug(f"Could not check kometPlayers roster: {e}")
+
+        if not is_admin_user(login) and not is_komet_member:
             logger.warning(f"⛔ Non-Komet login blocked: {player_name} ({license_id}) club='{club}'")
             return jsonify(
                 success=False,
@@ -864,12 +907,12 @@ def bwf_login():
                     "Detta registreringssystem är endast för medlemmar i Badmintonklubben Komet.\n\n"
                     "Om du ska spela dubbel/mixed med en Komet-spelare, be din Komet-partner att "
                     "registrera paret – du läggs då till automatiskt som partner.\n\n"
-                    "Frågor? Kontakta Tavlingar@bmkkomet.se\n\n"
+                    "Är du Komet-medlem men blockeras? Kontakta Tavlingar@bmkkomet.se\n\n"
                     "─────────────────────\n\n"
                     "This registration system is only for members of Badmintonklubben Komet.\n\n"
                     "If you're playing doubles/mixed with a Komet player, please ask your Komet "
                     "partner to register the pair — you'll be added automatically as their partner.\n\n"
-                    "Questions? Contact Tavlingar@bmkkomet.se"
+                    "Are you a Komet member but blocked? Contact Tavlingar@bmkkomet.se"
                 )
             ), 403
 
