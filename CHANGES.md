@@ -8,6 +8,20 @@
 
 ## [Unreleased]
 
+### Changed - Redesigned the homepage login (branding, bilingual, a11y, UX)
+- Added the club logo (`static/komet.jpg`) in a black header band (matches the logo background)
+  with a blue accent border, replacing the plain "BMK Komet" text heading.
+- Bilingual field labels and placeholders (Swedish / English) to match the app convention.
+- Show/hide password toggle (👁️/🙈) with `aria-pressed` / `aria-label`.
+- Login button now shows "Loggar in… / Signing in…" and is disabled during the request; wrapped the
+  fetch in try/catch so a network failure shows a friendly bilingual message instead of hanging.
+- Accessibility: error `<p>` now has `role="alert"` + `aria-live`; inputs have
+  `autocomplete="username"` / `"current-password"`.
+- Removed the duplicated helper paragraph (previously shown twice).
+- Replaced the inline-style markup with reusable CSS classes built on the existing design tokens
+  (`static/styles.css`: `.login-card`, `.login-brand`, `.pw-wrap`/`.pw-toggle`, etc.).
+- Template/CSS/JS only; no backend logic changed. Tests: Ran 18 tests - OK.
+
 ### Changed - Renamed homepage "My Tournaments" section + added clarifying note
 - Renamed the bottom section heading from "Mina turneringar / My Tournaments" to
   "Anmäld på Badminton Sweden / Registered on Badminton Sweden" to make clear the list reflects
