@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Changed - Renamed homepage "My Tournaments" section + added clarifying note
+- Renamed the bottom section heading from "Mina turneringar / My Tournaments" to
+  "Anmäld på Badminton Sweden / Registered on Badminton Sweden" to make clear the list reflects
+  Badminton Sweden entries, not local Komet registrations.
+- Added a bilingual (Swedish/English) note box explaining that if a player has registered here but
+  the admin has not yet submitted the club's entries to Badminton Sweden, the tournament will not
+  appear in this list yet — pre-empting "why isn't my tournament showing?" questions.
+- Template-only change (`templates/index.html`); no backend/JS logic touched.
+
 ### Fixed - "My Tournaments" missed tournaments beyond the first results page
 - **Bug**: `/api/my-bwf-tournaments` only saw ~20 tournaments and silently dropped any that the
   player was entered in if they fell on a later page. Example: "Aadvika Umashankar" was entered in
