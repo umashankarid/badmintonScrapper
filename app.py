@@ -2677,16 +2677,51 @@ def _bwf_session():
     return s
 
 
-def scrape_bwf_tournaments_in_range(start_date, end_date, s=None):
+def _parse_bwf_tournament_items(html):
+    """Parse tournament rows out of a 'find' DoSearch HTML response."""
+    import re
+    soup = BeautifulSoup(html, "html.parser")
+    items = []
+    for item in soup.select("li.list__item"):
+        link = item.select_one("a.media__link")
+        if not link:
+            continue
+        name = link.get_text(strip=True)
+        href = link.get("href", "")
+        location_el = item.select_one(".media__subheading .nav-link__value")
+        location = location_el.get_text(strip=True) if location_el else ""
+        time_els = item.select("time")
+        date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+        date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+        tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+        tid = tid_match.group(1) if tid_match else ""
+        tournament_url = (
+            f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid}" if tid else ""
+        )
+        items.append({
+            "id": tid,
+            "name": name,
+            "url": tournament_url,
+            "location": location,
+            "date_start": date_start,
+            "date_end": date_end,
+        })
+    return items
+
+
+def scrape_bwf_tournaments_in_range(start_date, end_date, s=None, max_pages=25):
     """Scrape the Badminton Sweden 'find' listing for tournaments in a date range.
+
+    The listing is paginated (~20 per page) and accumulates results as the Page
+    form field increases, so we walk pages until one adds no new tournaments.
 
     Args:
         start_date / end_date: "YYYY-MM-DD" strings.
         s: optional existing requests session.
+        max_pages: safety cap on the number of pages to walk.
 
     Returns a list of dicts: {id, name, url, location, date_start, date_end}.
     """
-    import re
     logger.info(f"🔎 Scraping BWF tournaments {start_date} → {end_date}")
     if s is None:
         s = _bwf_session()
@@ -2706,39 +2741,31 @@ def scrape_bwf_tournaments_in_range(start_date, end_date, s=None):
             if name:
                 form_data[name] = inp.get("value", "")
 
-    resp = s.post(
-        "https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-        data=form_data,
-        headers={"X-Requested-With": "XMLHttpRequest"},
-        timeout=15,
-    )
-    soup = BeautifulSoup(resp.text, "html.parser")
-
     tournaments = []
-    for item in soup.select("li.list__item"):
-        link = item.select_one("a.media__link")
-        if not link:
-            continue
-        name = link.get_text(strip=True)
-        href = link.get("href", "")
-        location_el = item.select_one(".media__subheading .nav-link__value")
-        location = location_el.get_text(strip=True) if location_el else ""
-        time_els = item.select("time")
-        date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-        date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-        tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-        tid = tid_match.group(1) if tid_match else ""
-        tournament_url = (
-            f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid}" if tid else ""
+    seen_ids = set()
+    for page in range(1, max_pages + 1):
+        page_data = dict(form_data)
+        page_data["Page"] = str(page)
+        resp = s.post(
+            "https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
+            data=page_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=15,
         )
-        tournaments.append({
-            "id": tid,
-            "name": name,
-            "url": tournament_url,
-            "location": location,
-            "date_start": date_start,
-            "date_end": date_end,
-        })
+        items = _parse_bwf_tournament_items(resp.text)
+        new_count = 0
+        for t in items:
+            key = (t["id"] or "").upper()
+            if key and key in seen_ids:
+                continue
+            if key:
+                seen_ids.add(key)
+            tournaments.append(t)
+            new_count += 1
+        logger.debug(f"   page {page}: {len(items)} items, {new_count} new")
+        # Stop once a page yields no new tournaments (end of the accumulating list)
+        if new_count == 0:
+            break
 
     logger.info(f"✅ Found {len(tournaments)} BWF tournaments in range")
     return tournaments

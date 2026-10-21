@@ -8,6 +8,21 @@
 
 ## [Unreleased]
 
+### Fixed - "My Tournaments" missed tournaments beyond the first results page
+- **Bug**: `/api/my-bwf-tournaments` only saw ~20 tournaments and silently dropped any that the
+  player was entered in if they fell on a later page. Example: "Aadvika Umashankar" was entered in
+  "Swedish Youth Games 2026 U13-15" (8C1E54D4…) within the 6-week window but it never appeared.
+  Root cause: the Badminton Sweden `/find` DoSearch listing is paginated (~20 per page) and I only
+  read page 1. (The suspected club/name-representation issue was a red herring — the name match
+  works; the tournament simply wasn't in the scraped set.)
+- **Fix** (`app.py`): `scrape_bwf_tournaments_in_range()` now walks pages via the `Page` form field,
+  deduplicates by tournament id, and stops when a page adds no new tournaments (safety cap
+  `max_pages=25`). Extracted `_parse_bwf_tournament_items()` for the per-page parsing.
+  Before: 20 tournaments scraped. After: all 39 in the window; Aadvika now matches 3 tournaments
+  including the previously-missing one.
+- **Tests**: added `test_scrape_tournaments_paginates` (page-2-only tournament is returned, no dupes).
+  Verified live end-to-end. Tests: Ran 18 tests - OK.
+
 ### Added - "My Tournaments" bottom section on the homepage (live Badminton Sweden entries)
 - **Feature**: Logged-in players now see a bottom section on the homepage listing the
   tournaments (today → +6 weeks) they are entered in according to Badminton Sweden, with the

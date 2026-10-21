@@ -512,6 +512,30 @@ class _FakeResp:
         self.text = text
 
 
+# Page 2 of the find listing: repeats page-1 rows (BWF accumulates) and adds one
+# more tournament further away, mirroring the real pagination behaviour.
+_FIND_RESULTS_PAGE2_HTML = """
+<ul>
+  <li class="list__item">
+    <a class="media__link" href="/find?id=1AA58719-CD58-45C6-916C-59B599563DC0">Distriktsmästerskap 2026 Stockholm</a>
+    <div class="media__subheading"><span class="nav-link__value">Stockholm</span></div>
+    <time datetime="2026-11-15T00:00:00"></time>
+    <time datetime="2026-11-16T00:00:00"></time>
+  </li>
+  <li class="list__item">
+    <a class="media__link" href="/find?id=22222222-2222-2222-2222-222222222222">Other Cup 2026</a>
+    <div class="media__subheading"><span class="nav-link__value">Göteborg</span></div>
+    <time datetime="2026-12-01T00:00:00"></time>
+  </li>
+  <li class="list__item">
+    <a class="media__link" href="/find?id=33333333-3333-3333-3333-333333333333">Far Away Open 2026</a>
+    <div class="media__subheading"><span class="nav-link__value">Luleå</span></div>
+    <time datetime="2026-12-05T00:00:00"></time>
+  </li>
+</ul>
+"""
+
+
 class TestMyBwfTournaments(unittest.TestCase):
     """Tests for the 'My BWF tournaments' scraping helpers and endpoint."""
 
@@ -550,6 +574,35 @@ class TestMyBwfTournaments(unittest.TestCase):
         self.assertEqual(first["date_start"], "2026-11-15")
         self.assertEqual(first["date_end"], "2026-11-16")
         self.assertIn("/tournament/1AA58719-CD58-45C6-916C-59B599563DC0", first["url"])
+
+    def test_scrape_tournaments_paginates(self):
+        """Walks all result pages and deduplicates by id.
+
+        The find listing is paginated (~20/page) and accumulates, so a tournament
+        only appearing on page 2 must still be returned (regression for a player
+        whose tournament was on page 2 and was missed when only page 1 was read).
+        """
+        import app
+
+        def _get(url, *args, **kwargs):
+            return _FakeResp("<form id='form_globalsearch'></form>")
+
+        def _post(url, *args, **kwargs):
+            page = str((kwargs.get("data") or {}).get("Page", "1"))
+            if page == "1":
+                return _FakeResp(_FIND_RESULTS_HTML)        # 2 tournaments
+            return _FakeResp(_FIND_RESULTS_PAGE2_HTML)        # same 2 + 1 new
+
+        sess = MagicMock()
+        sess.get.side_effect = _get
+        sess.post.side_effect = _post
+
+        results = app.scrape_bwf_tournaments_in_range("2026-11-01", "2026-12-13", s=sess)
+        ids = [t["id"] for t in results]
+        # Page-2-only tournament must be present, and no duplicates.
+        self.assertIn("33333333-3333-3333-3333-333333333333", ids)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(len(results), 3)
 
     def test_player_entry_match_found(self):
         """Finds a matching player and extracts their categories (partner stripped)."""
