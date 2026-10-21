@@ -59,6 +59,16 @@
     </div>
     <div id="tournaments" style="display:none;"></div>
 
+    <!-- Bottom section: tournaments the logged-in player is entered in on Badminton Sweden -->
+    <div id="my-bwf-section" style="display:none;margin-top:40px;padding-top:25px;border-top:2px solid #e0e0e0;">
+        <h2 style="color:#1a237e;margin-bottom:6px;">🏸 Mina turneringar / My Tournaments</h2>
+        <p style="color:#666;font-size:0.9em;margin-top:0;margin-bottom:15px;">
+            Turneringar de kommande 6 veckorna där du är anmäld enligt Badminton Sweden.<br>
+            Tournaments in the next 6 weeks where you are entered according to Badminton Sweden.
+        </p>
+        <div id="my-bwf-list"></div>
+    </div>
+
     <script>
         async function checkBwfStatus() {
             const res = await fetch("/api/bwf-status");
@@ -127,14 +137,16 @@
             document.getElementById("loading-msg").style.display = "none";
 
             const tournaments = data.tournaments || [];
-            
-            if (!tournaments.length) {
-                container.innerHTML = "<p>No tournaments with open registration found.</p>";
-                return;
-            }
 
             const statusRes = await fetch("/api/bwf-status");
             const statusData = await statusRes.json();
+
+            if (!tournaments.length) {
+                container.innerHTML = "<p>No tournaments with open registration found.</p>";
+                loadMyBwfTournaments(statusData);
+                return;
+            }
+
             let registeredUrls = new Set();
             let regCounts = {};
             let optedOutTournaments = new Set();
@@ -244,6 +256,54 @@
             `}).join("");
 
             container.innerHTML = html;
+
+            // Load the player's own Badminton Sweden tournaments into the bottom section
+            loadMyBwfTournaments(statusData);
+        }
+
+        async function loadMyBwfTournaments(statusData) {
+            const section = document.getElementById("my-bwf-section");
+            const list = document.getElementById("my-bwf-list");
+
+            // Only shown for logged-in players (not admins, not logged out)
+            if (!statusData.logged_in || statusData.is_admin) {
+                section.style.display = "none";
+                return;
+            }
+
+            section.style.display = "block";
+            list.innerHTML = `<p style="color:#666;">Söker på Badminton Sweden… / Checking Badminton Sweden…</p>`;
+
+            try {
+                const res = await fetch("/api/my-bwf-tournaments");
+                const data = await res.json();
+                const tournaments = (data && data.tournaments) || [];
+
+                if (!tournaments.length) {
+                    list.innerHTML = `<p style="color:#666;">Inga kommande turneringar hittades där du är anmäld.<br>No upcoming tournaments found where you are entered.</p>`;
+                    return;
+                }
+
+                list.innerHTML = tournaments.map(t => {
+                    const cats = (t.categories && t.categories.length)
+                        ? t.categories.map(c => `<span style="display:inline-block;background:#e3f2fd;color:#0d47a1;padding:3px 10px;border-radius:12px;font-size:0.8em;margin:2px 4px 2px 0;">${c}</span>`).join("")
+                        : `<span style="color:#999;font-size:0.85em;">Kategori ej tillgänglig / Category not available</span>`;
+                    const dates = t.date_start ? `📅 ${t.date_start}${t.date_end && t.date_end !== t.date_start ? ' – ' + t.date_end : ''}` : '';
+                    return `
+                    <div class="tournament-card" style="padding:15px;border-left:4px solid #0d47a1;">
+                        <h3 style="margin:0 0 6px 0;">
+                            ${t.url ? `<a href="${t.url}" target="_blank" rel="noopener">${t.name} ↗</a>` : t.name}
+                        </h3>
+                        <div class="details">
+                            ${t.location ? `<span class="location">${t.location}</span>` : ''}
+                            ${dates ? `<span class="date">${dates}</span>` : ''}
+                        </div>
+                        <div style="margin-top:10px;">${cats}</div>
+                    </div>`;
+                }).join("");
+            } catch (e) {
+                list.innerHTML = `<p style="color:#d32f2f;">Kunde inte hämta turneringar. / Could not load tournaments.</p>`;
+            }
         }
 
         async function toggleReminder(tournamentName) {

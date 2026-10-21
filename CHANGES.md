@@ -8,6 +8,44 @@
 
 ## [Unreleased]
 
+### Added - "My Tournaments" bottom section on the homepage (live Badminton Sweden entries)
+- **Feature**: Logged-in players now see a bottom section on the homepage listing the
+  tournaments (today → +6 weeks) they are entered in according to Badminton Sweden, with the
+  category/event per tournament and a link out to each tournament on tournamentsoftware.com.
+- **Backend** (`app.py`, in the "My BWF tournaments" section before `/api/my-registrations`):
+  - `scrape_bwf_tournaments_in_range(start, end, s=None)` — scrapes the BWF `/find` listing
+    (same POST-to-`DoSearch` pattern as `search_tournaments`) and returns
+    `{id, name, url, location, date_start, date_end}`.
+  - `scrape_bwf_tournament_player_entry(tournament_id, player_name, s=None)` — fetches
+    `/tournament/<id>/Players/GetPlayersContent`, matches the player via the existing
+    `_normalize_name_for_match` helper (handles "Lastname, Firstname" and "Firstname Lastname"),
+    then reads the player page's `event.aspx` links for categories (strips the " med <partner>"
+    suffix). Returns `None` if the player is not entered.
+  - `find_my_bwf_tournaments(player_name, weeks=6)` — orchestrates the above across the window.
+  - `GET /api/my-bwf-tournaments` — player-only endpoint (returns empty for admins / logged-out),
+    30-minute in-process cache per player (`?refresh=1` bypasses it).
+  - Helper `_bwf_session()` for a cookie-wall-accepted requests session.
+- **Frontend** (`templates/index.html`): new `#my-bwf-section` bottom block and
+  `loadMyBwfTournaments(statusData)`, invoked from `loadTournaments()` (both the normal and the
+  no-open-tournaments branch). `statusData` is now fetched before the early return so the section
+  loads regardless of open-tournament count. Bilingual (Swedish / English) labels per convention.
+- **Startup test gate relocation** (`app.py`): the import-time `run_startup_tests()` call was moved
+  from near the top of the module to the bottom (after all routes/helpers are defined). The new
+  unit tests `import app`, and the old top-of-file gate re-ran the suite against a half-initialized
+  module. The gate still runs on real startup; it is skipped when `SKIP_STARTUP_TESTS=1`, which
+  `test_badminton.py` and `run_tests.py` set before importing app (prevents recursive re-runs).
+  Behavior preserved: a failing `test_badminton.py` still blocks server startup via `sys.exit(1)`.
+- **Tests** (`test_badminton.py`, `TestMyBwfTournaments`, 7 tests, all passing):
+  - `test_scrape_tournaments_in_range` — listing parse (id/name/location/dates/url).
+  - `test_player_entry_match_found` — match + category extraction (partner stripped).
+  - `test_player_entry_match_lastname_first` — "Lastname, Firstname" session names match.
+  - `test_player_entry_no_match` — non-entered player returns None.
+  - `test_endpoint_requires_player_login` / `test_endpoint_admin_gets_empty` — auth gating.
+  - `test_endpoint_player_returns_matches` — end-to-end with mocked BWF session.
+  - Verified live against real BWF: 20 tournaments found in a 6-week window; "Tomas Ahlgren"
+    matched in DM 2026 Stockholm with categories `["HD Senior", "MD Senior"]`.
+  - Tests: Ran 17 tests - OK (10 existing + 7 new).
+
 ### Added - Local Development Setup (Configurable Port, Data Directory, Email Kill Switch)
 - **Problem**: Several web projects run on this machine and port 3000 was hardcoded, so the app
   collided with them. Running locally also wrote databases into the repo root and, with a Brevo

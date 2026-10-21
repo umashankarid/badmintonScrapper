@@ -6,6 +6,12 @@ Tests critical functionality to ensure changes don't break core behavior
 import unittest
 import sqlite3
 import os
+
+# Prevent recursion: importing app runs an import-time test gate that
+# re-discovers this file. Setting this before any `import app` disables that
+# gate during test runs (the gate still runs on real app startup).
+os.environ["SKIP_STARTUP_TESTS"] = "1"
+
 import tempfile
 import shutil
 import json
@@ -461,6 +467,151 @@ class TestDataIntegrity(unittest.TestCase):
             conn.commit()
         
         conn.close()
+
+
+# Sample HTML fragments mimicking Badminton Sweden responses, used to test the
+# "My BWF tournaments" scraping helpers without hitting the network.
+_FIND_RESULTS_HTML = """
+<ul>
+  <li class="list__item">
+    <a class="media__link" href="/find?id=1AA58719-CD58-45C6-916C-59B599563DC0">Distriktsmästerskap 2026 Stockholm</a>
+    <div class="media__subheading"><span class="nav-link__value">Stockholm</span></div>
+    <time datetime="2026-11-15T00:00:00"></time>
+    <time datetime="2026-11-16T00:00:00"></time>
+  </li>
+  <li class="list__item">
+    <a class="media__link" href="/find?id=22222222-2222-2222-2222-222222222222">Other Cup 2026</a>
+    <div class="media__subheading"><span class="nav-link__value">Göteborg</span></div>
+    <time datetime="2026-12-01T00:00:00"></time>
+  </li>
+</ul>
+"""
+
+_PLAYERS_CONTENT_HTML = """
+<ul>
+  <li class="list__item">
+    <a href="/sport/player.aspx?id=1aa58719&player=4">Ahlgren, Tomas</a>
+  </li>
+  <li class="list__item">
+    <a href="/sport/player.aspx?id=1aa58719&player=6">Beriwal, Aahaan</a>
+  </li>
+</ul>
+"""
+
+_PLAYER_PAGE_HTML = """
+<div>
+  <a href="/sport/events.aspx?id=1aa58719">Klasser</a>
+  <a href="/sport/event.aspx?id=1aa58719&event=3">HD Senior med Anton Tjulin</a>
+  <a href="/sport/event.aspx?id=1aa58719&event=5">MD Senior med Cecilia Narfors</a>
+</div>
+"""
+
+
+class _FakeResp:
+    def __init__(self, text):
+        self.text = text
+
+
+class TestMyBwfTournaments(unittest.TestCase):
+    """Tests for the 'My BWF tournaments' scraping helpers and endpoint."""
+
+    def _fake_session(self, players_html=_PLAYERS_CONTENT_HTML, player_html=_PLAYER_PAGE_HTML):
+        """Build a MagicMock requests session returning canned BWF responses."""
+        sess = MagicMock()
+
+        def _get(url, *args, **kwargs):
+            if "GetPlayersContent" in url:
+                return _FakeResp(players_html)
+            if "player.aspx" in url:
+                return _FakeResp(player_html)
+            if "/find" in url:
+                return _FakeResp("<form id='form_globalsearch'></form>")
+            return _FakeResp("")
+
+        def _post(url, *args, **kwargs):
+            if "DoSearch" in url:
+                return _FakeResp(_FIND_RESULTS_HTML)
+            return _FakeResp("")
+
+        sess.get.side_effect = _get
+        sess.post.side_effect = _post
+        return sess
+
+    def test_scrape_tournaments_in_range(self):
+        """Parses tournament id/name/location/dates from the find listing."""
+        import app
+        sess = self._fake_session()
+        results = app.scrape_bwf_tournaments_in_range("2026-11-01", "2026-12-13", s=sess)
+        self.assertEqual(len(results), 2)
+        first = results[0]
+        self.assertEqual(first["id"], "1AA58719-CD58-45C6-916C-59B599563DC0")
+        self.assertEqual(first["name"], "Distriktsmästerskap 2026 Stockholm")
+        self.assertEqual(first["location"], "Stockholm")
+        self.assertEqual(first["date_start"], "2026-11-15")
+        self.assertEqual(first["date_end"], "2026-11-16")
+        self.assertIn("/tournament/1AA58719-CD58-45C6-916C-59B599563DC0", first["url"])
+
+    def test_player_entry_match_found(self):
+        """Finds a matching player and extracts their categories (partner stripped)."""
+        import app
+        sess = self._fake_session()
+        entry = app.scrape_bwf_tournament_player_entry("1aa58719", "Tomas Ahlgren", s=sess)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["categories"], ["HD Senior", "MD Senior"])
+
+    def test_player_entry_match_lastname_first(self):
+        """Matching works when the session name is 'Lastname, Firstname' too."""
+        import app
+        sess = self._fake_session()
+        entry = app.scrape_bwf_tournament_player_entry("1aa58719", "Ahlgren, Tomas", s=sess)
+        self.assertIsNotNone(entry)
+
+    def test_player_entry_no_match(self):
+        """Returns None when the player is not in the tournament's list."""
+        import app
+        sess = self._fake_session()
+        entry = app.scrape_bwf_tournament_player_entry("1aa58719", "Nonexistent Person", s=sess)
+        self.assertIsNone(entry)
+
+    def test_endpoint_requires_player_login(self):
+        """Endpoint returns empty list when not logged in as a player."""
+        import app
+        client = app.app.test_client()
+        resp = client.get("/api/my-bwf-tournaments")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["tournaments"], [])
+
+    def test_endpoint_admin_gets_empty(self):
+        """Admins don't get the player-specific list."""
+        import app
+        client = app.app.test_client()
+        with client.session_transaction() as sess:
+            sess["bwf_player"] = "Some Admin"
+            sess["admin"] = True
+        resp = client.get("/api/my-bwf-tournaments")
+        data = resp.get_json()
+        self.assertEqual(data["tournaments"], [])
+
+    def test_endpoint_player_returns_matches(self):
+        """Logged-in player gets their matched tournaments with categories."""
+        import app
+        # Clear cache so the stub is exercised
+        app._MY_BWF_CACHE.clear()
+        client = app.app.test_client()
+        with client.session_transaction() as sess:
+            sess["bwf_player"] = "Tomas Ahlgren"
+            sess["admin"] = False
+
+        with patch.object(app, "_bwf_session", return_value=self._fake_session()):
+            resp = client.get("/api/my-bwf-tournaments")
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        # Both tournaments use the same canned player list, so both match.
+        self.assertEqual(len(data["tournaments"]), 2)
+        self.assertEqual(data["tournaments"][0]["categories"], ["HD Senior", "MD Senior"])
+        self.assertIn("url", data["tournaments"][0])
 
 
 if __name__ == '__main__':

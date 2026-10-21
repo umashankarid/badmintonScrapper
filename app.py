@@ -68,9 +68,10 @@ def run_startup_tests():
         return True  # Don't block if tests can't be run
 
 # Run tests before startup
-if not run_startup_tests():
-    logger.error("❌ STARTUP ABORTED: Unit tests failed")
-    sys.exit(1)
+# NOTE: The startup test gate (run_startup_tests) is invoked near the bottom of
+# this module, after all routes and helpers are defined, so the nested test
+# discovery sees a fully-initialized `app` module. See the invocation guarded by
+# `if __name__ != "__main__"` / startup path at the end of the file.
 
 
 
@@ -2644,6 +2645,231 @@ def current_tournaments():
     except Exception as e:
         logger.error(f"Error fetching current tournaments: {e}")
         return jsonify(success=False, error=str(e), tournaments=[])
+
+
+# ---------------------------------------------------------------------------
+# "My BWF tournaments" — scrape Badminton Sweden to find which upcoming
+# tournaments the logged-in player appears in, directly from the live site.
+# ---------------------------------------------------------------------------
+
+# Simple in-process cache: {normalized_player_name: (expiry_epoch, result_list)}
+_MY_BWF_CACHE = {}
+_MY_BWF_CACHE_TTL = 1800  # 30 minutes
+
+
+def _bwf_session():
+    """Create a requests session with the Badminton Sweden cookie wall accepted."""
+    s = ext_requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0"})
+    try:
+        s.post(
+            "https://badmintonsweden.tournamentsoftware.com/cookiewall/Save",
+            data={
+                "ReturnUrl": "/",
+                "SettingsOpen": "false",
+                "CookieWallCategoryPreferences": "1,2,3",
+            },
+            allow_redirects=True,
+            timeout=5,
+        )
+    except Exception as e:
+        logger.debug(f"Cookie wall save failed (continuing anyway): {e}")
+    return s
+
+
+def scrape_bwf_tournaments_in_range(start_date, end_date, s=None):
+    """Scrape the Badminton Sweden 'find' listing for tournaments in a date range.
+
+    Args:
+        start_date / end_date: "YYYY-MM-DD" strings.
+        s: optional existing requests session.
+
+    Returns a list of dicts: {id, name, url, location, date_start, date_end}.
+    """
+    import re
+    logger.info(f"🔎 Scraping BWF tournaments {start_date} → {end_date}")
+    if s is None:
+        s = _bwf_session()
+
+    url = (
+        "https://badmintonsweden.tournamentsoftware.com/find"
+        f"?DateFilterType=0&StartDate={start_date}T00:00&EndDate={end_date}T00:00"
+        "&Distance=10&page=1&SportID=2"
+    )
+    resp = s.get(url, timeout=15)
+    page_soup = BeautifulSoup(resp.text, "html.parser")
+    form = page_soup.select_one("#form_globalsearch")
+    form_data = {}
+    if form:
+        for inp in form.find_all("input"):
+            name = inp.get("name", "")
+            if name:
+                form_data[name] = inp.get("value", "")
+
+    resp = s.post(
+        "https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
+        data=form_data,
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        timeout=15,
+    )
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    tournaments = []
+    for item in soup.select("li.list__item"):
+        link = item.select_one("a.media__link")
+        if not link:
+            continue
+        name = link.get_text(strip=True)
+        href = link.get("href", "")
+        location_el = item.select_one(".media__subheading .nav-link__value")
+        location = location_el.get_text(strip=True) if location_el else ""
+        time_els = item.select("time")
+        date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+        date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+        tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+        tid = tid_match.group(1) if tid_match else ""
+        tournament_url = (
+            f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid}" if tid else ""
+        )
+        tournaments.append({
+            "id": tid,
+            "name": name,
+            "url": tournament_url,
+            "location": location,
+            "date_start": date_start,
+            "date_end": date_end,
+        })
+
+    logger.info(f"✅ Found {len(tournaments)} BWF tournaments in range")
+    return tournaments
+
+
+def scrape_bwf_tournament_player_entry(tournament_id, player_name, s=None):
+    """Check whether `player_name` appears in a tournament's player list, and if so
+    return the categories/events they are entered in.
+
+    Args:
+        tournament_id: the tournamentsoftware GUID.
+        player_name: display name ("Firstname Lastname" or "Lastname, Firstname").
+        s: optional existing requests session.
+
+    Returns None if the player is not found, otherwise a dict:
+        {matched_name, player_href, categories: [..]}
+    """
+    import re
+    if not tournament_id or not player_name:
+        return None
+    if s is None:
+        s = _bwf_session()
+
+    target = _normalize_name_for_match(player_name)
+    players_url = (
+        f"https://badmintonsweden.tournamentsoftware.com/tournament/"
+        f"{tournament_id}/Players/GetPlayersContent"
+    )
+    try:
+        resp = s.get(players_url, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+    except Exception as e:
+        logger.debug(f"Could not fetch player list for {tournament_id}: {e}")
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    matched_href = None
+    matched_text = None
+    for item in soup.select("li.list__item"):
+        link = item.select_one("a[href*='player.aspx']") or item.select_one("a")
+        if not link:
+            continue
+        text = link.get_text(" ", strip=True)
+        if _normalize_name_for_match(text) == target:
+            matched_href = link.get("href", "")
+            matched_text = text
+            break
+
+    if not matched_href:
+        return None
+
+    # Follow the player page to read their entered categories (event.aspx links).
+    categories = []
+    try:
+        if matched_href.startswith("/"):
+            player_page_url = "https://badmintonsweden.tournamentsoftware.com" + matched_href
+        else:
+            player_page_url = matched_href
+        presp = s.get(player_page_url, timeout=15)
+        psoup = BeautifulSoup(presp.text, "html.parser")
+        for a in psoup.select("a[href*='event.aspx']"):
+            label = a.get_text(" ", strip=True)
+            if not label:
+                continue
+            # Keep only the event/category part, drop the " med <partner>" suffix.
+            category = re.split(r"\s+med\s+", label, maxsplit=1)[0].strip()
+            if category and category not in categories:
+                categories.append(category)
+    except Exception as e:
+        logger.debug(f"Could not read categories for player in {tournament_id}: {e}")
+
+    return {"matched_name": matched_text, "player_href": matched_href, "categories": categories}
+
+
+def find_my_bwf_tournaments(player_name, weeks=6):
+    """Return the list of upcoming BWF tournaments (today → today+weeks) that
+    `player_name` is entered in, with the categories per tournament."""
+    from datetime import datetime, timedelta
+    start = datetime.now().strftime("%Y-%m-%d")
+    end = (datetime.now() + timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+
+    s = _bwf_session()
+    tournaments = scrape_bwf_tournaments_in_range(start, end, s=s)
+    logger.info(f"🔎 Checking {len(tournaments)} tournaments for player '{player_name}'")
+
+    results = []
+    for t in tournaments:
+        if not t.get("id"):
+            continue
+        try:
+            entry = scrape_bwf_tournament_player_entry(t["id"], player_name, s=s)
+        except Exception as e:
+            logger.error(f"❌ Error checking tournament {t.get('name')}: {e}")
+            continue
+        if entry:
+            logger.info(f"✅ Player entered in: {t['name']} ({', '.join(entry['categories']) or 'no categories'})")
+            results.append({
+                "name": t["name"],
+                "url": t["url"],
+                "location": t["location"],
+                "date_start": t["date_start"],
+                "date_end": t["date_end"],
+                "categories": entry["categories"],
+            })
+
+    logger.info(f"✅ Player '{player_name}' entered in {len(results)} upcoming tournaments")
+    return results
+
+
+@app.route("/api/my-bwf-tournaments", methods=["GET"])
+def my_bwf_tournaments():
+    """Scrape Badminton Sweden for upcoming tournaments the logged-in player is
+    entered in (today → +6 weeks), with categories and a link to each tournament."""
+    player_name = session.get("bwf_player")
+    is_admin = session.get("admin", False)
+    if not player_name or is_admin:
+        return jsonify(success=True, tournaments=[])
+
+    import time as _time
+    cache_key = _normalize_name_for_match(player_name)
+    cached = _MY_BWF_CACHE.get(cache_key)
+    if cached and cached[0] > _time.time() and request.args.get("refresh") != "1":
+        logger.info(f"📋 Returning cached my-bwf-tournaments for '{player_name}'")
+        return jsonify(success=True, tournaments=cached[1], cached=True)
+
+    try:
+        results = find_my_bwf_tournaments(player_name, weeks=6)
+        _MY_BWF_CACHE[cache_key] = (_time.time() + _MY_BWF_CACHE_TTL, results)
+        return jsonify(success=True, tournaments=results, cached=False)
+    except Exception as e:
+        logger.error(f"❌ Error building my-bwf-tournaments: {e}")
+        return jsonify(success=False, error=str(e), tournaments=[]), 500
 
 
 @app.route("/api/my-registrations", methods=["GET"])
@@ -7320,6 +7546,17 @@ def get_reminders_sent_status():
         return jsonify(success=True, sent_types=sent_types)
     except Exception as e:
         return jsonify(success=True, sent_types=[])
+
+
+# ==================== STARTUP TEST GATE ====================
+# Run the unit-test gate at import time, AFTER every route/helper is defined so
+# the nested test discovery imports a fully-initialized module. Skipped when a
+# test harness is driving us (SKIP_STARTUP_TESTS=1, set by test_badminton.py and
+# run_tests.py) to avoid re-running the suite recursively.
+if os.environ.get("SKIP_STARTUP_TESTS") != "1":
+    if not run_startup_tests():
+        logger.error("❌ STARTUP ABORTED: Unit tests failed")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
