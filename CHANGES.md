@@ -8,6 +8,37 @@
 
 ## [Unreleased]
 
+### Added - "Payment to club" tab for tracking fees owed to the club (allow-listed players)
+- **Feature**: A logged-in player on the allow-list (currently only "Aadvika Umashankar") gets a new
+  player tab "💳 Payment to club" on the homepage. It tracks what they owe the club — tournaments
+  they've played (auto-synced from Badminton Sweden) plus manual items (travel, bus booking, …) —
+  and lets them mark each item paid/unpaid, with running Total / Paid / Unpaid summaries.
+- **Database** (`payments.db`, new): `player_payments` table
+  (id, license_id, player_name, item_type[`tournament`|`custom`], item_name, item_date, amount,
+  paid, paid_date, notes, source_key, created_at) with `UNIQUE(license_id, source_key)` for
+  tournament dedup (custom items use NULL source_key so they never dedup). `init_payments_db()`
+  runs at startup alongside the other `init_*` functions; `PAYMENTS_DB` constant added.
+- **Backend** (`app.py`, in a new "Payment to club" section):
+  - `_payment_feature_allowed(name)` gates the feature by a normalized-name allow-list
+    (`_PAYMENT_FEATURE_PLAYERS`).
+  - `scrape_player_tournament_history(profile_url, year, s=None)` scrapes the player's
+    `/player-profile/<uuid>/tournaments/<year>` page (links `a[href*='/sport/tournament?id=']`
+    + nearest `<time>`), returning `{id, name, date}`.
+  - Endpoints (all player-gated): `GET /api/player-payments` (list + `allowed` + summary),
+    `POST /api/player-payments` (add custom), `POST /api/player-payments/toggle-paid`,
+    `DELETE /api/player-payments/<id>`, `POST /api/player-payments/sync` (seeds this year's played
+    history, then adds any upcoming tournaments the home page already found them entered in; dedup
+    via `INSERT OR IGNORE` on the unique key). All scope rows to the session's `license_id`.
+  - Login now stores `session["bwf_profile_url"]` so sync can reach the player's history page.
+- **Frontend** (`templates/index.html`): a player tab nav (shown only when `GET /api/player-payments`
+  returns `allowed=true`) toggling between the Tournaments view and a Payment-to-club view with
+  summary cards, an add-item form, a Sync button, and per-item mark-paid / delete actions. Bilingual
+  (Swedish / English) throughout.
+- **Tests** (`test_badminton.py`, `TestPlayerPayments`, 9 tests): access gating (allow-list,
+  logged-out 401, other player blocked), add/list/toggle/delete, ownership scoping, history scrape,
+  and sync-with-dedup. Payments DB isolated to a temp file per test. Verified end-to-end via the
+  test client. Tests: Ran 27 tests - OK.
+
 ### Changed - Redesigned the homepage login (branding, bilingual, a11y, UX)
 - Added the club logo (`static/komet.jpg`) in a black header band (matches the logo background)
   with a blue accent border, replacing the plain "BMK Komet" text heading.

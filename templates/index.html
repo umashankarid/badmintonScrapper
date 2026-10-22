@@ -8,9 +8,17 @@
 </head>
 <body>
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-        <div id="bwf-user" style="display:none;align-items:center;gap:8px;">
-            <span id="bwf-player-info" style="font-weight:bold;"></span>
-            <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
+        <div id="bwf-user" style="display:none;flex-direction:column;width:100%;">
+            <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;">
+                <span id="bwf-player-info" style="font-weight:bold;"></span>
+                <button onclick="bwfLogout()" style="width:auto;padding:8px 16px;margin-left:8px;">Logout</button>
+            </div>
+            <nav id="player-nav" style="display:none;border-bottom:2px solid #e0e0e0;gap:0;flex-wrap:wrap;margin-top:8px;">
+                <a href="#" id="tab-tournaments" onclick="showPlayerView('tournaments');return false;"
+                   style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:600;color:#0d47a1;border-bottom:3px solid #0d47a1;margin-bottom:-2px;">Tournaments</a>
+                <a href="#" id="tab-payments" onclick="showPlayerView('payments');return false;"
+                   style="text-decoration:none;padding:10px 18px;font-size:0.9em;font-weight:500;color:#555;border-bottom:3px solid transparent;margin-bottom:-2px;">💳 Payment to club</a>
+            </nav>
         </div>
         <div id="admin-info" style="display:none;flex-direction:column;width:100%;">
             <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;gap:10px;">
@@ -88,6 +96,46 @@
         <div id="my-bwf-list"></div>
     </div>
 
+    <!-- Payment to club view (allow-listed players only) -->
+    <div id="payments-view" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px;">
+            <h2 style="color:#1a237e;margin:0;">💳 Betalning till klubben / Payment to club</h2>
+            <button id="payments-sync-btn" onclick="syncPayments()" style="width:auto;padding:8px 16px;font-size:0.85em;">🔄 Synka turneringar / Sync tournaments</button>
+        </div>
+        <p style="color:#666;font-size:0.9em;margin:6px 0 14px;">
+            Håll koll på vad du är skyldig klubben — turneringar du spelat samt egna poster (resa, buss m.m.). Markera som betald när du betalat.<br>
+            Track what you owe the club — tournaments you've played plus your own items (travel, bus, etc.). Mark as paid once you've paid.
+        </p>
+
+        <div id="payments-summary" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+        <div class="tournament-card" style="display:block;padding:16px;">
+            <h3 style="margin:0 0 10px;color:#1a237e;font-size:1.05em;">➕ Lägg till post / Add item</h3>
+            <form id="add-payment-form" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:end;">
+                <div>
+                    <label style="font-size:0.8em;color:#1a237e;font-weight:600;">Beskrivning / Description</label>
+                    <input type="text" id="pay-name" placeholder="t.ex. Bussresa / e.g. Bus trip" required style="margin:4px 0 0;">
+                </div>
+                <div>
+                    <label style="font-size:0.8em;color:#1a237e;font-weight:600;">Belopp (kr) / Amount</label>
+                    <input type="number" id="pay-amount" min="0" step="1" placeholder="0" style="margin:4px 0 0;">
+                </div>
+                <div>
+                    <label style="font-size:0.8em;color:#1a237e;font-weight:600;">Datum / Date</label>
+                    <input type="date" id="pay-date" style="margin:4px 0 0;">
+                </div>
+                <div style="grid-column:1 / -1;">
+                    <input type="text" id="pay-notes" placeholder="Anteckning (valfritt) / Note (optional)" style="margin:0;">
+                </div>
+                <div style="grid-column:1 / -1;">
+                    <button type="submit" style="width:auto;padding:10px 20px;">Lägg till / Add</button>
+                </div>
+            </form>
+        </div>
+
+        <div id="payments-list" style="margin-top:16px;"></div>
+    </div>
+
     <script>
         async function checkBwfStatus() {
             const res = await fetch("/api/bwf-status");
@@ -108,13 +156,166 @@
                 let display = data.player_name;
                 if (data.license_id) display += ` (${data.license_id})`;
                 document.getElementById("bwf-player-info").textContent = display;
+                // Show the Payment-to-club tab only for allow-listed players.
+                checkPaymentFeature();
             } else {
                 document.getElementById("bwf-user").style.display = "none";
                 document.getElementById("admin-info").style.display = "none";
                 document.getElementById("login-section").style.display = "flex";
                 document.getElementById("tournaments").style.display = "none";
+                document.getElementById("player-nav").style.display = "none";
+                showPlayerView("tournaments");
             }
         }
+
+        // --- Payment to club -------------------------------------------------
+        let paymentsFeatureAllowed = false;
+
+        async function checkPaymentFeature() {
+            try {
+                const res = await fetch("/api/player-payments");
+                const data = await res.json();
+                paymentsFeatureAllowed = !!(data && data.allowed);
+            } catch (e) {
+                paymentsFeatureAllowed = false;
+            }
+            document.getElementById("player-nav").style.display = paymentsFeatureAllowed ? "flex" : "none";
+            if (!paymentsFeatureAllowed) showPlayerView("tournaments");
+        }
+
+        function showPlayerView(view) {
+            const isPayments = view === "payments";
+            const tournamentsEls = ["tournaments", "my-bwf-section"];
+            tournamentsEls.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                // Keep my-bwf-section's own logic; just hide/show the group.
+                if (isPayments) { el.dataset.prevDisplay = el.style.display; el.style.display = "none"; }
+                else if (el.dataset.prevDisplay !== undefined) { el.style.display = el.dataset.prevDisplay; }
+            });
+            document.getElementById("payments-view").style.display = isPayments ? "block" : "none";
+
+            const tabT = document.getElementById("tab-tournaments");
+            const tabP = document.getElementById("tab-payments");
+            if (tabT && tabP) {
+                tabT.style.color = isPayments ? "#555" : "#0d47a1";
+                tabT.style.fontWeight = isPayments ? "500" : "600";
+                tabT.style.borderBottomColor = isPayments ? "transparent" : "#0d47a1";
+                tabP.style.color = isPayments ? "#0d47a1" : "#555";
+                tabP.style.fontWeight = isPayments ? "600" : "500";
+                tabP.style.borderBottomColor = isPayments ? "#0d47a1" : "transparent";
+            }
+            if (isPayments) loadPayments();
+        }
+
+        async function loadPayments() {
+            const summaryEl = document.getElementById("payments-summary");
+            const listEl = document.getElementById("payments-list");
+            listEl.innerHTML = `<p style="color:#666;">Laddar… / Loading…</p>`;
+            try {
+                const res = await fetch("/api/player-payments");
+                const data = await res.json();
+                if (!data.allowed) { listEl.innerHTML = ""; return; }
+                const payments = data.payments || [];
+                const s = data.summary || {total_amount:0, paid_amount:0, unpaid_amount:0};
+
+                summaryEl.innerHTML = `
+                    ${summaryCard("Totalt / Total", s.total_amount, "#0d47a1")}
+                    ${summaryCard("Betalt / Paid", s.paid_amount, "#2e7d32")}
+                    ${summaryCard("Kvar att betala / Unpaid", s.unpaid_amount, "#c62828")}
+                `;
+
+                if (!payments.length) {
+                    listEl.innerHTML = `<p style="color:#666;">Inga poster ännu. Klicka "Synka turneringar" för att hämta turneringar du spelat i år.<br>No items yet. Click "Sync tournaments" to pull in tournaments you've played this year.</p>`;
+                    return;
+                }
+
+                listEl.innerHTML = payments.map(p => {
+                    const paid = p.paid === 1 || p.paid === true;
+                    const typeBadge = p.item_type === "tournament"
+                        ? `<span class="badge badge-blue">🏸 Turnering / Tournament</span>`
+                        : `<span class="badge" style="background:#ede7f6;color:#5e35b1;">📝 Egen post / Custom</span>`;
+                    return `
+                    <div class="tournament-card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;${paid ? 'opacity:0.75;' : ''}">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-weight:600;color:#1a237e;">${escapeHtml(p.item_name)} ${typeBadge}</div>
+                            <div style="font-size:0.85em;color:#666;margin-top:3px;">
+                                ${p.item_date ? '📅 ' + p.item_date + '  ' : ''}
+                                ${p.amount ? '💰 ' + p.amount + ' kr' : '<em>belopp ej satt / amount not set</em>'}
+                                ${p.notes ? ' · ' + escapeHtml(p.notes) : ''}
+                                ${paid && p.paid_date ? ' · ✅ betald / paid ' + p.paid_date : ''}
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            <button onclick="togglePaid(${p.id})" style="width:auto;padding:6px 12px;font-size:0.8em;background:${paid ? '#999' : '#2e7d32'};">
+                                ${paid ? '↩️ Ångra / Unmark' : '✅ Markera betald / Mark paid'}
+                            </button>
+                            ${p.item_type === 'custom' ? `<button onclick="deletePayment(${p.id})" title="Ta bort / Delete" style="width:auto;padding:6px 10px;font-size:0.8em;background:#c62828;">🗑️</button>` : ''}
+                        </div>
+                    </div>`;
+                }).join("");
+            } catch (e) {
+                listEl.innerHTML = `<p style="color:#c62828;">Kunde inte ladda. / Could not load.</p>`;
+            }
+        }
+
+        function summaryCard(label, value, color) {
+            return `<div style="flex:1;min-width:140px;background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 4px 20px rgba(26,35,126,0.08);border-top:4px solid ${color};">
+                <div style="font-size:0.8em;color:#666;">${label}</div>
+                <div style="font-size:1.5em;font-weight:700;color:${color};">${(value||0)} kr</div>
+            </div>`;
+        }
+
+        function escapeHtml(str) {
+            return String(str == null ? "" : str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function togglePaid(id) {
+            await fetch("/api/player-payments/toggle-paid", {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({id})
+            });
+            loadPayments();
+        }
+
+        async function deletePayment(id) {
+            if (!confirm("Ta bort denna post? / Delete this item?")) return;
+            await fetch(`/api/player-payments/${id}`, {method: "DELETE"});
+            loadPayments();
+        }
+
+        async function syncPayments() {
+            const btn = document.getElementById("payments-sync-btn");
+            const orig = btn.textContent;
+            btn.disabled = true; btn.textContent = "Synkar… / Syncing…";
+            try {
+                const res = await fetch("/api/player-payments/sync", {method: "POST"});
+                const data = await res.json();
+                if (data.success) { loadPayments(); }
+            } catch (e) { /* ignore */ }
+            finally { btn.disabled = false; btn.textContent = orig; }
+        }
+
+        document.getElementById("add-payment-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const body = {
+                item_name: document.getElementById("pay-name").value,
+                amount: document.getElementById("pay-amount").value,
+                item_date: document.getElementById("pay-date").value,
+                notes: document.getElementById("pay-notes").value
+            };
+            const res = await fetch("/api/player-payments", {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.success) {
+                e.target.reset();
+                loadPayments();
+            } else {
+                alert(data.error || "Kunde inte lägga till. / Could not add.");
+            }
+        });
 
         document.getElementById("bwf-login-form").addEventListener("submit", async (e) => {
             e.preventDefault();

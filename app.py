@@ -85,6 +85,7 @@ PLAYERS_DB = os.path.join(DATA_DIR, "players.db")
 POINTS_DB = os.path.join(DATA_DIR, "point_rules.db")
 ADMIN_DB = os.path.join(DATA_DIR, "admin.db")
 TOURNAMENTS_DB = os.path.join(DATA_DIR, "tournaments.db")
+PAYMENTS_DB = os.path.join(DATA_DIR, "payments.db")
 
 logger.info(f"📂 Database directory: {DATA_DIR}")
 
@@ -601,6 +602,39 @@ def init_players_db():
 
 init_players_db()
 
+
+def init_payments_db():
+    """Initialize payments.db — a per-player 'payments owed to the club' tracker.
+
+    Each row is one payable item for a player: either a tournament they played
+    (auto-added) or a manual club item (travel, bus booking, etc.). The player
+    can mark each item paid/unpaid so they can track what they still owe.
+    """
+    conn = sqlite3.connect(PAYMENTS_DB)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS player_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_id TEXT NOT NULL,
+            player_name TEXT,
+            item_type TEXT NOT NULL DEFAULT 'custom',   -- 'tournament' | 'custom'
+            item_name TEXT NOT NULL,
+            item_date TEXT,                              -- YYYY-MM-DD (tournament start / event date)
+            amount REAL DEFAULT 0,
+            paid INTEGER NOT NULL DEFAULT 0,             -- 0 = unpaid, 1 = paid
+            paid_date TEXT,
+            notes TEXT,
+            source_key TEXT,                             -- dedup key for auto-added tournaments
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(license_id, source_key)
+        )
+    """)
+    conn.commit()
+    conn.close()
+    logger.info("✅ payments.db initialized with player_payments table")
+
+
+init_payments_db()
+
 # Initialize allplayers table (but don't start background scraper for now)
 from players_scraper import init_allplayers_table
 init_allplayers_table()
@@ -927,6 +961,7 @@ def bwf_login():
         session["bwf_dob"] = dob
         session["bwf_age"] = age
         session["bwf_ranking"] = ranking
+        session["bwf_profile_url"] = profile_url
         session["admin"] = is_admin_user(login)
         
         # Save player data to players.db (we have ALL fields from login)
@@ -2897,6 +2932,271 @@ def my_bwf_tournaments():
     except Exception as e:
         logger.error(f"❌ Error building my-bwf-tournaments: {e}")
         return jsonify(success=False, error=str(e), tournaments=[]), 500
+
+
+# ---------------------------------------------------------------------------
+# "Payment to club" — a per-player tracker of fees owed to the club.
+# Currently enabled only for a small allow-list of players. Rows are either
+# tournaments the player played (auto-synced from Badminton Sweden) or manual
+# club items (travel, bus booking, …). The player marks each item paid/unpaid.
+# ---------------------------------------------------------------------------
+
+# Allow-list of players (normalized names) who see the Payment to club tab.
+_PAYMENT_FEATURE_PLAYERS = {"aadvika umashankar"}
+
+
+def _payment_feature_allowed(player_name):
+    """True if the given player is allowed to use the Payment to club feature."""
+    return _normalize_name_for_match(player_name) in _PAYMENT_FEATURE_PLAYERS
+
+
+def scrape_player_tournament_history(profile_url, year, s=None):
+    """Scrape a player's played tournaments for a given year from their
+    Badminton Sweden profile `/tournaments/<year>` page.
+
+    Returns a list of dicts {id, name, date} (date is 'YYYY-MM-DD' or '').
+    """
+    import re
+    if not profile_url:
+        return []
+    if s is None:
+        s = _bwf_session()
+    profile_url = profile_url if profile_url.startswith("http") else (
+        "https://badmintonsweden.tournamentsoftware.com" + profile_url
+    )
+    url = f"{profile_url.rstrip('/')}/tournaments/{year}"
+    try:
+        resp = s.get(url, timeout=20)
+    except Exception as e:
+        logger.error(f"❌ Could not fetch tournament history: {e}")
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    results = []
+    seen = set()
+    for a in soup.select("a[href*='/sport/tournament?id=']"):
+        name = a.get_text(" ", strip=True)
+        if not name:
+            continue
+        m = re.search(r'id=([0-9A-Fa-f-]{36})', a.get("href", ""))
+        if not m:
+            continue
+        tid = m.group(1)
+        if tid in seen:
+            continue
+        seen.add(tid)
+        # Find the nearest <time> for the tournament date (walk up a few levels).
+        date = ""
+        cont = a
+        for _ in range(4):
+            cont = cont.parent
+            if cont is None:
+                break
+            t = cont.find("time")
+            if t and t.get("datetime"):
+                date = t.get("datetime", "")[:10]
+                break
+        results.append({"id": tid, "name": name, "date": date})
+    logger.info(f"✅ Scraped {len(results)} tournaments from history for {year}")
+    return results
+
+
+def _payments_summary(rows):
+    total = sum((r["amount"] or 0) for r in rows)
+    paid = sum((r["amount"] or 0) for r in rows if r["paid"])
+    return {
+        "count": len(rows),
+        "total_amount": round(total, 2),
+        "paid_amount": round(paid, 2),
+        "unpaid_amount": round(total - paid, 2),
+    }
+
+
+def _current_payment_player():
+    """Return (player_name, license_id) if logged in, else (None, None)."""
+    return session.get("bwf_player"), session.get("bwf_license_id")
+
+
+@app.route("/api/player-payments", methods=["GET"])
+def get_player_payments():
+    """List the logged-in player's club payment items (allow-listed players only)."""
+    player_name, license_id = _current_payment_player()
+    if not player_name:
+        return jsonify(success=False, allowed=False, error="Unauthorized"), 401
+    if not _payment_feature_allowed(player_name):
+        return jsonify(success=True, allowed=False, payments=[], summary=_payments_summary([]))
+    try:
+        conn = sqlite3.connect(PAYMENTS_DB)
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            """SELECT * FROM player_payments WHERE license_id = ?
+               ORDER BY paid ASC, COALESCE(item_date,'') DESC, id DESC""",
+            (license_id,)
+        ).fetchall()]
+        conn.close()
+        return jsonify(success=True, allowed=True, payments=rows, summary=_payments_summary(rows))
+    except Exception as e:
+        logger.error(f"❌ Error listing player payments: {e}")
+        return jsonify(success=False, allowed=True, error=str(e)), 500
+
+
+@app.route("/api/player-payments", methods=["POST"])
+def add_player_payment():
+    """Add a manual club payment item (travel, bus booking, …) for the player."""
+    player_name, license_id = _current_payment_player()
+    if not player_name:
+        return jsonify(success=False, error="Unauthorized"), 401
+    if not _payment_feature_allowed(player_name):
+        return jsonify(success=False, error="Not available"), 403
+
+    data = request.get_json(silent=True) or {}
+    item_name = (data.get("item_name") or "").strip()
+    if not item_name:
+        return jsonify(success=False, error="Namn krävs. / Name is required."), 400
+    try:
+        amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    item_date = (data.get("item_date") or "").strip() or None
+    notes = (data.get("notes") or "").strip() or None
+
+    try:
+        conn = sqlite3.connect(PAYMENTS_DB)
+        conn.execute(
+            """INSERT INTO player_payments
+               (license_id, player_name, item_type, item_name, item_date, amount, paid, notes)
+               VALUES (?,?,?,?,?,?,0,?)""",
+            (license_id, player_name, "custom", item_name, item_date, amount, notes),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Added custom payment item '{item_name}' for {license_id}")
+        return jsonify(success=True)
+    except Exception as e:
+        logger.error(f"❌ Error adding payment item: {e}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/player-payments/toggle-paid", methods=["POST"])
+def toggle_player_payment_paid():
+    """Flip the paid/unpaid state of one of the player's own payment items."""
+    player_name, license_id = _current_payment_player()
+    if not player_name:
+        return jsonify(success=False, error="Unauthorized"), 401
+    if not _payment_feature_allowed(player_name):
+        return jsonify(success=False, error="Not available"), 403
+
+    data = request.get_json(silent=True) or {}
+    pid = data.get("id")
+    if pid is None:
+        return jsonify(success=False, error="id required"), 400
+    try:
+        from datetime import datetime as _dt
+        conn = sqlite3.connect(PAYMENTS_DB)
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT paid FROM player_payments WHERE id = ? AND license_id = ?",
+            (pid, license_id),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify(success=False, error="Not found"), 404
+        new_paid = 0 if row[0] else 1
+        paid_date = _dt.now().strftime("%Y-%m-%d") if new_paid else None
+        cur.execute(
+            "UPDATE player_payments SET paid = ?, paid_date = ? WHERE id = ? AND license_id = ?",
+            (new_paid, paid_date, pid, license_id),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Toggled payment item {pid} -> paid={new_paid} for {license_id}")
+        return jsonify(success=True, paid=new_paid)
+    except Exception as e:
+        logger.error(f"❌ Error toggling payment item: {e}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/player-payments/<int:pid>", methods=["DELETE"])
+def delete_player_payment(pid):
+    """Delete one of the player's own payment items."""
+    player_name, license_id = _current_payment_player()
+    if not player_name:
+        return jsonify(success=False, error="Unauthorized"), 401
+    if not _payment_feature_allowed(player_name):
+        return jsonify(success=False, error="Not available"), 403
+    try:
+        conn = sqlite3.connect(PAYMENTS_DB)
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM player_payments WHERE id = ? AND license_id = ?", (pid, license_id)
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        if not deleted:
+            return jsonify(success=False, error="Not found"), 404
+        logger.info(f"✅ Deleted payment item {pid} for {license_id}")
+        return jsonify(success=True)
+    except Exception as e:
+        logger.error(f"❌ Error deleting payment item: {e}")
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/player-payments/sync", methods=["POST"])
+def sync_player_payments():
+    """Populate/grow the player's payment list from Badminton Sweden:
+    - seed from this year's played-tournament history (profile page), and
+    - add any upcoming tournaments the home page already found them entered in.
+    Tournaments are deduplicated by source_key (the tournament GUID)."""
+    player_name, license_id = _current_payment_player()
+    if not player_name:
+        return jsonify(success=False, error="Unauthorized"), 401
+    if not _payment_feature_allowed(player_name):
+        return jsonify(success=False, error="Not available"), 403
+
+    from datetime import datetime as _dt
+    year = _dt.now().year
+    profile_url = session.get("bwf_profile_url", "")
+
+    try:
+        s = _bwf_session()
+        discovered = {}  # source_key -> (name, date)
+
+        # 1) This year's played-tournament history from the profile page.
+        for t in scrape_player_tournament_history(profile_url, year, s=s):
+            if t["id"]:
+                discovered[t["id"].upper()] = (t["name"], t["date"])
+
+        # 2) Upcoming tournaments the home page already finds them entered in.
+        try:
+            for t in find_my_bwf_tournaments(player_name, weeks=6):
+                import re as _re
+                m = _re.search(r'/tournament/([0-9A-Fa-f-]{36})', t.get("url", ""))
+                if m:
+                    discovered.setdefault(m.group(1).upper(), (t.get("name", ""), t.get("date_start", "")))
+        except Exception as e:
+            logger.debug(f"sync: upcoming-tournament lookup skipped: {e}")
+
+        added = 0
+        conn = sqlite3.connect(PAYMENTS_DB)
+        cur = conn.cursor()
+        for source_key, (name, date) in discovered.items():
+            # Dedup via UNIQUE(license_id, source_key); INSERT OR IGNORE skips existing.
+            cur.execute(
+                """INSERT OR IGNORE INTO player_payments
+                   (license_id, player_name, item_type, item_name, item_date, amount, paid, source_key)
+                   VALUES (?,?,?,?,?,?,0,?)""",
+                (license_id, player_name, "tournament", name, date or None, 0, source_key),
+            )
+            if cur.rowcount:
+                added += 1
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Payment sync for {license_id}: {added} new of {len(discovered)} found")
+        return jsonify(success=True, added=added, found=len(discovered))
+    except Exception as e:
+        logger.error(f"❌ Error syncing player payments: {e}")
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route("/api/my-registrations", methods=["GET"])

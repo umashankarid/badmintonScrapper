@@ -667,5 +667,153 @@ class TestMyBwfTournaments(unittest.TestCase):
         self.assertIn("url", data["tournaments"][0])
 
 
+# HTML fragment mimicking a Badminton Sweden player-profile /tournaments/<year> page.
+_PROFILE_TOURNAMENTS_HTML = """
+<ul>
+  <li class="list__item">
+    <time datetime="2026-10-03T00:00:00"></time>
+    <a href="/sport/tournament?id=6E816720-F05B-4046-9AE7-043D9E2DDD3F">Kometsträffen 2026</a>
+  </li>
+  <li class="list__item">
+    <time datetime="2026-09-26T00:00:00"></time>
+    <a href="/sport/tournament?id=E552771A-AC8E-419F-9E50-AFCBC548E3C4">Kometslaget 2026</a>
+  </li>
+</ul>
+"""
+
+
+class TestPlayerPayments(unittest.TestCase):
+    """Tests for the 'Payment to club' feature (payments.db + endpoints)."""
+
+    def setUp(self):
+        import app
+        # Isolate the payments DB to a temp file per test.
+        self._dir = tempfile.mkdtemp()
+        self._orig_db = app.PAYMENTS_DB
+        app.PAYMENTS_DB = os.path.join(self._dir, "payments.db")
+        app.init_payments_db()
+        self.app = app
+        self.client = app.app.test_client()
+
+    def tearDown(self):
+        self.app.PAYMENTS_DB = self._orig_db
+        shutil.rmtree(self._dir)
+
+    def _login_as(self, name, admin=False, license_id="IID05778873"):
+        with self.client.session_transaction() as sess:
+            sess["bwf_player"] = name
+            sess["bwf_license_id"] = license_id
+            sess["admin"] = admin
+            sess["bwf_profile_url"] = "/player-profile/58036C5F-1B9B-4873-BF3B-190C890191F6"
+
+    # --- access gating ---------------------------------------------------
+    def test_feature_allowed_only_for_aadvika(self):
+        self.assertTrue(self.app._payment_feature_allowed("Aadvika Umashankar"))
+        self.assertTrue(self.app._payment_feature_allowed("aadvika  umashankar"))
+        self.assertFalse(self.app._payment_feature_allowed("Someone Else"))
+        self.assertFalse(self.app._payment_feature_allowed(""))
+
+    def test_get_payments_blocked_for_other_player(self):
+        self._login_as("Someone Else", license_id="IID00000000")
+        resp = self.client.get("/api/player-payments")
+        data = resp.get_json()
+        self.assertFalse(data["allowed"])
+
+    def test_get_payments_blocked_when_logged_out(self):
+        resp = self.client.get("/api/player-payments")
+        self.assertEqual(resp.status_code, 401)
+
+    # --- custom items ----------------------------------------------------
+    def test_add_and_list_custom_item(self):
+        self._login_as("Aadvika Umashankar")
+        resp = self.client.post("/api/player-payments", json={
+            "item_name": "Bus booking to Uppsala", "amount": 150, "item_date": "2026-11-02",
+            "notes": "Return trip"
+        })
+        self.assertTrue(resp.get_json()["success"])
+
+        data = self.client.get("/api/player-payments").get_json()
+        self.assertTrue(data["allowed"])
+        self.assertEqual(len(data["payments"]), 1)
+        item = data["payments"][0]
+        self.assertEqual(item["item_name"], "Bus booking to Uppsala")
+        self.assertEqual(item["item_type"], "custom")
+        self.assertEqual(item["amount"], 150)
+        self.assertEqual(item["paid"], 0)
+        self.assertEqual(data["summary"]["unpaid_amount"], 150)
+
+    def test_toggle_paid(self):
+        self._login_as("Aadvika Umashankar")
+        self.client.post("/api/player-payments", json={"item_name": "Club fee", "amount": 100})
+        pid = self.client.get("/api/player-payments").get_json()["payments"][0]["id"]
+
+        self.client.post("/api/player-payments/toggle-paid", json={"id": pid})
+        data = self.client.get("/api/player-payments").get_json()
+        self.assertEqual(data["payments"][0]["paid"], 1)
+        self.assertEqual(data["summary"]["paid_amount"], 100)
+        self.assertEqual(data["summary"]["unpaid_amount"], 0)
+
+        # toggling again flips back to unpaid
+        self.client.post("/api/player-payments/toggle-paid", json={"id": pid})
+        data = self.client.get("/api/player-payments").get_json()
+        self.assertEqual(data["payments"][0]["paid"], 0)
+
+    def test_delete_item(self):
+        self._login_as("Aadvika Umashankar")
+        self.client.post("/api/player-payments", json={"item_name": "Mistake", "amount": 1})
+        pid = self.client.get("/api/player-payments").get_json()["payments"][0]["id"]
+        self.client.delete(f"/api/player-payments/{pid}")
+        data = self.client.get("/api/player-payments").get_json()
+        self.assertEqual(len(data["payments"]), 0)
+
+    def test_player_cannot_touch_others_items(self):
+        # Aadvika creates an item...
+        self._login_as("Aadvika Umashankar", license_id="IID05778873")
+        self.client.post("/api/player-payments", json={"item_name": "Private", "amount": 5})
+        pid = self.client.get("/api/player-payments").get_json()["payments"][0]["id"]
+        # ...a different allowed session with a different license must not delete it.
+        with self.client.session_transaction() as sess:
+            sess["bwf_player"] = "Aadvika Umashankar"
+            sess["bwf_license_id"] = "IID99999999"
+            sess["admin"] = False
+        resp = self.client.delete(f"/api/player-payments/{pid}")
+        self.assertFalse(resp.get_json().get("success", False))
+
+    # --- tournament history scraping + sync ------------------------------
+    def test_scrape_history(self):
+        def _get(url, *a, **k):
+            return _FakeResp(_PROFILE_TOURNAMENTS_HTML)
+        sess = MagicMock(); sess.get.side_effect = _get
+        hist = self.app.scrape_player_tournament_history(
+            "/player-profile/58036C5F-1B9B-4873-BF3B-190C890191F6", 2026, s=sess)
+        self.assertEqual(len(hist), 2)
+        self.assertEqual(hist[0]["id"], "6E816720-F05B-4046-9AE7-043D9E2DDD3F")
+        self.assertEqual(hist[0]["name"], "Kometsträffen 2026")
+        self.assertEqual(hist[0]["date"], "2026-10-03")
+
+    def test_sync_adds_tournaments_without_duplicates(self):
+        self._login_as("Aadvika Umashankar")
+
+        def _get(url, *a, **k):
+            return _FakeResp(_PROFILE_TOURNAMENTS_HTML)
+        sess = MagicMock(); sess.get.side_effect = _get
+
+        with patch.object(self.app, "_bwf_session", return_value=sess):
+            r1 = self.client.post("/api/player-payments/sync").get_json()
+        self.assertTrue(r1["success"])
+        self.assertEqual(r1["added"], 2)
+
+        data = self.client.get("/api/player-payments").get_json()
+        self.assertEqual(len(data["payments"]), 2)
+        self.assertTrue(all(p["item_type"] == "tournament" for p in data["payments"]))
+
+        # Running sync again must not duplicate (source_key dedup).
+        with patch.object(self.app, "_bwf_session", return_value=sess):
+            r2 = self.client.post("/api/player-payments/sync").get_json()
+        self.assertEqual(r2["added"], 0)
+        data = self.client.get("/api/player-payments").get_json()
+        self.assertEqual(len(data["payments"]), 2)
+
+
 if __name__ == '__main__':
     unittest.main()
