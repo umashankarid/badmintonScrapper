@@ -8,6 +8,23 @@
 
 ## [Unreleased]
 
+### Fixed - Empty Singles/Doubles dropdowns for tournaments using English event codes
+- **Bug**: On the registration page for "Swedish Youth Games 2026 U13-15" (and any tournament that
+  labels events in English), the Singles and Doubles dropdowns were empty. Root cause: the event
+  classifier only recognized Swedish codes (HS/DS = singles, HD/DD = doubles, MD = mixed). English
+  tournaments use MS/WS (singles), MD/WD (doubles), XD (mixed) — so MS/WS/WD/XD were dropped and
+  `MD` (which means Men's Doubles in English but Mixed in Swedish) was misfiled as mixed.
+- **Fix** (`app.py`): added a shared `_classify_bwf_events()` helper that handles both schemes and
+  disambiguates `MD` per-tournament — if any English-only code (MS/WS/WD/XD) is present, `MD` is
+  treated as Men's Doubles (doubles); otherwise it's Mixed (Swedish). Replaced the two duplicated
+  classification blocks (in the tournament sync and `fetch_tournament_info` paths) with this helper,
+  and widened the level-extraction code list to include English codes. Stored categories are
+  corrected automatically on the next tournament sync (the update path overwrites `categories`).
+- **Tests**: `TestEventClassification` (4 tests) — Swedish scheme, English youth scheme (regression
+  for this bug, asserts singles/doubles non-empty), `MD` disambiguation, and partner options.
+  Verified live against both the Youth Games (English) and DM 2026 (Swedish) events pages — Swedish
+  classification unchanged. Tests: Ran 34 tests - OK.
+
 ### Added - "Payment to club" tab for tracking fees owed to the club (allow-listed players)
 - **Feature**: A logged-in player on the allow-list (currently only "Aadvika Umashankar") gets a new
   player tab "💳 Payment to club" on the homepage. It tracks what they owe the club — tournaments

@@ -1848,7 +1848,7 @@ def fetch_tournament_info():
             level_set = set()
             for a in events_soup.select("a"):
                 text = a.get_text(strip=True)
-                if text and len(text) < 50 and any(cat in text for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]):
+                if text and len(text) < 50 and any(cat in text for cat in ["HS", "DS", "HD", "DD", "MD", "MS", "WS", "WD", "XD", "PS", "FS", "PD", "FD"]):
                     parts = text.split()
                     if len(parts) >= 2:
                         level_set.add(parts[1])
@@ -2176,6 +2176,66 @@ def save_bwf_tournament_visibility():
     return jsonify(success=True)
 
 
+def _classify_bwf_events(events_soup):
+    """Classify a tournament's events into singles/doubles/mixed from its
+    events.aspx page, handling BOTH naming schemes:
+
+      Swedish : HS/DS = singles, HD/DD = doubles, MD = mixed (Mixed Dubbel)
+      English : MS/WS = singles, MD/WD = doubles, XD = mixed (Mixed Doubles)
+
+    The tricky code is 'MD': Mixed in Swedish but Men's Doubles in English.
+    We detect the scheme per-tournament — if any English-only code
+    (MS/WS/WD/XD) is present, 'MD' is treated as Men's Doubles (doubles);
+    otherwise 'MD' is Mixed (Swedish scheme).
+
+    Returns a dict with singles_levels / doubles_levels / mixed_levels /
+    doubles_partner / mixed_partner.
+    """
+    import re
+    categories = {
+        "singles_levels": [],
+        "doubles_levels": [],
+        "mixed_levels": [],
+        "doubles_partner": [],
+        "mixed_partner": [],
+    }
+    known_codes = ["HS", "DS", "HD", "DD", "MD", "MS", "WS", "WD", "XD", "PS", "FS", "PD", "FD"]
+    all_events = set()
+    for a in events_soup.select("a"):
+        text = a.get_text(strip=True)
+        if text and len(text) < 50:
+            for cat in known_codes:
+                # Match the code as a leading token (e.g. "WS U13", "HS A").
+                if text == cat or text.startswith(cat + " ") or text.startswith(cat):
+                    if re.match(rf"^{cat}(\s|$)", text):
+                        all_events.add(text.strip())
+                        break
+
+    english_scheme = any(
+        re.match(r"^(MS|WS|WD|XD)(\s|$)", e) for e in all_events
+    )
+
+    for event in sorted(all_events):
+        if re.match(r"^(HS|DS|MS|WS|PS|FS)(\s|$)", event):
+            categories["singles_levels"].append(event)
+        elif re.match(r"^(HD|DD|WD|PD|FD)(\s|$)", event):
+            categories["doubles_levels"].append(event)
+        elif re.match(r"^XD(\s|$)", event):
+            categories["mixed_levels"].append(event)
+        elif re.match(r"^MD(\s|$)", event):
+            # Ambiguous: Men's Doubles (English) vs Mixed (Swedish).
+            if english_scheme:
+                categories["doubles_levels"].append(event)
+            else:
+                categories["mixed_levels"].append(event)
+
+    if categories["doubles_levels"]:
+        categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
+    if categories["mixed_levels"]:
+        categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+    return categories
+
+
 @app.route("/api/bwf-tournaments-all", methods=["GET"])
 def get_all_bwf_tournaments():
     """Get ALL tournaments from Badminton Sweden and store in tournaments.db"""
@@ -2346,28 +2406,7 @@ def get_all_bwf_tournaments():
                     try:
                         events_resp = ts.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
                         events_soup = BeautifulSoup(events_resp.text, "html.parser")
-                        
-                        all_events = set()
-                        for a in events_soup.select("a"):
-                            text = a.get_text(strip=True)
-                            if text and len(text) < 50:
-                                for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
-                                    if cat in text:
-                                        all_events.add(text.strip())
-                                        break
-                        
-                        for event in sorted(all_events):
-                            if event.startswith(("HS", "DS")):
-                                categories["singles_levels"].append(event)
-                            elif event.startswith(("HD", "DD")):
-                                categories["doubles_levels"].append(event)
-                            elif event.startswith("MD"):
-                                categories["mixed_levels"].append(event)
-                        
-                        if categories["doubles_levels"]:
-                            categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
-                        if categories["mixed_levels"]:
-                            categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
+                        categories = _classify_bwf_events(events_soup)
                     except Exception:
                         pass
                 
@@ -3040,7 +3079,7 @@ def get_player_payments():
         conn.row_factory = sqlite3.Row
         rows = [dict(r) for r in conn.execute(
             """SELECT * FROM player_payments WHERE license_id = ?
-               ORDER BY paid ASC, COALESCE(item_date,'') DESC, id DESC""",
+               ORDER BY COALESCE(NULLIF(item_date,''), '9999-12-31') ASC, id ASC""",
             (license_id,)
         ).fetchall()]
         conn.close()
@@ -3395,33 +3434,7 @@ def ensure_tournament():
             try:
                 events_resp = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
                 events_soup = BeautifulSoup(events_resp.text, "html.parser")
-                
-                # Extract event categories and map to registration fields
-                all_events = set()
-                for a in events_soup.select("a"):
-                    text = a.get_text(strip=True)
-                    if text and len(text) < 50:
-                        # Check for category codes
-                        for cat in ["HS", "DS", "HD", "DD", "MD", "PS", "FS", "PD", "FD"]:
-                            if cat in text:
-                                all_events.add(text.strip())
-                                break
-                
-                # Map events to registration fields
-                for event in sorted(all_events):
-                    if event.startswith(("HS", "DS")):
-                        categories["singles_levels"].append(event)
-                    elif event.startswith(("HD", "DD")):
-                        categories["doubles_levels"].append(event)
-                    elif event.startswith("MD"):
-                        categories["mixed_levels"].append(event)
-                
-                # Set partner options (typical pattern)
-                if categories["doubles_levels"]:
-                    categories["doubles_partner"] = ["Partner A", "Partner B", "Partner C"]
-                if categories["mixed_levels"]:
-                    categories["mixed_partner"] = ["Partner A", "Partner B", "Partner C"]
-                
+                categories = _classify_bwf_events(events_soup)
                 logger.debug(f"✅ Extracted categories: {categories}")
             except Exception as e:
                 logger.debug(f"⚠️  Could not extract categories: {e}")

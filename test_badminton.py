@@ -536,6 +536,50 @@ _FIND_RESULTS_PAGE2_HTML = """
 """
 
 
+class TestEventClassification(unittest.TestCase):
+    """Tests for _classify_bwf_events (Swedish vs English event codes)."""
+
+    def _classify(self, event_names):
+        import app
+        from bs4 import BeautifulSoup
+        html = "<div>" + "".join(
+            f'<a href="/sport/event.aspx?id=x&event={i}">{n}</a>'
+            for i, n in enumerate(event_names)
+        ) + "</div>"
+        return app._classify_bwf_events(BeautifulSoup(html, "html.parser"))
+
+    def test_swedish_scheme(self):
+        """HS/DS=singles, HD/DD=doubles, MD=mixed (Swedish 'Mixed Dubbel')."""
+        cats = self._classify(["HS A", "DS A", "HD B", "DD B", "MD Elit"])
+        self.assertEqual(cats["singles_levels"], ["DS A", "HS A"])
+        self.assertEqual(cats["doubles_levels"], ["DD B", "HD B"])
+        self.assertEqual(cats["mixed_levels"], ["MD Elit"])
+
+    def test_english_scheme_youth(self):
+        """MS/WS=singles, MD/WD=doubles, XD=mixed (English). Regression for
+        'Swedish Youth Games 2026 U13-15' where Singles/Doubles were empty."""
+        cats = self._classify(["MS U13", "WS U13", "XD U13", "MD U13", "WD U13"])
+        self.assertEqual(sorted(cats["singles_levels"]), ["MS U13", "WS U13"])
+        self.assertEqual(sorted(cats["doubles_levels"]), ["MD U13", "WD U13"])
+        self.assertEqual(cats["mixed_levels"], ["XD U13"])
+        # Singles and doubles must NOT be empty for this tournament.
+        self.assertTrue(cats["singles_levels"])
+        self.assertTrue(cats["doubles_levels"])
+
+    def test_md_disambiguation(self):
+        """'MD' is Men's Doubles when English codes are present, else Mixed."""
+        english = self._classify(["MS U15", "MD U15"])   # MS present -> English
+        self.assertIn("MD U15", english["doubles_levels"])
+        self.assertEqual(english["mixed_levels"], [])
+        swedish = self._classify(["HS A", "MD A"])        # no English-only code
+        self.assertIn("MD A", swedish["mixed_levels"])
+        self.assertEqual(swedish["doubles_levels"], [])
+
+    def test_partners_set_when_doubles_present(self):
+        cats = self._classify(["WD U13"])
+        self.assertTrue(cats["doubles_partner"])
+
+
 class TestMyBwfTournaments(unittest.TestCase):
     """Tests for the 'My BWF tournaments' scraping helpers and endpoint."""
 
