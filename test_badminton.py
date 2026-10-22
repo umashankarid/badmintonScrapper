@@ -814,6 +814,80 @@ class TestPlayerPayments(unittest.TestCase):
         data = self.client.get("/api/player-payments").get_json()
         self.assertEqual(len(data["payments"]), 2)
 
+    def test_auto_sync_history_only_on_first_run(self):
+        """First sync scrapes history (last 6 months); once any row exists, history
+        is never scraped again — only new upcoming tournaments are added."""
+        scrape_calls = []
+
+        def fake_history(profile_url, year, s=None):
+            scrape_calls.append(year)
+            return [{"id": "AAAAAAAA-0000-0000-0000-000000000000",
+                     "name": "Old Tournament", "date": None}]
+
+        with patch.object(self.app, "scrape_player_tournament_history", side_effect=fake_history), \
+             patch.object(self.app, "find_my_bwf_tournaments", return_value=[]), \
+             patch.object(self.app, "_bwf_session", return_value=MagicMock()):
+            added1, _ = self.app._auto_sync_payments("Aadvika Umashankar", "IID05778873", "/player-profile/x")
+            self.assertEqual(added1, 1)
+            self.assertTrue(len(scrape_calls) >= 1)   # history scraped on first run
+
+            scrape_calls.clear()
+            added2, _ = self.app._auto_sync_payments("Aadvika Umashankar", "IID05778873", "/player-profile/x")
+            self.assertEqual(added2, 0)
+            self.assertEqual(scrape_calls, [])        # history NOT scraped again
+
+    def test_auto_sync_history_filters_to_last_6_months(self):
+        """History entries older than ~6 months are excluded on the first sync."""
+        from datetime import datetime, timedelta
+        recent = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        old = (datetime.now() - timedelta(days=300)).strftime("%Y-%m-%d")
+
+        def fake_history(profile_url, year, s=None):
+            return [
+                {"id": "11111111-0000-0000-0000-000000000000", "name": "Recent", "date": recent},
+                {"id": "22222222-0000-0000-0000-000000000000", "name": "TooOld", "date": old},
+            ]
+
+        with patch.object(self.app, "scrape_player_tournament_history", side_effect=fake_history), \
+             patch.object(self.app, "find_my_bwf_tournaments", return_value=[]), \
+             patch.object(self.app, "_bwf_session", return_value=MagicMock()):
+            self.app._auto_sync_payments("Aadvika Umashankar", "IID05778873", "/player-profile/x")
+
+        self._login_as("Aadvika Umashankar")
+        names = [p["item_name"] for p in self.client.get("/api/player-payments").get_json()["payments"]]
+        self.assertIn("Recent", names)
+        self.assertNotIn("TooOld", names)
+
+    def test_sync_never_overrides_paid_status(self):
+        """Re-syncing a tournament already marked paid must not reset paid/paid_date."""
+        self._login_as("Aadvika Umashankar")
+
+        def fake_history(profile_url, year, s=None):
+            return [{"id": "33333333-0000-0000-0000-000000000000",
+                     "name": "Paid Tournament", "date": None}]
+
+        # First sync seeds the tournament.
+        with patch.object(self.app, "scrape_player_tournament_history", side_effect=fake_history), \
+             patch.object(self.app, "find_my_bwf_tournaments", return_value=[]), \
+             patch.object(self.app, "_bwf_session", return_value=MagicMock()):
+            self.app._auto_sync_payments("Aadvika Umashankar", "IID05778873", "/player-profile/x")
+
+        pid = self.client.get("/api/player-payments").get_json()["payments"][0]["id"]
+        self.client.post("/api/player-payments/toggle-paid", json={"id": pid})  # mark paid
+        before = self.client.get("/api/player-payments").get_json()["payments"][0]
+        self.assertEqual(before["paid"], 1)
+
+        # Sync again (history is now skipped, but even via the endpoint the row must survive).
+        with patch.object(self.app, "scrape_player_tournament_history", side_effect=fake_history), \
+             patch.object(self.app, "find_my_bwf_tournaments", return_value=[]), \
+             patch.object(self.app, "_bwf_session", return_value=MagicMock()):
+            self.app._auto_sync_payments("Aadvika Umashankar", "IID05778873", "/player-profile/x")
+
+        after = self.client.get("/api/player-payments").get_json()["payments"][0]
+        self.assertEqual(after["paid"], 1)
+        self.assertEqual(after["paid_date"], before["paid_date"])
+        self.assertEqual(after["id"], pid)   # same row, not re-inserted
+
 
 if __name__ == '__main__':
     unittest.main()

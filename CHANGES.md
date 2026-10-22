@@ -24,20 +24,27 @@
   - `scrape_player_tournament_history(profile_url, year, s=None)` scrapes the player's
     `/player-profile/<uuid>/tournaments/<year>` page (links `a[href*='/sport/tournament?id=']`
     + nearest `<time>`), returning `{id, name, date}`.
+  - `_auto_sync_payments(name, license_id, profile_url)` runs automatically on login (background
+    thread) for allow-listed players: on the FIRST sync (player has no rows) it seeds from the last
+    ~6 months of played history; once ANY row exists it never scrapes history again and only adds
+    newly-discovered upcoming tournaments (the 6-week window) going forward. Dedup via
+    `UNIQUE(license_id, source_key)` + `INSERT OR IGNORE`, so a re-sync **never overrides** an
+    existing row's paid/paid_date/amount.
   - Endpoints (all player-gated): `GET /api/player-payments` (list + `allowed` + summary),
     `POST /api/player-payments` (add custom), `POST /api/player-payments/toggle-paid`,
-    `DELETE /api/player-payments/<id>`, `POST /api/player-payments/sync` (seeds this year's played
-    history, then adds any upcoming tournaments the home page already found them entered in; dedup
-    via `INSERT OR IGNORE` on the unique key). All scope rows to the session's `license_id`.
-  - Login now stores `session["bwf_profile_url"]` so sync can reach the player's history page.
+    `DELETE /api/player-payments/<id>`, `POST /api/player-payments/sync` (manual trigger that
+    calls `_auto_sync_payments`). All scope rows to the session's `license_id`.
+  - Login now stores `session["bwf_profile_url"]` and kicks off the background auto-sync.
 - **Frontend** (`templates/index.html`): a player tab nav (shown only when `GET /api/player-payments`
   returns `allowed=true`) toggling between the Tournaments view and a Payment-to-club view with
-  summary cards, an add-item form, a Sync button, and per-item mark-paid / delete actions. Bilingual
-  (Swedish / English) throughout.
-- **Tests** (`test_badminton.py`, `TestPlayerPayments`, 9 tests): access gating (allow-list,
+  summary cards, an add-item form, and per-item actions. The paid/unpaid control is a proper
+  **toggle switch** (`.toggle-switch` in `static/styles.css`). No manual Sync button — syncing is
+  automatic on login. Bilingual (Swedish / English) throughout.
+- **Tests** (`test_badminton.py`, `TestPlayerPayments`, 12 tests): access gating (allow-list,
   logged-out 401, other player blocked), add/list/toggle/delete, ownership scoping, history scrape,
-  and sync-with-dedup. Payments DB isolated to a temp file per test. Verified end-to-end via the
-  test client. Tests: Ran 27 tests - OK.
+  sync-with-dedup, history-only-on-first-run, 6-month history filter, and sync-never-overrides-paid.
+  Payments DB isolated to a temp file per test. Verified end-to-end via the test client.
+  Tests: Ran 30 tests - OK.
 
 ### Changed - Redesigned the homepage login (branding, bilingual, a11y, UX)
 - Added the club logo (`static/komet.jpg`) in a black header band (matches the logo background)

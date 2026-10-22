@@ -1011,6 +1011,16 @@ def bwf_login():
         except Exception as e:
             logger.warning(f"⚠️  Could not save player data to DB: {e}")
         
+        # Auto-sync payment tracking for allow-listed players (background, non-blocking).
+        if _payment_feature_allowed(player_name) and license_id and profile_url:
+            def _bg_sync():
+                try:
+                    added, found = _auto_sync_payments(player_name, license_id, profile_url)
+                    logger.info(f"💳 Login auto-sync done for {license_id}: {added} new of {found}")
+                except Exception as ex:
+                    logger.error(f"❌ Login auto-sync failed for {license_id}: {ex}")
+            threading.Thread(target=_bg_sync, daemon=True).start()
+
         return jsonify(success=True, player_name=player_name, license_id=license_id, club=club, gender=gender, email=email, phone=phone, dob=dob, age=age, ranking=ranking)
 
     except ext_requests.RequestException as e:
@@ -3144,59 +3154,87 @@ def delete_player_payment(pid):
 
 @app.route("/api/player-payments/sync", methods=["POST"])
 def sync_player_payments():
-    """Populate/grow the player's payment list from Badminton Sweden:
-    - seed from this year's played-tournament history (profile page), and
-    - add any upcoming tournaments the home page already found them entered in.
-    Tournaments are deduplicated by source_key (the tournament GUID)."""
+    """Populate/grow the player's payment list from Badminton Sweden.
+    Called automatically on login; also available as an endpoint for manual trigger."""
     player_name, license_id = _current_payment_player()
     if not player_name:
         return jsonify(success=False, error="Unauthorized"), 401
     if not _payment_feature_allowed(player_name):
         return jsonify(success=False, error="Not available"), 403
 
-    from datetime import datetime as _dt
-    year = _dt.now().year
     profile_url = session.get("bwf_profile_url", "")
-
     try:
-        s = _bwf_session()
-        discovered = {}  # source_key -> (name, date)
-
-        # 1) This year's played-tournament history from the profile page.
-        for t in scrape_player_tournament_history(profile_url, year, s=s):
-            if t["id"]:
-                discovered[t["id"].upper()] = (t["name"], t["date"])
-
-        # 2) Upcoming tournaments the home page already finds them entered in.
-        try:
-            for t in find_my_bwf_tournaments(player_name, weeks=6):
-                import re as _re
-                m = _re.search(r'/tournament/([0-9A-Fa-f-]{36})', t.get("url", ""))
-                if m:
-                    discovered.setdefault(m.group(1).upper(), (t.get("name", ""), t.get("date_start", "")))
-        except Exception as e:
-            logger.debug(f"sync: upcoming-tournament lookup skipped: {e}")
-
-        added = 0
-        conn = sqlite3.connect(PAYMENTS_DB)
-        cur = conn.cursor()
-        for source_key, (name, date) in discovered.items():
-            # Dedup via UNIQUE(license_id, source_key); INSERT OR IGNORE skips existing.
-            cur.execute(
-                """INSERT OR IGNORE INTO player_payments
-                   (license_id, player_name, item_type, item_name, item_date, amount, paid, source_key)
-                   VALUES (?,?,?,?,?,?,0,?)""",
-                (license_id, player_name, "tournament", name, date or None, 0, source_key),
-            )
-            if cur.rowcount:
-                added += 1
-        conn.commit()
-        conn.close()
-        logger.info(f"✅ Payment sync for {license_id}: {added} new of {len(discovered)} found")
-        return jsonify(success=True, added=added, found=len(discovered))
+        added, found = _auto_sync_payments(player_name, license_id, profile_url)
+        return jsonify(success=True, added=added, found=found)
     except Exception as e:
         logger.error(f"❌ Error syncing player payments: {e}")
         return jsonify(success=False, error=str(e)), 500
+
+
+def _auto_sync_payments(player_name, license_id, profile_url):
+    """Sync tournaments into payments.db for an allow-listed player.
+
+    FIRST sync (player has no rows yet): seed from the player's Badminton Sweden
+    history for the last 6 months. AFTER that (any row already exists): never
+    scrape history again — only add newly-discovered upcoming tournaments (the
+    6-week window) going forward. Dedup via UNIQUE(license_id, source_key).
+
+    Returns (added_count, discovered_count).
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    import re as _re
+    now = _dt.now()
+
+    # Does this player already have ANY payment row? If so, this is not the first
+    # sync and we must not re-scrape old history.
+    conn = sqlite3.connect(PAYMENTS_DB)
+    existing = conn.execute(
+        "SELECT COUNT(*) FROM player_payments WHERE license_id = ?",
+        (license_id,),
+    ).fetchone()[0]
+    conn.close()
+    first_sync = existing == 0
+
+    s = _bwf_session()
+    discovered = {}  # source_key -> (name, date)
+
+    # 1) History — ONLY on the first sync, limited to the last 6 months.
+    if first_sync:
+        cutoff = (now - _td(days=183)).strftime("%Y-%m-%d")
+        years = {now.year}
+        if (now - _td(days=183)).year != now.year:
+            years.add((now - _td(days=183)).year)  # crosses a year boundary
+        for yr in years:
+            for t in scrape_player_tournament_history(profile_url, yr, s=s):
+                if t["id"] and (not t["date"] or t["date"] >= cutoff):
+                    discovered[t["id"].upper()] = (t["name"], t["date"])
+
+    # 2) Upcoming tournaments the home page already finds them entered in
+    #    (added on every sync so the list grows going forward).
+    try:
+        for t in find_my_bwf_tournaments(player_name, weeks=6):
+            m = _re.search(r'/tournament/([0-9A-Fa-f-]{36})', t.get("url", ""))
+            if m:
+                discovered.setdefault(m.group(1).upper(), (t.get("name", ""), t.get("date_start", "")))
+    except Exception as e:
+        logger.debug(f"sync: upcoming-tournament lookup skipped: {e}")
+
+    added = 0
+    conn = sqlite3.connect(PAYMENTS_DB)
+    cur = conn.cursor()
+    for source_key, (name, date) in discovered.items():
+        cur.execute(
+            """INSERT OR IGNORE INTO player_payments
+               (license_id, player_name, item_type, item_name, item_date, amount, paid, source_key)
+               VALUES (?,?,?,?,?,?,0,?)""",
+            (license_id, player_name, "tournament", name, date or None, 0, source_key),
+        )
+        if cur.rowcount:
+            added += 1
+    conn.commit()
+    conn.close()
+    logger.info(f"✅ Payment auto-sync for {license_id}: {added} new of {len(discovered)} found (first_sync={first_sync})")
+    return added, len(discovered)
 
 
 @app.route("/api/my-registrations", methods=["GET"])

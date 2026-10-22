@@ -100,11 +100,12 @@
     <div id="payments-view" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px;">
             <h2 style="color:#1a237e;margin:0;">💳 Betalning till klubben / Payment to club</h2>
-            <button id="payments-sync-btn" onclick="syncPayments()" style="width:auto;padding:8px 16px;font-size:0.85em;">🔄 Synka turneringar / Sync tournaments</button>
         </div>
         <p style="color:#666;font-size:0.9em;margin:6px 0 14px;">
-            Håll koll på vad du är skyldig klubben — turneringar du spelat samt egna poster (resa, buss m.m.). Markera som betald när du betalat.<br>
+            Håll koll på vad du är skyldig klubben — turneringar du spelat samt egna poster (resa, buss m.m.). Markera som betald när du betalat.
+            Turneringar synkas automatiskt vid inloggning.<br>
             Track what you owe the club — tournaments you've played plus your own items (travel, bus, etc.). Mark as paid once you've paid.
+            Tournaments are synced automatically on login.
         </p>
 
         <div id="payments-summary" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
@@ -226,7 +227,7 @@
                 `;
 
                 if (!payments.length) {
-                    listEl.innerHTML = `<p style="color:#666;">Inga poster ännu. Klicka "Synka turneringar" för att hämta turneringar du spelat i år.<br>No items yet. Click "Sync tournaments" to pull in tournaments you've played this year.</p>`;
+                    listEl.innerHTML = `<p style="color:#666;">Inga poster ännu. Turneringar hämtas automatiskt vid nästa inloggning.<br>No items yet. Tournaments will be synced automatically on your next login.</p>`;
                     return;
                 }
 
@@ -236,20 +237,22 @@
                         ? `<span class="badge badge-blue">🏸 Turnering / Tournament</span>`
                         : `<span class="badge" style="background:#ede7f6;color:#5e35b1;">📝 Egen post / Custom</span>`;
                     return `
-                    <div class="tournament-card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;${paid ? 'opacity:0.75;' : ''}">
+                    <div class="tournament-card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;${paid ? 'opacity:0.7;' : ''}">
                         <div style="flex:1;min-width:0;">
                             <div style="font-weight:600;color:#1a237e;">${escapeHtml(p.item_name)} ${typeBadge}</div>
                             <div style="font-size:0.85em;color:#666;margin-top:3px;">
                                 ${p.item_date ? '📅 ' + p.item_date + '  ' : ''}
                                 ${p.amount ? '💰 ' + p.amount + ' kr' : '<em>belopp ej satt / amount not set</em>'}
                                 ${p.notes ? ' · ' + escapeHtml(p.notes) : ''}
-                                ${paid && p.paid_date ? ' · ✅ betald / paid ' + p.paid_date : ''}
+                                ${paid && p.paid_date ? ' · ✅ ' + p.paid_date : ''}
                             </div>
                         </div>
-                        <div style="display:flex;gap:6px;align-items:center;">
-                            <button onclick="togglePaid(${p.id})" style="width:auto;padding:6px 12px;font-size:0.8em;background:${paid ? '#999' : '#2e7d32'};">
-                                ${paid ? '↩️ Ångra / Unmark' : '✅ Markera betald / Mark paid'}
-                            </button>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <label class="toggle-switch" title="${paid ? 'Markera obetald / Mark unpaid' : 'Markera betald / Mark paid'}">
+                                <input type="checkbox" ${paid ? 'checked' : ''} onchange="togglePaid(${p.id})">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label" style="color:${paid ? '#2e7d32' : '#c62828'};">${paid ? 'Betald' : 'Obetald'}</span>
+                            </label>
                             ${p.item_type === 'custom' ? `<button onclick="deletePayment(${p.id})" title="Ta bort / Delete" style="width:auto;padding:6px 10px;font-size:0.8em;background:#c62828;">🗑️</button>` : ''}
                         </div>
                     </div>`;
@@ -282,18 +285,6 @@
             if (!confirm("Ta bort denna post? / Delete this item?")) return;
             await fetch(`/api/player-payments/${id}`, {method: "DELETE"});
             loadPayments();
-        }
-
-        async function syncPayments() {
-            const btn = document.getElementById("payments-sync-btn");
-            const orig = btn.textContent;
-            btn.disabled = true; btn.textContent = "Synkar… / Syncing…";
-            try {
-                const res = await fetch("/api/player-payments/sync", {method: "POST"});
-                const data = await res.json();
-                if (data.success) { loadPayments(); }
-            } catch (e) { /* ignore */ }
-            finally { btn.disabled = false; btn.textContent = orig; }
         }
 
         document.getElementById("add-payment-form").addEventListener("submit", async (e) => {

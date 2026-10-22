@@ -673,3 +673,48 @@ body > a[href="/"], .back-link {
     .login-footer { padding: 18px 20px 22px; }
     .login-brand img { width: 78%; }
 }
+
+/* ============================================================
+   TOGGLE SWITCH — used for paid/unpaid in Payment to club
+   ============================================================ */
+.toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+.toggle-switch input { display: none; }
+.toggle-slider {
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    background: #ccc;
+    position: relative;
+    transition: background 0.25s;
+    flex-shrink: 0;
+}
+.toggle-slider::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: transform 0.25s;
+}
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--success, #2e7d32);
+}
+.toggle-switch input:checked + .toggle-slider::after {
+    transform: translateX(20px);
+}
+.toggle-label {
+    font-size: 0.82em;
+    font-weight: 600;
+    min-width: 60px;
+}
