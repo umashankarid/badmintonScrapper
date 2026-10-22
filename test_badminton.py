@@ -579,6 +579,53 @@ class TestEventClassification(unittest.TestCase):
         cats = self._classify(["WD U13"])
         self.assertTrue(cats["doubles_partner"])
 
+    def test_get_tournament_info_self_heals_stale_categories(self):
+        """/api/tournament re-classifies and persists categories when the stored
+        ones look broken (empty singles+doubles, from an old Swedish-only sync)."""
+        import app, sqlite3, json, tempfile, os
+        from bs4 import BeautifulSoup
+
+        orig_db = app.TOURNAMENTS_DB
+        d = tempfile.mkdtemp()
+        app.TOURNAMENTS_DB = os.path.join(d, "t.db")
+        try:
+            app.init_tournaments_db()
+            stale = {"singles_levels": [], "doubles_levels": [], "mixed_levels": ["MD U13"],
+                     "doubles_partner": [], "mixed_partner": ["Partner A"]}
+            conn = sqlite3.connect(app.TOURNAMENTS_DB)
+            conn.execute(
+                "INSERT INTO tournaments (tournament_name, tournament_url, categories) VALUES (?,?,?)",
+                ("Youth Games",
+                 "https://badmintonsweden.tournamentsoftware.com/tournament/8C1E54D4-4C47-46C8-ACCD-E039683A03EF",
+                 json.dumps(stale)))
+            conn.commit(); conn.close()
+
+            ev_html = "<div>" + "".join(
+                f'<a href="/sport/event.aspx?event={i}">{n}</a>'
+                for i, n in enumerate(["MS U13", "WS U13", "XD U13", "MD U13", "WD U13"])) + "</div>"
+            sess = MagicMock(); sess.get.return_value = _FakeResp(ev_html)
+
+            client = app.app.test_client()
+            with patch.object(app, "_bwf_session", return_value=sess):
+                data = client.get("/api/tournament?dbFile=Youth%20Games").get_json()
+
+            cats = data["tournament"]["categories"]
+            self.assertEqual(sorted(cats["singles_levels"]), ["MS U13", "WS U13"])
+            self.assertEqual(sorted(cats["doubles_levels"]), ["MD U13", "WD U13"])
+            self.assertEqual(cats["mixed_levels"], ["XD U13"])
+
+            # Corrected categories must be persisted (so it self-heals only once).
+            conn = sqlite3.connect(app.TOURNAMENTS_DB)
+            stored = json.loads(conn.execute(
+                "SELECT categories FROM tournaments WHERE tournament_name=?", ("Youth Games",)
+            ).fetchone()[0])
+            conn.close()
+            self.assertTrue(stored["singles_levels"])
+            self.assertTrue(stored["doubles_levels"])
+        finally:
+            app.TOURNAMENTS_DB = orig_db
+            shutil.rmtree(d)
+
 
 class TestMyBwfTournaments(unittest.TestCase):
     """Tests for the 'My BWF tournaments' scraping helpers and endpoint."""

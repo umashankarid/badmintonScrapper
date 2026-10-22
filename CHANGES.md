@@ -18,12 +18,17 @@
   disambiguates `MD` per-tournament — if any English-only code (MS/WS/WD/XD) is present, `MD` is
   treated as Men's Doubles (doubles); otherwise it's Mixed (Swedish). Replaced the two duplicated
   classification blocks (in the tournament sync and `fetch_tournament_info` paths) with this helper,
-  and widened the level-extraction code list to include English codes. Stored categories are
-  corrected automatically on the next tournament sync (the update path overwrites `categories`).
-- **Tests**: `TestEventClassification` (4 tests) — Swedish scheme, English youth scheme (regression
-  for this bug, asserts singles/doubles non-empty), `MD` disambiguation, and partner options.
-  Verified live against both the Youth Games (English) and DM 2026 (Swedish) events pages — Swedish
-  classification unchanged. Tests: Ran 34 tests - OK.
+  and widened the level-extraction code list to include English codes.
+- **Stale-data self-heal** (`get_tournament_info` / `/api/tournament`): tournaments already stored
+  with the old broken classification (empty Singles+Doubles) are re-scraped live with the current
+  classifier on the next registration-page load and the corrected categories are persisted back to
+  `tournaments.db` — so existing tournaments like "Swedish Youth Games 2026 U13-15" are fixed
+  without waiting for an admin re-sync, and only re-scrape once.
+- **Tests**: `TestEventClassification` (5 tests) — Swedish scheme, English youth scheme (regression
+  for this bug, asserts singles/doubles non-empty), `MD` disambiguation, partner options, and the
+  `/api/tournament` self-heal (re-classifies + persists). Verified live against both the Youth Games
+  (English) and DM 2026 (Swedish) events pages — Swedish classification unchanged.
+  Tests: Ran 35 tests - OK.
 
 ### Added - "Payment to club" tab for tracking fees owed to the club (allow-listed players)
 - **Feature**: A logged-in player on the allow-list (currently only "Aadvika Umashankar") gets a new

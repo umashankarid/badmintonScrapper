@@ -3548,7 +3548,7 @@ def get_tournament_info():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups, enable_accommodation_transport, competition_start
+            SELECT tournament_name, registration_closes, cancellation_deadline, categories, admin_reg_end_date, tournament_groups, enable_accommodation_transport, competition_start, tournament_url
             FROM tournaments WHERE tournament_name = ?
         """, (tournament_name,))
         
@@ -3577,13 +3577,43 @@ def get_tournament_info():
                 conn.close()
                 return jsonify(success=False, error="Tournament not found"), 404
         
-        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json, enable_accomm_transport, competition_start = row
+        tournament_name_val, registration_closes, cancellation_deadline, categories_json, admin_reg_end_date, tournament_groups_json, enable_accomm_transport, competition_start, tournament_url = row
         categories = json.loads(categories_json) if categories_json else {}
         tournament_groups = []
         try:
             tournament_groups = json.loads(tournament_groups_json) if tournament_groups_json else []
         except Exception:
             pass
+
+        # Self-heal: older syncs only understood Swedish event codes, so tournaments
+        # labelled in English (MS/WS/MD/WD/XD, e.g. "Swedish Youth Games 2026 U13-15")
+        # ended up with empty Singles/Doubles. If the stored categories look empty or
+        # mis-classified, re-scrape the events page with the current classifier and
+        # persist the corrected result so the dropdowns populate.
+        try:
+            singles = categories.get("singles_levels") or []
+            doubles = categories.get("doubles_levels") or []
+            mixed = categories.get("mixed_levels") or []
+            looks_broken = (not singles and not doubles) and bool(mixed or not categories)
+            if tournament_url and looks_broken:
+                import re as _re
+                m = _re.search(r'/tournament/([0-9A-Fa-f-]{36})', tournament_url) or _re.search(r'id=([A-Fa-f0-9-]+)', tournament_url)
+                if m:
+                    tid = m.group(1)
+                    s = _bwf_session()
+                    ev = s.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
+                    fixed = _classify_bwf_events(BeautifulSoup(ev.text, "html.parser"))
+                    if fixed.get("singles_levels") or fixed.get("doubles_levels") or fixed.get("mixed_levels"):
+                        categories = fixed
+                        cur.execute(
+                            "UPDATE tournaments SET categories = ?, last_updated = CURRENT_TIMESTAMP WHERE tournament_name = ?",
+                            (json.dumps(fixed), tournament_name),
+                        )
+                        conn.commit()
+                        logger.info(f"🔧 Re-classified stale categories for '{tournament_name}': "
+                                    f"{len(fixed['singles_levels'])}S/{len(fixed['doubles_levels'])}D/{len(fixed['mixed_levels'])}M")
+        except Exception as e:
+            logger.debug(f"category self-heal skipped for {tournament_name}: {e}")
         
         conn.close()
         
