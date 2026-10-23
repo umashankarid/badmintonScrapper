@@ -80,7 +80,10 @@
 
     <!-- Bottom section: tournaments the logged-in player is entered in on Badminton Sweden -->
     <div id="my-bwf-section" style="display:none;margin-top:40px;padding-top:25px;border-top:2px solid #e0e0e0;">
-        <h2 style="color:#1a237e;margin-bottom:6px;">🏸 Anmäld på Badminton Sweden / Registered on Badminton Sweden</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <h2 style="color:#1a237e;margin:0 0 6px;">🏸 Anmäld på Badminton Sweden / Registered on Badminton Sweden</h2>
+            <button id="my-bwf-refresh" onclick="loadMyBwfTournaments(window._lastStatusData, true)" style="width:auto;padding:6px 14px;font-size:0.82em;background:#eef2f7;color:#0d47a1;box-shadow:none;">🔄 Uppdatera / Refresh</button>
+        </div>
         <p style="color:#666;font-size:0.9em;margin-top:0;margin-bottom:12px;">
             Turneringar de kommande 6 veckorna där du är anmäld enligt Badminton Sweden.<br>
             Tournaments in the next 6 weeks where you are entered according to Badminton Sweden.
@@ -165,7 +168,14 @@
                 document.getElementById("login-section").style.display = "flex";
                 document.getElementById("tournaments").style.display = "none";
                 document.getElementById("player-nav").style.display = "none";
-                showPlayerView("tournaments");
+                // Hide all player content sections so nothing lingers after logout.
+                const bwfSection = document.getElementById("my-bwf-section");
+                if (bwfSection) { bwfSection.style.display = "none"; bwfSection.dataset.prevDisplay = "none"; }
+                const bwfList = document.getElementById("my-bwf-list");
+                if (bwfList) bwfList.innerHTML = "";
+                const paymentsView = document.getElementById("payments-view");
+                if (paymentsView) paymentsView.style.display = "none";
+                document.getElementById("tournaments").innerHTML = "";
             }
         }
 
@@ -499,7 +509,9 @@
             loadMyBwfTournaments(statusData);
         }
 
-        async function loadMyBwfTournaments(statusData) {
+        async function loadMyBwfTournaments(statusData, forceRefresh) {
+            statusData = statusData || window._lastStatusData || {};
+            window._lastStatusData = statusData;
             const section = document.getElementById("my-bwf-section");
             const list = document.getElementById("my-bwf-list");
 
@@ -513,7 +525,7 @@
             list.innerHTML = `<p style="color:#666;">Söker på Badminton Sweden… / Checking Badminton Sweden…</p>`;
 
             try {
-                const res = await fetch("/api/my-bwf-tournaments");
+                const res = await fetch("/api/my-bwf-tournaments" + (forceRefresh ? "?refresh=1" : ""));
                 const data = await res.json();
                 const tournaments = (data && data.tournaments) || [];
 

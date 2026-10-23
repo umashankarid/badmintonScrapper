@@ -8,6 +8,21 @@
 
 ## [Unreleased]
 
+### Fixed - "My Tournaments" could miss a newly-registered tournament (stale cache) + logout leftovers
+- **Stale cache**: the "Registered on Badminton Sweden" list is cached per player to avoid
+  re-scraping on every page load. A player (e.g. Aadvika Umashankar) who was entered in a new
+  tournament (Fyris Open) after the cache was populated kept seeing the old list until the TTL
+  expired. The backend scraper was verified correct (finds all 3). Fixes:
+  - Reduced the cache TTL from 30 → 10 minutes (`_MY_BWF_CACHE_TTL`).
+  - Added a "🔄 Uppdatera / Refresh" button to the section that calls the endpoint with `?refresh=1`
+    to force a fresh scrape, bypassing the cache.
+- **Logout leftovers** (`templates/index.html`): after logout the "Registered on Badminton Sweden"
+  cards (and the payments view) could linger on the page. `checkBwfStatus()`'s logged-out branch now
+  explicitly hides `#my-bwf-section` and `#payments-view` and clears `#tournaments` / `#my-bwf-list`
+  so nothing stale remains. (Previously it called `showPlayerView("tournaments")`, which actually
+  re-showed the BWF section.)
+- Template/JS + a one-line backend constant; no logic affecting tests. Tests: Ran 35 tests - OK.
+
 ### Fixed - Empty Singles/Doubles dropdowns for tournaments using English event codes
 - **Bug**: On the registration page for "Swedish Youth Games 2026 U13-15" (and any tournament that
   labels events in English), the Singles and Doubles dropdowns were empty. Root cause: the event

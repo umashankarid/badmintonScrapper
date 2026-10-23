@@ -2738,7 +2738,7 @@ def current_tournaments():
 
 # Simple in-process cache: {normalized_player_name: (expiry_epoch, result_list)}
 _MY_BWF_CACHE = {}
-_MY_BWF_CACHE_TTL = 1800  # 30 minutes
+_MY_BWF_CACHE_TTL = 600  # 10 minutes
 
 
 def _bwf_session():
