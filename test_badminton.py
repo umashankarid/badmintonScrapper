@@ -980,5 +980,106 @@ class TestPlayerPayments(unittest.TestCase):
         self.assertEqual(after["id"], pid)   # same row, not re-inserted
 
 
+class TestBwfTournamentPagination(unittest.TestCase):
+    """Test that available-tournament fetch follows 'Visa fler' pagination.
+
+    Regression: the admin Add/Remove-tournaments fetch only POSTed Page=1 to
+    Badminton Sweden's DoSearch and parsed that single page, silently dropping
+    every tournament behind the 'Visa fler' (Show more) button. The DoSearch
+    Page field is cumulative, so the paginator must keep requesting higher Page
+    values until the unique result count stops growing.
+    """
+
+    def _item(self, tid, name):
+        return (
+            f'<li class="list__item">'
+            f'<a class="media__link" href="/tournament/?id={tid}">{name}</a>'
+            f'<div class="media__subheading"><span class="nav-link__value">Ort</span></div>'
+            f'<time datetime="2026-12-01T00:00"></time>'
+            f'<time datetime="2026-12-02T00:00"></time>'
+            f'</li>'
+        )
+
+    def _page_html(self, n):
+        """Cumulative page: Page=n contains items 1..(n*2), capped at 5 items."""
+        total = min(n * 2, 5)
+        items = "".join(self._item(f"AAAA{i}", f"Tournament {i}") for i in range(1, total + 1))
+        return f'<ul class="list">{items}</ul>'
+
+    def test_paginator_aggregates_all_pages(self):
+        """Helper must keep paging until results plateau, collecting all unique rows."""
+        import app
+
+        captured_pages = []
+
+        class FakeResp:
+            def __init__(self, text):
+                self.text = text
+
+        fake_sess = MagicMock()
+
+        def fake_post(url, data=None, headers=None, timeout=None):
+            page = int(data["Page"])
+            captured_pages.append(page)
+            return FakeResp(self._page_html(page))
+
+        fake_sess.post.side_effect = fake_post
+
+        result = app._fetch_all_bwf_tournament_listings(fake_sess, {"Q": ""})
+
+        # 5 unique tournaments total — far more than the single first page (2).
+        self.assertEqual(len(result), 5)
+        names = sorted(t["name"] for t in result)
+        self.assertEqual(names, [f"Tournament {i}" for i in range(1, 6)])
+
+        # It must have requested more than one page (i.e. clicked 'Visa fler').
+        self.assertGreaterEqual(max(captured_pages), 3)
+        # Pages requested in ascending order starting at 1.
+        self.assertEqual(captured_pages[0], 1)
+
+    def test_paginator_dedupes_cumulative_pages(self):
+        """Cumulative pages repeat earlier rows; the result must not duplicate them."""
+        import app
+
+        class FakeResp:
+            def __init__(self, text):
+                self.text = text
+
+        fake_sess = MagicMock()
+        fake_sess.post.side_effect = lambda url, data=None, headers=None, timeout=None: \
+            FakeResp(self._page_html(int(data["Page"])))
+
+        result = app._fetch_all_bwf_tournament_listings(fake_sess, {"Q": ""})
+        urls = [t["url"] for t in result]
+        self.assertEqual(len(urls), len(set(urls)), "duplicate tournaments across pages")
+
+    def test_paginator_respects_max_pages_cap(self):
+        """A site that never plateaus must still stop at the safety cap."""
+        import app
+
+        call_count = {"n": 0}
+
+        class FakeResp:
+            def __init__(self, text):
+                self.text = text
+
+        def fake_post(url, data=None, headers=None, timeout=None):
+            # Always return a brand-new unique item so count never plateaus.
+            call_count["n"] += 1
+            i = call_count["n"]
+            html = (
+                f'<li class="list__item">'
+                f'<a class="media__link" href="/tournament/?id=ID{i}">T{i}</a></li>'
+            )
+            return FakeResp(html)
+
+        fake_sess = MagicMock()
+        fake_sess.post.side_effect = fake_post
+
+        result = app._fetch_all_bwf_tournament_listings(fake_sess, {"Q": ""}, max_pages=4)
+        self.assertEqual(call_count["n"], 4)
+        self.assertEqual(len(result), 4)
+
+
 if __name__ == '__main__':
     unittest.main()

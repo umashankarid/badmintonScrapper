@@ -2236,6 +2236,88 @@ def _classify_bwf_events(events_soup):
     return categories
 
 
+def _parse_bwf_tournament_listing(html):
+    """Parse the Badminton Sweden search-result HTML into tournament dicts.
+
+    Returns a list of {name, url, location, date_start, date_end}. Each
+    <li class="list__item"> is one tournament. Shared by the paginator so the
+    parsing lives in exactly one place.
+    """
+    import re
+    soup = BeautifulSoup(html, "html.parser")
+    results = []
+    for item in soup.select("li.list__item"):
+        link = item.select_one("a.media__link")
+        if not link:
+            continue
+        name = link.get_text(strip=True)
+        href = link.get("href", "")
+        location_el = item.select_one(".media__subheading .nav-link__value")
+        location = location_el.get_text(strip=True) if location_el else ""
+        time_els = item.select("time")
+        date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
+        date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
+        tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
+        tournament_url = (
+            f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}"
+            if tid_match else ""
+        )
+        results.append({
+            "name": name,
+            "url": tournament_url,
+            "location": location,
+            "date_start": date_start,
+            "date_end": date_end,
+        })
+    return results
+
+
+def _fetch_all_bwf_tournament_listings(sess, form_data, max_pages=50):
+    """Follow the "Visa fler" (Show more) pagination and return ALL tournaments.
+
+    Badminton Sweden's /find/tournament/DoSearch is cumulative in its ``Page``
+    form field: ``Page=N`` returns the first N pages of results (clicking
+    "Visa fler" in the UI just increments it). We keep requesting higher ``Page``
+    values until the returned listing stops growing (all results loaded) or we
+    hit ``max_pages`` as a safety cap. Previously only ``Page=1`` was fetched,
+    so most tournaments were silently dropped.
+
+    De-duplicates by tournament url (falling back to name) because each page is
+    a superset of the previous one.
+    """
+    aggregated = {}
+    prev_count = -1
+    page = 1
+    while page <= max_pages:
+        data = dict(form_data)
+        data["Page"] = str(page)
+        resp = sess.post(
+            "https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
+            data=data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=10,
+        )
+        parsed = _parse_bwf_tournament_listing(resp.text)
+        for t in parsed:
+            key = t.get("url") or t.get("name")
+            if key:
+                aggregated[key] = t
+
+        logger.debug(f"🔄 Visa fler page={page}: {len(parsed)} rows, {len(aggregated)} unique so far")
+
+        # The listing is cumulative; once the unique total stops growing we have
+        # loaded everything that "Visa fler" would ever reveal.
+        if len(aggregated) == prev_count:
+            break
+        prev_count = len(aggregated)
+        page += 1
+    else:
+        logger.warning(f"⚠️  Hit max_pages={max_pages} while paginating BWF tournaments")
+
+    logger.info(f"✅ Fetched {len(aggregated)} tournaments across {page} page(s) via Visa fler pagination")
+    return list(aggregated.values())
+
+
 @app.route("/api/bwf-tournaments-all", methods=["GET"])
 def get_all_bwf_tournaments():
     """Get ALL tournaments from Badminton Sweden and store in tournaments.db"""
@@ -2313,35 +2395,10 @@ def get_all_bwf_tournaments():
                     form_data[name] = value
         form_data["TournamentExtendedFilter.StatusFilterID"] = "2"
 
-        resp = s.post("https://badmintonsweden.tournamentsoftware.com/find/tournament/DoSearch",
-            data=form_data,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        tournaments = []
-        import re
-        for item in soup.select("li.list__item"):
-            link = item.select_one("a.media__link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            href = link.get("href", "")
-            location_el = item.select_one(".media__subheading .nav-link__value")
-            location = location_el.get_text(strip=True) if location_el else ""
-            time_els = item.select("time")
-            date_start = time_els[0].get("datetime", "")[:10] if time_els else ""
-            date_end = time_els[1].get("datetime", "")[:10] if len(time_els) > 1 else ""
-            tid_match = re.search(r'id=([A-Fa-f0-9-]+)', href)
-            tournament_url = f"https://badmintonsweden.tournamentsoftware.com/tournament/{tid_match.group(1)}" if tid_match else ""
-
-            tournaments.append({
-                "name": name,
-                "url": tournament_url,
-                "location": location,
-                "date_start": date_start,
-                "date_end": date_end
-            })
+        # Follow the "Visa fler" (Show more) pagination so we collect EVERY
+        # available tournament, not just the first page. See
+        # _fetch_all_bwf_tournament_listings for the cumulative-Page mechanism.
+        tournaments = _fetch_all_bwf_tournament_listings(s, form_data)
 
         logger.info(f"Found {len(tournaments)} tournaments from Badminton Sweden")
         

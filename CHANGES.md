@@ -8,6 +8,34 @@
 
 ## [Unreleased]
 
+### Fixed - Admin "Add/Remove tournaments" only fetched the first page of available tournaments
+- **Bug**: The admin "Add/Remove tournaments" list (`/api/bwf-tournaments-all`, backing
+  `templates/add-remove-tournaments.html`) only showed the tournaments visible on the first
+  load from Badminton Sweden — roughly the first page (~20). The site's results page has a
+  "Visa fler" (Show more) button (`#elem_loadmore`) that loads the rest, and the backend never
+  followed it, so most available tournaments were silently missing from the admin list.
+- **Root cause** (`app.py`, `get_all_bwf_tournaments()`): the code POSTed to
+  `/find/tournament/DoSearch` exactly once with the default form (`Page=1`) and parsed that
+  single response. Badminton Sweden's `Page` form field is *cumulative* — `Page=N` returns the
+  first N pages of results, and clicking "Visa fler" just increments it — so stopping at `Page=1`
+  capped the list.
+- **Fix** (`app.py`): added two module-level helpers in the Tournament CRUD section:
+  - `_parse_bwf_tournament_listing(html)` — parses `<li class="list__item">` rows into
+    `{name, url, location, date_start, date_end}` (extracted from the old inline loop; single
+    source of truth for the parsing).
+  - `_fetch_all_bwf_tournament_listings(sess, form_data, max_pages=50)` — follows the "Visa fler"
+    pagination by POSTing increasing `Page` values until the unique result count stops growing
+    (all loaded) or a `max_pages` safety cap is hit, de-duplicating by tournament url. Logs each
+    page at DEBUG and the final total at INFO (✅), and WARNs if the cap is reached.
+  `get_all_bwf_tournaments()` now calls the paginator instead of the one-shot POST.
+  Before: ~20 tournaments (first page only). After: all available tournaments
+  (verified live: 29 across 3 pages, auto-stopping at the plateau).
+- **Tests** (`test_badminton.py`, `TestBwfTournamentPagination`, 3 tests): aggregation across
+  cumulative pages (asserts all unique rows collected, not just page 1, and that more than one
+  page was requested), de-duplication of repeated rows, and the `max_pages` safety cap. Confirmed
+  the aggregation/cap tests FAIL against a single-page (old) implementation and PASS against the
+  fix (TDD). Tests: Ran 38 tests - OK.
+
 ### Fixed - "My Tournaments" could miss a newly-registered tournament (stale cache) + logout leftovers
 - **Stale cache**: the "Registered on Badminton Sweden" list is cached per player to avoid
   re-scraping on every page load. A player (e.g. Aadvika Umashankar) who was entered in a new
