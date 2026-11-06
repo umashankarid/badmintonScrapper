@@ -2131,49 +2131,95 @@ def save_bwf_tournament_visibility():
     
     data = request.json
     selected_tournaments = data.get("tournaments", [])  # Array of tournament objects with URLs
-    
-    logger.info(f"Received request to save {len(selected_tournaments)} tournaments")
-    
+
+    logger.info(f"💾 save-visibility: received {len(selected_tournaments)} tournaments to select")
+    for t in selected_tournaments:
+        logger.info(f"   • incoming: name={t.get('name')!r} url={t.get('url')!r}")
+
     conn = sqlite3.connect(TOURNAMENTS_DB)
     cur = conn.cursor()
-    
-    # Get URLs of selected tournaments
-    selected_urls = {t.get("url") for t in selected_tournaments}
-    
-    # Set selected_for_view=1 for selected tournaments
+
+    # Snapshot what URLs actually exist in the DB so we can detect mismatches.
+    cur.execute("SELECT tournament_url, tournament_name FROM tournaments")
+    db_rows = cur.fetchall()
+    db_urls = {r[0] for r in db_rows}
+    db_name_to_url = {r[1]: r[0] for r in db_rows}
+    logger.info(f"💾 save-visibility: {len(db_urls)} tournaments currently in DB")
+
+    # Get URLs of selected tournaments (resolve by url, fall back to name).
+    selected_urls = set()
+    matched = 0
+    unmatched = []
     for t in selected_tournaments:
-        try:
-            cur.execute("""
-                UPDATE tournaments 
-                SET selected_for_view = 1, last_updated = CURRENT_TIMESTAMP
-                WHERE tournament_url = ?
-            """, (t.get("url"),))
-            logger.debug(f"Marked as selected: {t.get('name')}")
-        except Exception as e:
-            logger.error(f"Error updating tournament {t.get('url')}: {e}")
-    
+        url = t.get("url")
+        name = t.get("name")
+        resolved = None
+        if url and url in db_urls:
+            resolved = url
+        elif name and name in db_name_to_url:
+            # URL drifted (e.g. re-fetch stored a different form) — match by name.
+            resolved = db_name_to_url[name]
+            logger.warning(f"⚠️  save-visibility: url mismatch for {name!r}; "
+                           f"incoming url={url!r} resolved via name to {resolved!r}")
+        if not resolved:
+            unmatched.append((name, url))
+            logger.error(f"❌ save-visibility: NO DB match for name={name!r} url={url!r} "
+                         f"— this tournament will NOT be saved")
+            continue
+        selected_urls.add(resolved)
+        r = cur.execute(
+            "UPDATE tournaments SET selected_for_view = 1, last_updated = CURRENT_TIMESTAMP "
+            "WHERE tournament_url = ?",
+            (resolved,),
+        )
+        if r.rowcount:
+            matched += 1
+            logger.info(f"✅ save-visibility: marked selected ({r.rowcount} row): {name!r}")
+        else:
+            logger.error(f"❌ save-visibility: UPDATE affected 0 rows for {name!r} url={resolved!r}")
+
     # Set selected_for_view=0 for unselected tournaments
     try:
         placeholders = ','.join(['?' for _ in selected_urls])
         if placeholders:
-            cur.execute(f"""
-                UPDATE tournaments 
+            r = cur.execute(f"""
+                UPDATE tournaments
                 SET selected_for_view = 0, last_updated = CURRENT_TIMESTAMP
                 WHERE tournament_url NOT IN ({placeholders})
             """, list(selected_urls))
-            logger.debug(f"Marked as unselected: non-selected tournaments")
+            logger.info(f"💾 save-visibility: unselected {r.rowcount} other tournament(s)")
         else:
             # If nothing selected, unselect all
-            cur.execute("UPDATE tournaments SET selected_for_view = 0, last_updated = CURRENT_TIMESTAMP")
-            logger.debug("Unselected all tournaments")
+            r = cur.execute("UPDATE tournaments SET selected_for_view = 0, last_updated = CURRENT_TIMESTAMP")
+            logger.info(f"💾 save-visibility: nothing selected — unselected all ({r.rowcount})")
     except Exception as e:
-        logger.error(f"Error updating unselected tournaments: {e}")
-    
+        logger.error(f"❌ Error updating unselected tournaments: {e}")
+
     conn.commit()
+
+    # Verify what is now selected (and how many are future-dated, i.e. will show
+    # on the homepage via /api/open-tournaments date_start >= today).
+    from datetime import datetime as _dt
+    _today = _dt.now().strftime("%Y-%m-%d")
+    cur.execute("SELECT tournament_name, date_start, selected_for_view FROM tournaments WHERE selected_for_view = 1")
+    sel = cur.fetchall()
+    future_sel = [s for s in sel if s[1] and s[1] >= _today]
+    past_sel = [s for s in sel if not s[1] or s[1] < _today]
+    logger.info(f"💾 save-visibility: DB now has {len(sel)} selected; "
+                f"{len(future_sel)} future (homepage-visible), {len(past_sel)} past/empty-date (hidden)")
+    for s in past_sel:
+        logger.warning(f"⚠️  save-visibility: selected but HIDDEN on homepage (date_start={s[1]!r} < today "
+                       f"or empty): {s[0]!r}")
     conn.close()
-    
-    logger.info(f"Successfully saved {len(selected_tournaments)} tournaments")
-    return jsonify(success=True)
+
+    logger.info(f"✅ save-visibility: done — {matched} matched/saved, {len(unmatched)} unmatched")
+    return jsonify(
+        success=True,
+        saved=matched,
+        unmatched=[{"name": n, "url": u} for (n, u) in unmatched],
+        selected_total=len(sel),
+        homepage_visible=len(future_sel),
+    )
 
 
 def _classify_bwf_events(events_soup):
@@ -2653,12 +2699,23 @@ def open_tournaments():
             ORDER BY registration_closes ASC, tournament_name ASC
         """, (today,))
         rows = cur.fetchall()
+
+        # Diagnostic: how many selected rows exist regardless of date, vs how
+        # many passed the date_start >= today filter.
+        cur.execute("SELECT COUNT(*) FROM tournaments WHERE selected_for_view = 1")
+        total_selected = cur.fetchone()[0]
         conn.close()
-        
+        logger.info(f"🏠 open-tournaments: {total_selected} selected in DB, "
+                    f"{len(rows)} passed date_start >= {today}")
+        if total_selected and not rows:
+            logger.warning("⚠️  open-tournaments: tournaments ARE selected but ALL were "
+                           "filtered out by date_start >= today (they are past/empty-dated)")
+
         # Get current player's groups (if logged in and not admin)
         player_groups = None
         license_id = session.get("bwf_license_id")
         is_admin = session.get("admin", False)
+        logger.info(f"🏠 open-tournaments: viewer is_admin={is_admin} license_id={license_id!r}")
         
         if license_id and not is_admin:
             try:
@@ -2674,6 +2731,8 @@ def open_tournaments():
                 player_groups = None
         
         tournaments = []
+        if player_groups is not None and not is_admin:
+            logger.info(f"🏠 open-tournaments: applying group filter, player_groups={player_groups!r}")
         for row in rows:
             tournament_groups_json = row[11]
             tournament_groups = []
@@ -2682,18 +2741,20 @@ def open_tournaments():
                     tournament_groups = json.loads(tournament_groups_json)
                 except Exception:
                     pass
-            
-            # Group visibility filtering (komet players only, not admins)
-            if player_groups is not None and not is_admin:
-                if tournament_groups:
-                    # Tournament has groups - player must belong to at least one
-                    if not set(player_groups).intersection(set(tournament_groups)):
-                        continue
-                else:
-                    # Tournament has no groups - only visible to players with no groups
-                    if player_groups:
-                        continue
-            
+
+            # Group visibility filtering (komet players only, not admins).
+            # A tournament with NO groups assigned is ungated → visible to
+            # everyone. A tournament WITH groups is shown only to players who
+            # belong to at least one of those groups. (Previously an ungated
+            # tournament was hidden from any player who had groups, which made
+            # newly-selected tournaments invisible unless the admin also
+            # assigned matching groups — see CHANGES.md.)
+            if player_groups is not None and not is_admin and tournament_groups:
+                if not set(player_groups).intersection(set(tournament_groups)):
+                    logger.info(f"🏠 open-tournaments: hiding {row[1]!r} — player groups "
+                                f"{player_groups!r} ∩ tournament groups {tournament_groups!r} = ∅")
+                    continue
+
             tournaments.append({
                 "url": row[0],
                 "name": row[1],
@@ -2708,6 +2769,7 @@ def open_tournaments():
                 "admin_reg_end_date": row[10] or ""
             })
         
+        logger.info(f"🏠 open-tournaments: returning {len(tournaments)} tournament(s) to viewer")
         return jsonify(tournaments=tournaments)
     except Exception as e:
         logger.error(f"Error fetching open tournaments from database: {str(e)}")

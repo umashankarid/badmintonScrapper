@@ -1216,5 +1216,117 @@ class TestAddRemoveTournamentsFreshLoad(unittest.TestCase):
         self.assertIn("Current Tournament", home_names)
 
 
+class TestOpenTournamentsGroupVisibility(unittest.TestCase):
+    """Group-visibility rules for the homepage registration list (/api/open-tournaments).
+
+    Bug: a tournament with NO groups assigned was hidden from any player who
+    *had* groups (only players with zero groups saw it). So when an admin saved
+    a tournament without assigning groups, grouped Komet players never saw it
+    for registration. Correct rule: no groups = ungated = visible to everyone;
+    groups set = visible only to players in one of those groups.
+    """
+
+    def setUp(self):
+        import app
+        self.app = app
+        self.orig_t = app.TOURNAMENTS_DB
+        self.orig_p = app.PLAYERS_DB
+        self.test_dir = tempfile.mkdtemp()
+        app.TOURNAMENTS_DB = os.path.join(self.test_dir, "tournaments.db")
+        app.PLAYERS_DB = os.path.join(self.test_dir, "players.db")
+        app.init_tournaments_db()
+        app.init_players_db()
+        self.client = app.app.test_client()
+
+        from datetime import datetime, timedelta
+        self.future = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+
+    def tearDown(self):
+        self.app.TOURNAMENTS_DB = self.orig_t
+        self.app.PLAYERS_DB = self.orig_p
+        shutil.rmtree(self.test_dir)
+
+    def _add_tournament(self, name, groups_json, selected=1):
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+            "selected_for_view, tournament_groups, last_updated) VALUES (?,?,?,?,?, CURRENT_TIMESTAMP)",
+            (name, f"https://x/{name}", self.future, selected, groups_json),
+        )
+        conn.commit()
+        conn.close()
+
+    def _add_komet_player(self, license_id, groups):
+        conn = sqlite3.connect(self.app.PLAYERS_DB)
+        conn.execute(
+            "INSERT INTO kometPlayers (license_id, name, email, groups) VALUES (?,?,?,?)",
+            (license_id, "Test Player", "t@example.com", json.dumps(groups)),
+        )
+        conn.commit()
+        conn.close()
+
+    def _names(self, resp_json):
+        return {t["name"] for t in resp_json.get("tournaments", [])}
+
+    def test_no_groups_tournament_visible_to_grouped_player(self):
+        """A selected, future, NO-groups tournament must be visible to a player who has groups."""
+        self._add_tournament("Open To All", None)
+        self._add_komet_player("LIC1", ["SENIOR"])
+        with self.client.session_transaction() as s:
+            s["bwf_license_id"] = "LIC1"
+            s["admin"] = False
+        data = self.client.get("/api/open-tournaments").get_json()
+        self.assertIn("Open To All", self._names(data))
+
+    def test_grouped_tournament_hidden_from_non_member(self):
+        """A tournament restricted to SENIOR is hidden from a player not in SENIOR."""
+        self._add_tournament("Senior Only", json.dumps(["SENIOR"]))
+        self._add_komet_player("LIC2", ["JUNIOR"])
+        with self.client.session_transaction() as s:
+            s["bwf_license_id"] = "LIC2"
+            s["admin"] = False
+        data = self.client.get("/api/open-tournaments").get_json()
+        self.assertNotIn("Senior Only", self._names(data))
+
+    def test_grouped_tournament_visible_to_member(self):
+        """A SENIOR tournament is visible to a SENIOR player."""
+        self._add_tournament("Senior Only", json.dumps(["SENIOR"]))
+        self._add_komet_player("LIC3", ["SENIOR", "JUNIOR"])
+        with self.client.session_transaction() as s:
+            s["bwf_license_id"] = "LIC3"
+            s["admin"] = False
+        data = self.client.get("/api/open-tournaments").get_json()
+        self.assertIn("Senior Only", self._names(data))
+
+    def test_admin_sees_all_selected_future_tournaments(self):
+        """An admin viewer bypasses group filtering entirely."""
+        self._add_tournament("Open To All", None)
+        self._add_tournament("Senior Only", json.dumps(["SENIOR"]))
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        data = self.client.get("/api/open-tournaments").get_json()
+        names = self._names(data)
+        self.assertIn("Open To All", names)
+        self.assertIn("Senior Only", names)
+
+    def test_save_reports_unmatched_and_counts(self):
+        """save-visibility returns saved/unmatched/homepage_visible for diagnosibility."""
+        self._add_tournament("Real One", None, selected=0)
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        resp = self.client.post(
+            "/api/bwf-tournament-visibility/save",
+            json={"tournaments": [
+                {"url": "https://x/Real One", "name": "Real One"},
+                {"url": "https://x/Ghost", "name": "Ghost Tournament"},  # not in DB
+            ]},
+        ).get_json()
+        self.assertTrue(resp["success"])
+        self.assertEqual(resp["saved"], 1)
+        self.assertEqual(len(resp["unmatched"]), 1)
+        self.assertEqual(resp["unmatched"][0]["name"], "Ghost Tournament")
+        self.assertEqual(resp["homepage_visible"], 1)
+
+
 if __name__ == '__main__':
     unittest.main()

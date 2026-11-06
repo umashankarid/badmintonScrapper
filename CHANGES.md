@@ -8,6 +8,34 @@
 
 ## [Unreleased]
 
+### Fixed - Ungated tournaments were hidden from grouped players + added save/visibility diagnostics
+- **Bug**: After an admin saved a selection, grouped Komet players still didn't see the tournament
+  on the homepage registration list. Root cause (`app.py`, `open_tournaments` / `/api/open-tournaments`):
+  the group-visibility rule hid a tournament that had **no groups assigned** from any player who
+  *had* groups — `else: if player_groups: continue` (only players with zero groups saw ungated
+  tournaments). So unless the admin assigned matching `tournament_groups`, grouped players never saw
+  newly-selected tournaments.
+- **Fix**: an ungated tournament (no `tournament_groups`) is now visible to **everyone**; a gated
+  tournament is shown only to players in one of its groups (intersection). Admins continue to bypass
+  group filtering entirely. Verified the old rule returned "hidden" and the new rule "visible" for a
+  no-groups tournament viewed by a grouped player.
+- **Diagnostics added** (requested after an admin reported "popup says saved but I don't see it"):
+  - `save_bwf_tournament_visibility` (`/api/bwf-tournament-visibility/save`) now logs each incoming
+    tournament, how many rows each UPDATE actually affected (`rowcount`), resolves selections by URL
+    with a **name fallback** when the stored URL drifted, logs any tournament with NO DB match
+    (`❌ NO DB match … will NOT be saved`), and logs how many selected rows are future-dated
+    (homepage-visible) vs past/empty-date (hidden). The JSON response now returns
+    `saved`, `unmatched`, `selected_total`, and `homepage_visible` so the failure is visible to the
+    caller instead of a blanket `success=true`.
+  - `open_tournaments` now logs total selected vs how many passed `date_start >= today`, the viewer's
+    admin/license status and groups, each group-filter drop, and the final returned count — with an
+    explicit warning when rows ARE selected but all were filtered out by the date rule.
+- **Tests** (`test_badminton.py`, `TestOpenTournamentsGroupVisibility`, 5 tests): no-groups
+  tournament visible to a grouped player (regression for this bug), gated tournament hidden from a
+  non-member and visible to a member, admin sees all selected future tournaments, and
+  save-visibility reports `saved`/`unmatched`/`homepage_visible` (including an unmatched "ghost").
+  Tests: Ran 46 tests - OK.
+
 ### Fixed - Add/Remove tab served a stale/partial tournament list after any save; selections didn't reach the homepage
 - **Bug 1**: Opening the admin "Add/Remove tournaments" tab normally showed an old/partial
   list — the full set only appeared after a hard (force) refresh from Badminton Sweden.
