@@ -8,6 +8,32 @@
 
 ## [Unreleased]
 
+### Fixed - Add/Remove tab served a stale/partial tournament list after any save; selections didn't reach the homepage
+- **Bug 1**: Opening the admin "Add/Remove tournaments" tab normally showed an old/partial
+  list — the full set only appeared after a hard (force) refresh from Badminton Sweden.
+- **Bug 2**: After selecting a tournament and "Save selected tournaments", it did not appear on
+  the homepage registration page.
+- **Shared root cause** (`app.py`, `get_all_bwf_tournaments()`): the endpoint short-circuited to a
+  "fetched today" cache keyed on `last_updated LIKE '<today>%'`. But `save_bwf_tournament_visibility()`
+  sets `last_updated = CURRENT_TIMESTAMP` on every save — so immediately after saving, the cache
+  condition was satisfied and the next *non-force* tab load returned the stale/partial DB rows
+  instead of re-fetching (Bug 1). A partial pre-pagination fetch dated today poisoned it the same
+  way. Because admins were then selecting from that stale render, the saved rows could be
+  old/past tournaments that the homepage (`/api/open-tournaments`, filtered `selected_for_view=1
+  AND date_start >= today`) correctly hid — so current selections never surfaced (Bug 2). The
+  save→homepage plumbing itself was verified correct; the fault was entirely the stale data.
+- **Fix** (`app.py`): removed the broken `last_updated`-based cache shortcut so every Add/Remove
+  load does the full paginated fresh fetch (which already preserves `selected_for_view` and upserts
+  into `tournaments.db`). The fetch is cheap (one paginated search + parallel detail fetches). The
+  `force` query param is kept for UI backward-compat but no longer changes behaviour. With the list
+  always fresh and complete, saved current tournaments appear on the homepage.
+  Verified live end-to-end: a DB pre-seeded with today-stamped stale rows still returned the full
+  fresh set (30 tournaments, `cached` absent, zero stale rows served).
+- **Tests** (`test_badminton.py`, `TestAddRemoveTournamentsFreshLoad`, 3 tests): non-force load must
+  not serve today-stamped stale rows (regression for Bug 1 — confirmed FAILS before the fix with
+  `cached == True`), `selected_for_view` is preserved across a fresh load, and saving a current
+  tournament makes it appear on `/api/open-tournaments` (Bug 2). Tests: Ran 41 tests - OK.
+
 ### Fixed - Admin "Add/Remove tournaments" only fetched the first page of available tournaments
 - **Bug**: The admin "Add/Remove tournaments" list (`/api/bwf-tournaments-all`, backing
   `templates/add-remove-tournaments.html`) only showed the tournaments visible on the first

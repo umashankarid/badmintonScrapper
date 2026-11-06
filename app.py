@@ -2325,51 +2325,22 @@ def get_all_bwf_tournaments():
         return jsonify(success=False, error="Unauthorized"), 401
     
     force_refresh = request.args.get("force", "false") == "true"
-    
+
     try:
         from datetime import datetime, timedelta
-        
-        # CHECK CACHE: If already fetched today, return from DB (unless force refresh)
-        if not force_refresh:
-            conn_cache = sqlite3.connect(TOURNAMENTS_DB)
-            cur_cache = conn_cache.cursor()
-            today = datetime.now().strftime("%Y-%m-%d")
-            cur_cache.execute("SELECT COUNT(*) FROM tournaments WHERE last_updated LIKE ?", (f"{today}%",))
-            fetched_today = cur_cache.fetchone()[0]
-            
-            if fetched_today > 0:
-                # Already fetched today - return cached data
-                cur_cache.execute("SELECT tournament_url, tournament_name, location, date_start, date_end, selected_for_view, registration_closes, tournament_groups, categories, enable_accommodation_transport FROM tournaments ORDER BY date_start")
-                tournaments_cached = []
-                for row in cur_cache.fetchall():
-                    tg = []
-                    try:
-                        tg = json.loads(row[7]) if row[7] else []
-                    except Exception:
-                        pass
-                    cats = {}
-                    try:
-                        cats = json.loads(row[8]) if row[8] else {}
-                    except Exception:
-                        pass
-                    tournaments_cached.append({
-                        "url": row[0],
-                        "name": row[1],
-                        "location": row[2],
-                        "date_start": row[3],
-                        "date_end": row[4],
-                        "selected_for_view": row[5],
-                        "registration_closes": row[6] or "",
-                        "admin_reg_end_date": "",
-                        "tournament_groups": tg,
-                        "categories": cats,
-                        "enable_accommodation_transport": bool(row[9]) if len(row) > 9 and row[9] else False
-                    })
-                conn_cache.close()
-                logger.info(f"✅ Returning {len(tournaments_cached)} cached tournaments (already fetched today)")
-                return jsonify(success=True, tournaments=tournaments_cached, cached=True)
-            conn_cache.close()
-        
+
+        # NOTE: We deliberately do NOT short-circuit to a "fetched today" cache.
+        # The old cache keyed on `last_updated LIKE '<today>%'`, but saving a
+        # selection (save_bwf_tournament_visibility) bumps last_updated to
+        # CURRENT_TIMESTAMP — so after any save the normal tab load returned the
+        # stale/partial DB rows and the full list only showed on a hard refresh
+        # (Bug 1). A partial pre-pagination fetch dated today poisoned it the same
+        # way. The fresh fetch below is cheap (one paginated search + parallel
+        # detail fetches) and preserves selected_for_view, so we always do it.
+        # `force_refresh` is retained for backward-compat with the UI's refresh
+        # button but no longer changes behaviour.
+        _ = force_refresh
+
         logger.info("🔄 Fetching fresh tournament data from Badminton Sweden...")
         
         s = ext_requests.Session()

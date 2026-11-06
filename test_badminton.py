@@ -1081,5 +1081,140 @@ class TestBwfTournamentPagination(unittest.TestCase):
         self.assertEqual(len(result), 4)
 
 
+class TestAddRemoveTournamentsFreshLoad(unittest.TestCase):
+    """Regression tests for the admin Add/Remove-tournaments list.
+
+    Bug 1: the endpoint used a 'fetched today' cache keyed on last_updated. But
+    saving a selection bumps last_updated=CURRENT_TIMESTAMP, so after any save
+    the normal (non-force) tab load short-circuited to the stale/partial DB rows
+    — the full list only appeared on a hard (force) refresh.
+
+    Bug 2: because admins were selecting from that stale render, saved rows could
+    be old/past tournaments that the homepage (date_start >= today) then hid.
+    Fixing Bug 1 — always fetch fresh — makes current selections surface.
+    """
+
+    def setUp(self):
+        import app
+        self.app = app
+        self.orig_db = app.TOURNAMENTS_DB
+        self.test_dir = tempfile.mkdtemp()
+        app.TOURNAMENTS_DB = os.path.join(self.test_dir, "tournaments.db")
+        app.init_tournaments_db()
+        self.client = app.app.test_client()
+
+    def tearDown(self):
+        self.app.TOURNAMENTS_DB = self.orig_db
+        shutil.rmtree(self.test_dir)
+
+    def _seed_today_stamped_rows(self, n, selected_url=None):
+        """Insert n rows all stamped with today's last_updated (post-save state)."""
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        for i in range(n):
+            url = f"https://badmintonsweden.tournamentsoftware.com/tournament/OLD{i}"
+            conn.execute(
+                "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+                "selected_for_view, last_updated) VALUES (?,?,?,?, CURRENT_TIMESTAMP)",
+                (f"Old Tournament {i}", url, "2020-01-01", 1 if url == selected_url else 0),
+            )
+        conn.commit()
+        conn.close()
+
+    def _fresh_listing(self, n):
+        """A fresh fetched listing (what the paginator would return now)."""
+        return [
+            {
+                "name": f"Fresh Tournament {i}",
+                "url": f"https://badmintonsweden.tournamentsoftware.com/tournament/NEW{i}",
+                "location": "Stockholm",
+                "date_start": "2099-12-01",
+                "date_end": "2099-12-02",
+            }
+            for i in range(n)
+        ]
+
+    def _fake_network(self):
+        """Patch ext_requests.Session so cookiewall + detail fetches hit no network."""
+        fake_sess = MagicMock()
+        fake_sess.get.return_value = _FakeResp("<html><form id='form_globalsearch'></form></html>")
+        fake_sess.post.return_value = _FakeResp("")
+        return patch.object(self.app.ext_requests, "Session", return_value=fake_sess)
+
+    def test_normal_load_fetches_fresh_not_stale_cache(self):
+        """Bug 1: non-force load must NOT serve the today-stamped stale rows."""
+        self._seed_today_stamped_rows(20)  # simulate post-save today-stamped partial DB
+
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+
+        fresh = self._fresh_listing(30)
+        with self._fake_network(), \
+             patch.object(self.app, "_fetch_all_bwf_tournament_listings", return_value=fresh):
+            resp = self.client.get("/api/bwf-tournaments-all")
+            data = resp.get_json()
+
+        self.assertTrue(data["success"])
+        # Must be a FRESH fetch, not the stale cache.
+        self.assertNotEqual(data.get("cached"), True)
+        names = {t["name"] for t in data["tournaments"]}
+        self.assertTrue(any(n.startswith("Fresh Tournament") for n in names),
+                        "expected freshly-fetched tournaments")
+        self.assertFalse(any(n.startswith("Old Tournament") for n in names),
+                         "stale today-stamped rows must not be the only/served data")
+
+    def test_selected_for_view_preserved_across_fresh_load(self):
+        """A previously-selected tournament keeps selected_for_view after a fresh load."""
+        fresh = self._fresh_listing(3)
+        keep_url = fresh[1]["url"]
+        # Pre-mark that URL as selected in the DB.
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+            "selected_for_view, last_updated) VALUES (?,?,?,1, CURRENT_TIMESTAMP)",
+            ("Fresh Tournament 1", keep_url, "2099-12-01"),
+        )
+        conn.commit()
+        conn.close()
+
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+
+        with self._fake_network(), \
+             patch.object(self.app, "_fetch_all_bwf_tournament_listings", return_value=fresh):
+            data = self.client.get("/api/bwf-tournaments-all").get_json()
+
+        by_url = {t["url"]: t for t in data["tournaments"]}
+        self.assertEqual(by_url[keep_url]["selected_for_view"], 1)
+
+    def test_saved_selection_appears_on_homepage(self):
+        """Bug 2: saving a current tournament makes it show on /api/open-tournaments."""
+        from datetime import datetime, timedelta
+        future = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        url = "https://badmintonsweden.tournamentsoftware.com/tournament/CURRENT1"
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+            "selected_for_view, last_updated) VALUES (?,?,?,0, CURRENT_TIMESTAMP)",
+            ("Current Tournament", url, future),
+        )
+        conn.commit()
+        conn.close()
+
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+
+        # Save selection of the current tournament.
+        save = self.client.post(
+            "/api/bwf-tournament-visibility/save",
+            json={"tournaments": [{"url": url, "name": "Current Tournament"}]},
+        ).get_json()
+        self.assertTrue(save["success"])
+
+        # Homepage should now list it.
+        home = self.client.get("/api/open-tournaments").get_json()
+        home_names = {t.get("name") for t in home.get("tournaments", [])}
+        self.assertIn("Current Tournament", home_names)
+
+
 if __name__ == '__main__':
     unittest.main()
