@@ -8,6 +8,28 @@
 
 ## [Unreleased]
 
+### Fixed - A tournament could be selectable but unsaveable ("NO DB match") when its detail fetch failed
+- **Bug** (found via the new save-visibility logging): an admin selected 7 tournaments and saved;
+  6 saved but "Komet Smashen 2026" logged `❌ NO DB match … will NOT be saved`. The tournament was
+  rendered as a selectable checkbox yet had no row in `tournaments.db`.
+- **Root cause** (`app.py`, `get_all_bwf_tournaments()`): the endpoint returns the full search
+  *listing* (every tournament) as checkboxes, but the DB-write loop only persisted rows whose
+  **per-tournament detail fetch succeeded** — `if not result["success"]: continue`. The parallel
+  detail fetch (dates/categories) for Komet Smashen failed (it sits at the far edge of the 90-day
+  window, date_start 2026-12-19; detail fetches intermittently fail), so it was shown but never
+  stored. Saving it then matched nothing — correctly reported as unmatched, but the tournament was
+  silently unselectable. This was independent of admin-vs-player and the date filter.
+- **Fix**: the write loop now persists the base **listing row even when the detail fetch fails**
+  (name, url, location, date_start/date_end with empty detailed dates/categories), instead of
+  skipping it. For an existing row with a failed detail fetch it refreshes listing fields only and
+  does **not** clobber previously-good `categories` with empty. A later successful fetch fills in the
+  rest. The summary log now reports how many rows were persisted without details.
+- **Tests** (`test_badminton.py`, `TestAddRemoveTournamentsFreshLoad`): new
+  `test_listed_tournament_persisted_even_when_detail_fetch_fails` simulates a detail-fetch failure
+  for one of three listed tournaments and asserts (a) all three are returned as checkboxes, (b) all
+  three — including the failed one — exist in the DB, and (c) saving the failed one matches
+  (`saved=1`, no `unmatched`). Tests: Ran 47 tests - OK.
+
 ### Fixed - Ungated tournaments were hidden from grouped players + added save/visibility diagnostics
 - **Bug**: After an admin saved a selection, grouped Komet players still didn't see the tournament
   on the homepage registration list. Root cause (`app.py`, `open_tournaments` / `/api/open-tournaments`):

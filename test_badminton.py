@@ -1215,6 +1215,58 @@ class TestAddRemoveTournamentsFreshLoad(unittest.TestCase):
         home_names = {t.get("name") for t in home.get("tournaments", [])}
         self.assertIn("Current Tournament", home_names)
 
+    def test_listed_tournament_persisted_even_when_detail_fetch_fails(self):
+        """Regression: a tournament whose per-tournament DETAIL fetch fails must
+        still get a DB row (it's rendered as a selectable checkbox from the
+        listing), otherwise saving it silently drops it ('NO DB match')."""
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+
+        fresh = self._fresh_listing(3)
+        fail_url = fresh[1]["url"]  # simulate detail failure for the middle one
+
+        class FakeResp:
+            def __init__(self, text):
+                self.text = text
+
+        def session_factory():
+            sess = MagicMock()
+
+            def _get(url, *a, **k):
+                if url == fail_url:
+                    raise RuntimeError("simulated detail-fetch failure")
+                return FakeResp("<html><form id='form_globalsearch'></form></html>")
+
+            def _post(url, *a, **k):
+                return FakeResp("")
+
+            sess.get.side_effect = _get
+            sess.post.side_effect = _post
+            return sess
+
+        with patch.object(self.app.ext_requests, "Session", side_effect=session_factory), \
+             patch.object(self.app, "_fetch_all_bwf_tournament_listings", return_value=fresh):
+            resp = self.client.get("/api/bwf-tournaments-all").get_json()
+
+        # All three are returned as selectable checkboxes...
+        self.assertEqual(len(resp["tournaments"]), 3)
+
+        # ...and all three now exist in the DB (including the detail-failed one),
+        # so a subsequent save can match them.
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        db_urls = {r[0] for r in conn.execute("SELECT tournament_url FROM tournaments").fetchall()}
+        conn.close()
+        for t in fresh:
+            self.assertIn(t["url"], db_urls, f"{t['name']} missing from DB")
+
+        # And saving the detail-failed one actually matches (saved=1, no unmatched).
+        save = self.client.post(
+            "/api/bwf-tournament-visibility/save",
+            json={"tournaments": [{"url": fail_url, "name": "Fresh Tournament 1"}]},
+        ).get_json()
+        self.assertEqual(save["saved"], 1)
+        self.assertEqual(len(save["unmatched"]), 0)
+
 
 class TestOpenTournamentsGroupVisibility(unittest.TestCase):
     """Group-visibility rules for the homepage registration list (/api/open-tournaments).

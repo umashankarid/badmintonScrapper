@@ -2500,12 +2500,24 @@ def get_all_bwf_tournaments():
         logger.info(f"✅ Fetched details for {len(results)} tournaments")
         
         # Write results to DB sequentially (SQLite is single-writer)
+        detail_failed = 0
         for result in results:
-            if not result["success"]:
-                continue
             t = result["tournament"]
-            dates = result["dates"]
-            categories = result["categories"]
+            if not result["success"]:
+                # The per-tournament DETAIL fetch failed (network/parse). We must
+                # still persist the base listing row — otherwise the tournament is
+                # shown as a selectable checkbox (the response returns the full
+                # listing) but has no DB row, so saving it silently drops it
+                # ("NO DB match"). Insert/refresh with listing-only data and empty
+                # details; a later successful fetch fills the rest in.
+                detail_failed += 1
+                dates = {}
+                categories = {}
+                logger.warning(f"⚠️  detail fetch failed for {t.get('name')!r}; "
+                               f"persisting listing row without details")
+            else:
+                dates = result["dates"]
+                categories = result["categories"]
             
             try:
                 conn = sqlite3.connect(TOURNAMENTS_DB)
@@ -2514,19 +2526,30 @@ def get_all_bwf_tournaments():
                 existing = cur.fetchone()
                 
                 if existing:
-                    # Tournament exists - update all fields EXCEPT selected_for_view
-                    cur.execute("""
-                        UPDATE tournaments 
-                        SET tournament_url = ?, location = ?, date_start = ?, date_end = ?,
-                            registration_opens = ?, registration_closes = ?, cancellation_deadline = ?,
-                            competition_start = ?, competition_end = ?, categories = ?, last_updated = CURRENT_TIMESTAMP
-                        WHERE tournament_name = ?
-                    """, (
-                        t["url"], t["location"], t["date_start"], t["date_end"],
-                        dates.get("registration_opens", ""), dates.get("registration_closes", ""),
-                        dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
-                        dates.get("competition_end", ""), json.dumps(categories), t["name"]
-                    ))
+                    # Tournament exists - update all fields EXCEPT selected_for_view.
+                    # On a detail-failed row, don't clobber previously-good
+                    # categories with empty: only overwrite categories when we have
+                    # some (i.e. the detail fetch succeeded).
+                    if categories:
+                        cur.execute("""
+                            UPDATE tournaments 
+                            SET tournament_url = ?, location = ?, date_start = ?, date_end = ?,
+                                registration_opens = ?, registration_closes = ?, cancellation_deadline = ?,
+                                competition_start = ?, competition_end = ?, categories = ?, last_updated = CURRENT_TIMESTAMP
+                            WHERE tournament_name = ?
+                        """, (
+                            t["url"], t["location"], t["date_start"], t["date_end"],
+                            dates.get("registration_opens", ""), dates.get("registration_closes", ""),
+                            dates.get("cancellation_deadline", ""), dates.get("competition_start", ""),
+                            dates.get("competition_end", ""), json.dumps(categories), t["name"]
+                        ))
+                    else:
+                        cur.execute("""
+                            UPDATE tournaments 
+                            SET tournament_url = ?, location = ?, date_start = ?, date_end = ?,
+                                last_updated = CURRENT_TIMESTAMP
+                            WHERE tournament_name = ?
+                        """, (t["url"], t["location"], t["date_start"], t["date_end"], t["name"]))
                     updated_count += 1
                 else:
                     # New tournament - insert with selected_for_view = 0
@@ -2551,7 +2574,8 @@ def get_all_bwf_tournaments():
             except Exception as e:
                 logger.error(f"❌ Error processing tournament {t.get('name', 'Unknown')}: {e}")
         
-        logger.info(f"📊 Summary: Added {added_count}, Updated {updated_count} tournaments")
+        logger.info(f"📊 Summary: Added {added_count}, Updated {updated_count} tournaments "
+                    f"({detail_failed} persisted without details due to detail-fetch failure)")
         
         # STEP 3: Delete expired tournaments (where date_start < today - can't register after start)
         from datetime import datetime as dt
