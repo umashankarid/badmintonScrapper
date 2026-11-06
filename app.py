@@ -2222,6 +2222,75 @@ def save_bwf_tournament_visibility():
     )
 
 
+@app.route("/api/fix-incomplete-tournaments", methods=["POST"])
+def fix_incomplete_tournaments():
+    """Admin: remove 'incomplete' tournament rows — ones persisted from the
+    listing when their detail fetch failed, so they have no event categories
+    (empty singles+doubles+mixed). These show as selectable but have no
+    dropdowns on the registration page. Selected (selected_for_view=1) rows are
+    kept by default so an admin's active choices are never silently deleted.
+
+    Body (optional JSON): {"include_selected": true} to also remove incomplete
+    rows that are currently selected.
+    """
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+
+    include_selected = bool((request.json or {}).get("include_selected", False))
+    logger.info(f"🧹 fix-incomplete-tournaments: start (include_selected={include_selected})")
+
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT tournament_name, tournament_url, categories, selected_for_view FROM tournaments")
+        rows = cur.fetchall()
+
+        def _is_incomplete(categories_json):
+            try:
+                cats = json.loads(categories_json) if categories_json else {}
+            except Exception:
+                return True  # unparseable categories → incomplete
+            if not cats:
+                return True
+            levels = (cats.get("singles_levels") or []) + \
+                     (cats.get("doubles_levels") or []) + \
+                     (cats.get("mixed_levels") or [])
+            return len(levels) == 0
+
+        to_remove = []
+        kept_selected = 0
+        for name, url, cats_json, selected in rows:
+            if _is_incomplete(cats_json):
+                if selected and not include_selected:
+                    kept_selected += 1
+                    logger.info(f"🧹 keeping incomplete-but-SELECTED tournament {name!r} "
+                                f"(pass include_selected=true to remove)")
+                    continue
+                to_remove.append((name, url))
+
+        removed = 0
+        for name, url in to_remove:
+            cur.execute("DELETE FROM tournament_registrations WHERE tournament_name = ?", (name,))
+            r = cur.execute("DELETE FROM tournaments WHERE tournament_name = ?", (name,))
+            if r.rowcount:
+                removed += 1
+                logger.info(f"🧹 removed incomplete tournament: {name!r} (url={url!r})")
+        conn.commit()
+        conn.close()
+
+        logger.info(f"🧹 fix-incomplete-tournaments: done — removed {removed}, "
+                    f"kept {kept_selected} incomplete-but-selected")
+        return jsonify(
+            success=True,
+            removed=removed,
+            kept_selected=kept_selected,
+            removed_names=[n for (n, _u) in to_remove],
+        )
+    except Exception as e:
+        logger.error(f"❌ fix-incomplete-tournaments failed: {e}")
+        return jsonify(success=False, error=str(e)), 500
+
+
 def _classify_bwf_events(events_soup):
     """Classify a tournament's events into singles/doubles/mixed from its
     events.aspx page, handling BOTH naming schemes:
@@ -2433,17 +2502,43 @@ def get_all_bwf_tournaments():
         updated_count = 0
         
         def fetch_tournament_details(t):
-            """Fetch dates and categories for a single tournament (thread-safe)"""
+            """Fetch dates and categories for a single tournament (thread-safe).
+
+            Heavily instrumented: logs the exact outcome (status code, elapsed
+            time, body length, or the precise exception) per tournament so we can
+            see *why* detail fetches fail in production rather than guessing.
+            """
+            import time as _time
+            import re  # used below for the categories tid match; ensure it's in scope
+            name = t.get("name", "Unknown")
             try:
                 # Create per-thread session (sharing session across threads is unsafe)
                 ts = ext_requests.Session()
                 ts.headers.update({"User-Agent": "Mozilla/5.0"})
-                ts.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
-                    "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
-                }, allow_redirects=True, timeout=5)
-                
-                resp_detail = ts.get(t["url"], timeout=10)
+                cw_status = None
+                try:
+                    _t0 = _time.monotonic()
+                    cw = ts.post("https://badmintonsweden.tournamentsoftware.com/cookiewall/Save", data={
+                        "ReturnUrl": "/", "SettingsOpen": "false", "CookieWallCategoryPreferences": "1,2,3"
+                    }, allow_redirects=True, timeout=10)
+                    cw_status = cw.status_code
+                    logger.debug(f"🔬 [{name}] cookiewall {cw_status} in {_time.monotonic()-_t0:.2f}s")
+                except Exception as ce:
+                    logger.warning(f"🔬 [{name}] cookiewall FAILED: {type(ce).__name__}: {ce}")
+
+                _t1 = _time.monotonic()
+                resp_detail = ts.get(t["url"], timeout=15)
+                elapsed = _time.monotonic() - _t1
+                blen = len(resp_detail.text or "")
+                logger.info(f"🔬 [{name}] detail GET {resp_detail.status_code} "
+                            f"in {elapsed:.2f}s, {blen} bytes, cookiewall={cw_status} url={t['url']}")
+                if resp_detail.status_code != 200:
+                    logger.warning(f"🔬 [{name}] non-200 detail status {resp_detail.status_code}; "
+                                   f"first 200 chars: {resp_detail.text[:200]!r}")
+
                 soup_detail = BeautifulSoup(resp_detail.text, "html.parser")
+                _timeline_present = bool(soup_detail.select_one(".tournament-meta__timeline"))
+                logger.debug(f"🔬 [{name}] timeline_present={_timeline_present}")
                 
                 # Extract detailed dates
                 dates = {}
@@ -2478,15 +2573,25 @@ def get_all_bwf_tournaments():
                 if tid_match:
                     tid = tid_match.group(1)
                     try:
-                        events_resp = ts.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=10)
+                        _t2 = _time.monotonic()
+                        events_resp = ts.get(f"https://badmintonsweden.tournamentsoftware.com/sport/events.aspx?id={tid}", timeout=15)
+                        logger.debug(f"🔬 [{name}] events GET {events_resp.status_code} "
+                                     f"in {_time.monotonic()-_t2:.2f}s, {len(events_resp.text or '')} bytes")
                         events_soup = BeautifulSoup(events_resp.text, "html.parser")
                         categories = _classify_bwf_events(events_soup)
-                    except Exception:
-                        pass
-                
+                    except Exception as ee:
+                        logger.warning(f"🔬 [{name}] events/categories fetch FAILED: "
+                                       f"{type(ee).__name__}: {ee}")
+
+                logger.info(f"🔬 [{name}] ✅ detail OK — dates={list(dates.keys())} "
+                            f"singles={len(categories.get('singles_levels', []))} "
+                            f"doubles={len(categories.get('doubles_levels', []))} "
+                            f"mixed={len(categories.get('mixed_levels', []))}")
                 return {"tournament": t, "dates": dates, "categories": categories, "success": True}
             except Exception as e:
-                logger.debug(f"⚠️  Error fetching {t.get('name', 'Unknown')}: {e}")
+                import traceback as _tb
+                logger.warning(f"🔬 [{name}] ❌ detail fetch FAILED: {type(e).__name__}: {e}")
+                logger.debug(f"🔬 [{name}] trace: {_tb.format_exc()}")
                 return {"tournament": t, "dates": {}, "categories": {}, "success": False}
         
         # Fetch all tournament details in parallel (5 threads)

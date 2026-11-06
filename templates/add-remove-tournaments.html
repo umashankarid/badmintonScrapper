@@ -83,6 +83,7 @@
         <div style="margin-top:20px;display:flex;gap:10px;">
             <button id="save-btn" onclick="saveSelection()" style="background:#28a745;padding:12px 24px;font-size:1em;width:auto;">Save Selected Tournaments</button>
             <button onclick="deselectAll()" style="background:#666;padding:12px 24px;font-size:1em;width:auto;">Deselect All</button>
+            <button onclick="fixDb()" title="Remove tournaments that failed to load full details (no event dropdowns). Keeps your selected ones." style="background:#b71c1c;padding:12px 24px;font-size:1em;width:auto;">🧹 Fix DB (remove incomplete)</button>
         </div>
     </div>
 
@@ -237,6 +238,26 @@
 
         function deselectAll() {
             document.querySelectorAll(".bwf-tournament-checkbox").forEach(cb => cb.checked = false);
+        }
+
+        async function fixDb() {
+            if (!confirm("Remove tournaments that failed to load full details (no event dropdowns)?\n\nSelected tournaments are kept. This cannot be undone, but a Hard Refresh re-fetches everything.")) return;
+            try {
+                const res = await fetch("/api/fix-incomplete-tournaments", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({include_selected: false})
+                });
+                const data = await res.json();
+                if (!data.success) { alert("Fix DB failed: " + (data.error || "unknown")); return; }
+                let msg = `🧹 Removed ${data.removed} incomplete tournament(s).`;
+                if (data.kept_selected) msg += `\nKept ${data.kept_selected} incomplete-but-selected (deselect them first to remove).`;
+                if (data.removed_names && data.removed_names.length) msg += "\n\n" + data.removed_names.join("\n");
+                alert(msg);
+                loadTournaments(false);  // reload the list
+            } catch (e) {
+                alert("Fix DB error: " + e.message);
+            }
         }
 
         async function saveRegDate(input) {

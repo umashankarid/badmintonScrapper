@@ -8,6 +8,36 @@
 
 ## [Unreleased]
 
+### Added - Detail-fetch diagnostics + admin "Fix DB" button to remove incomplete tournaments
+- **Context**: After the persistence fix, production logs showed `30 persisted without details due
+  to detail-fetch failure` — i.e. EVERY per-tournament detail fetch (dates + event categories) was
+  failing on the server, even though it works fine from a dev machine. Tournaments are now
+  saveable, but without categories their registration-page dropdowns are empty. The user asked (a)
+  not to guess — add thorough logging to see the real failure — and (b) a "Fix DB" button to purge
+  incomplete entries.
+- **Diagnostics** (`app.py`, `fetch_tournament_details` inside `get_all_bwf_tournaments`): each
+  tournament now logs the detail GET status code, elapsed time, body length and cookiewall status
+  at INFO (`🔬 [name] detail GET 200 in 0.4s …`), the events/categories sub-fetch status, a success
+  line listing how many singles/doubles/mixed levels were parsed, and on failure the exact
+  exception type+message (previously swallowed into DEBUG) plus a DEBUG traceback. This is
+  intentionally verbose to pinpoint whether the production failures are timeouts, HTTP 429/403,
+  connection resets, or empty bodies — before deciding on a fix (no speculative retry/timeout
+  change was committed).
+- **Fix DB** (`app.py` `/api/fix-incomplete-tournaments`, admin-only, + red "🧹 Fix DB" button in
+  `templates/add-remove-tournaments.html`): removes tournament rows whose `categories` are empty
+  or unparseable (no singles+doubles+mixed levels) — the rows left behind when a detail fetch
+  failed. Selected (`selected_for_view=1`) rows are kept by default so active admin choices aren't
+  silently deleted; pass `include_selected=true` to remove those too. Also deletes the tournament's
+  registrations. Returns `removed`, `kept_selected`, `removed_names` and logs each removal.
+- **Tests** (`test_badminton.py`, `TestFixIncompleteTournaments`, 4 tests): admin required (401
+  otherwise), removes incomplete (empty + null categories) while keeping complete, keeps
+  incomplete-but-selected by default, and `include_selected=true` removes them. Tests: Ran 51 tests - OK.
+- **Latent bug caught by the new logging**: `fetch_tournament_details` used `re.search(...)` for the
+  categories tournament-id without `re` in its local scope — it only worked because the detail GET
+  was failing *before* that line in production. Once the realistic test mocks returned HTTP 200 the
+  success path ran and raised `NameError: name 're' is not defined`. Added `import re` inside the
+  function. This would otherwise have broken category extraction even when detail fetches succeed.
+
 ### Fixed - A tournament could be selectable but unsaveable ("NO DB match") when its detail fetch failed
 - **Bug** (found via the new save-visibility logging): an admin selected 7 tournaments and saved;
   6 saved but "Komet Smashen 2026" logged `❌ NO DB match … will NOT be saved`. The tournament was

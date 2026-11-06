@@ -508,8 +508,9 @@ _PLAYER_PAGE_HTML = """
 
 
 class _FakeResp:
-    def __init__(self, text):
+    def __init__(self, text, status_code=200):
         self.text = text
+        self.status_code = status_code
 
 
 # Page 2 of the find listing: repeats page-1 rows (BWF accumulates) and adds one
@@ -1013,8 +1014,9 @@ class TestBwfTournamentPagination(unittest.TestCase):
         captured_pages = []
 
         class FakeResp:
-            def __init__(self, text):
-                self.text = text
+                    def __init__(self, text):
+                        self.text = text
+                        self.status_code = 200
 
         fake_sess = MagicMock()
 
@@ -1042,8 +1044,9 @@ class TestBwfTournamentPagination(unittest.TestCase):
         import app
 
         class FakeResp:
-            def __init__(self, text):
-                self.text = text
+                    def __init__(self, text):
+                        self.text = text
+                        self.status_code = 200
 
         fake_sess = MagicMock()
         fake_sess.post.side_effect = lambda url, data=None, headers=None, timeout=None: \
@@ -1060,8 +1063,9 @@ class TestBwfTournamentPagination(unittest.TestCase):
         call_count = {"n": 0}
 
         class FakeResp:
-            def __init__(self, text):
-                self.text = text
+                    def __init__(self, text):
+                        self.text = text
+                        self.status_code = 200
 
         def fake_post(url, data=None, headers=None, timeout=None):
             # Always return a brand-new unique item so count never plateaus.
@@ -1226,8 +1230,9 @@ class TestAddRemoveTournamentsFreshLoad(unittest.TestCase):
         fail_url = fresh[1]["url"]  # simulate detail failure for the middle one
 
         class FakeResp:
-            def __init__(self, text):
-                self.text = text
+                    def __init__(self, text):
+                        self.text = text
+                        self.status_code = 200
 
         def session_factory():
             sess = MagicMock()
@@ -1378,6 +1383,80 @@ class TestOpenTournamentsGroupVisibility(unittest.TestCase):
         self.assertEqual(len(resp["unmatched"]), 1)
         self.assertEqual(resp["unmatched"][0]["name"], "Ghost Tournament")
         self.assertEqual(resp["homepage_visible"], 1)
+
+
+class TestFixIncompleteTournaments(unittest.TestCase):
+    """Tests for the admin 'Fix DB' endpoint that removes incomplete tournament
+    rows (persisted from the listing when their detail fetch failed → no event
+    categories)."""
+
+    def setUp(self):
+        import app
+        self.app = app
+        self.orig_t = app.TOURNAMENTS_DB
+        self.test_dir = tempfile.mkdtemp()
+        app.TOURNAMENTS_DB = os.path.join(self.test_dir, "tournaments.db")
+        app.init_tournaments_db()
+        self.client = app.app.test_client()
+
+    def tearDown(self):
+        self.app.TOURNAMENTS_DB = self.orig_t
+        shutil.rmtree(self.test_dir)
+
+    def _add(self, name, categories, selected=0):
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, date_start, "
+            "selected_for_view, categories, last_updated) VALUES (?,?,?,?,?, CURRENT_TIMESTAMP)",
+            (name, f"https://x/{name}", "2099-12-01", selected,
+             json.dumps(categories) if categories is not None else None),
+        )
+        conn.commit()
+        conn.close()
+
+    def _names(self):
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        n = {r[0] for r in conn.execute("SELECT tournament_name FROM tournaments").fetchall()}
+        conn.close()
+        return n
+
+    def test_requires_admin(self):
+        resp = self.client.post("/api/fix-incomplete-tournaments", json={})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_removes_incomplete_keeps_complete(self):
+        complete = {"singles_levels": ["HS A"], "doubles_levels": [], "mixed_levels": []}
+        self._add("Complete One", complete)
+        self._add("Incomplete Empty", {"singles_levels": [], "doubles_levels": [], "mixed_levels": []})
+        self._add("Incomplete Null", None)
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        resp = self.client.post("/api/fix-incomplete-tournaments", json={}).get_json()
+        self.assertTrue(resp["success"])
+        self.assertEqual(resp["removed"], 2)
+        names = self._names()
+        self.assertIn("Complete One", names)
+        self.assertNotIn("Incomplete Empty", names)
+        self.assertNotIn("Incomplete Null", names)
+
+    def test_keeps_incomplete_but_selected_by_default(self):
+        self._add("Incomplete Selected", None, selected=1)
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        resp = self.client.post("/api/fix-incomplete-tournaments", json={}).get_json()
+        self.assertEqual(resp["removed"], 0)
+        self.assertEqual(resp["kept_selected"], 1)
+        self.assertIn("Incomplete Selected", self._names())
+
+    def test_include_selected_removes_them(self):
+        self._add("Incomplete Selected", None, selected=1)
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        resp = self.client.post(
+            "/api/fix-incomplete-tournaments", json={"include_selected": True}
+        ).get_json()
+        self.assertEqual(resp["removed"], 1)
+        self.assertNotIn("Incomplete Selected", self._names())
 
 
 if __name__ == '__main__':
