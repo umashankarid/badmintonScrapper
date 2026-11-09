@@ -1459,5 +1459,79 @@ class TestFixIncompleteTournaments(unittest.TestCase):
         self.assertNotIn("Incomplete Selected", self._names())
 
 
+class TestResolveLicenseFromSearch(unittest.TestCase):
+    """Login license-resolution: a common surname must not prevent finding the
+    player's own license_id. Regression for 'license_id required' at registration
+    (e.g. 'Linda Yiying Ren Jonsson' — buried among 100 'Jonsson' results)."""
+
+    PROFILE = "/player-profile/ABC-123"
+
+    def _item(self, name, license_id, href):
+        return (
+            f'<li class="list__item">'
+            f'<a class="media__link" href="{href}">{name}</a>'
+            f'<span class="media__title-aside">({license_id})</span>'
+            f'<div class="media__subheading"><span class="nav-link__value">BMK Komet | X</span></div>'
+            f'</li>'
+        )
+
+    def _resp(self, items_html):
+        from test_badminton import _FakeResp
+        return _FakeResp(f'<ul>{items_html}</ul>')
+
+    def test_full_name_search_resolves_when_lastname_page1_misses(self):
+        import app
+
+        # Last-name 'Jonsson' page 1: 2 other Jonssons, NOT our player.
+        lastname_page1 = self._item("Anna Jonsson", "IID1", "/player-profile/OTHER1") + \
+                         self._item("Bo Jonsson", "IID2", "/player-profile/OTHER2")
+        # Full-name search: exactly our player.
+        fullname_hit = self._item("Linda Yiying Ren Jonsson", "IID04790781", self.PROFILE)
+
+        sess = MagicMock()
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            q = (params or {}).get("Query", "")
+            if q == "Linda Yiying Ren Jonsson":
+                return self._resp(fullname_hit)
+            return self._resp(lastname_page1)  # any 'Jonsson' page
+
+        sess.get.side_effect = fake_get
+
+        lic, club = app._resolve_license_from_search(sess, "Linda Yiying Ren Jonsson", self.PROFILE)
+        self.assertEqual(lic, "IID04790781")
+        self.assertEqual(club, "BMK Komet")
+
+    def test_lastname_paging_fallback_finds_later_page(self):
+        import app
+        from test_badminton import _FakeResp
+
+        # Full-name search returns nothing; player is on last-name page 2.
+        def fake_get(url, params=None, headers=None, timeout=None):
+            q = (params or {}).get("Query", "")
+            page = (params or {}).get("Page", 1)
+            if q == "Linda Yiying Ren Jonsson":
+                return _FakeResp("<ul></ul>")  # no full-name hit
+            if q == "Jonsson" and page == 1:
+                return self._resp(self._item("Anna Jonsson", "IID1", "/player-profile/OTHER1"))
+            if q == "Jonsson" and page == 2:
+                return self._resp(self._item("Linda Yiying Ren Jonsson", "IID04790781", self.PROFILE))
+            return _FakeResp("<ul></ul>")
+
+        sess = MagicMock()
+        sess.get.side_effect = fake_get
+        lic, club = app._resolve_license_from_search(sess, "Linda Yiying Ren Jonsson", self.PROFILE)
+        self.assertEqual(lic, "IID04790781")
+
+    def test_returns_empty_when_no_match(self):
+        import app
+        from test_badminton import _FakeResp
+        sess = MagicMock()
+        sess.get.return_value = _FakeResp("<ul></ul>")
+        lic, club = app._resolve_license_from_search(sess, "Nobody Here", self.PROFILE)
+        self.assertEqual(lic, "")
+        self.assertEqual(club, "")
+
+
 if __name__ == '__main__':
     unittest.main()

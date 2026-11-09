@@ -714,6 +714,75 @@ def manage_db_page():
 
 
 # --- Badminton Sweden Login ---
+def _resolve_license_from_search(sess, player_name, profile_url, max_pages=5):
+    """Resolve a logged-in player's (license_id, club) by searching Badminton
+    Sweden and matching the result whose profile URL equals ``profile_url``.
+
+    The previous implementation searched by LAST NAME only and scanned a single
+    results page. For a common Swedish surname (e.g. "Jonsson") the player's own
+    profile is often not on page 1 — the search returns 100 namesakes — so the
+    match failed and the login stored an empty license_id, which then blocked all
+    registration with "license_id required".
+
+    This tries, in order, until it finds the matching profile URL:
+      1) the FULL name (usually unique — "Linda Yiying Ren Jonsson" → 1 hit),
+      2) the LAST name, paging through up to ``max_pages`` result pages.
+    Returns (license_id, club), either possibly "" if nothing matched.
+    """
+    if not player_name or not profile_url:
+        return "", ""
+
+    target = profile_url.lower()
+
+    def _scan(query, pages):
+        for page in range(1, pages + 1):
+            try:
+                resp = sess.get(
+                    "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
+                    params={"Page": page, "SportID": 2, "Query": query},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
+                    timeout=10,
+                )
+            except Exception as e:
+                logger.debug(f"license search '{query}' page {page} failed: {e}")
+                return None
+            soup = BeautifulSoup(resp.text, "html.parser")
+            items = soup.select("li.list__item")
+            if not items:
+                return None  # no more pages
+            for item in items:
+                item_link = item.select_one("a.media__link")
+                if item_link and item_link.get("href", "").lower() == target:
+                    lic = ""
+                    club_val = ""
+                    license_el = item.select_one(".media__title-aside")
+                    if license_el:
+                        lic = license_el.get_text(strip=True).strip("()")
+                    club_el = item.select_one(".media__subheading span.nav-link__value")
+                    if club_el:
+                        club_val = club_el.get_text(strip=True).split("|")[0].strip()
+                    return lic, club_val
+        return None
+
+    # 1) Full name first — usually a unique hit, avoids the common-surname trap.
+    hit = _scan(player_name, 1)
+    if hit:
+        logger.info(f"✅ license resolved via full-name search for {player_name!r}")
+        return hit
+
+    # 2) Fall back to last name, paging deeper.
+    last = player_name.split()[-1] if player_name.split() else player_name
+    hit = _scan(last, max_pages)
+    if hit:
+        logger.info(f"✅ license resolved via last-name search ('{last}') for {player_name!r}")
+        return hit
+
+    logger.warning(f"⚠️  could not resolve license_id for {player_name!r} "
+                   f"(profile_url={profile_url}) — searched full name + '{last}' "
+                   f"across {max_pages} pages")
+    return "", ""
+
+
 @app.route("/api/bwf-login", methods=["POST"])
 def bwf_login():
     data = request.json
@@ -808,27 +877,13 @@ def bwf_login():
 
         print(f"[BWF Login] Player name from masthead: {player_name}")
 
-        # Search by last name to get license ID and club, matching by profile URL
+        # Resolve license ID and club. Search by full name first (usually unique),
+        # falling back to last name across several pages — a single-page last-name
+        # search misses players with common surnames (see _resolve_license_from_search).
         if player_name and profile_url:
-            search_query = player_name.split()[-1]
-            search_resp = s.get(
-                "https://badmintonsweden.tournamentsoftware.com/find/player/DoSearch",
-                params={"Page": 1, "SportID": 2, "Query": search_query},
-                headers={"X-Requested-With": "XMLHttpRequest"},
-                timeout=10
-            )
-            search_soup = BeautifulSoup(search_resp.text, "html.parser")
-
-            for item in search_soup.select("li.list__item"):
-                item_link = item.select_one("a.media__link")
-                if item_link and item_link.get("href", "").lower() == profile_url.lower():
-                    license_el = item.select_one(".media__title-aside")
-                    if license_el:
-                        license_id = license_el.get_text(strip=True).strip("()")
-                    club_el = item.select_one(".media__subheading span.nav-link__value")
-                    if club_el:
-                        club = club_el.get_text(strip=True).split("|")[0].strip()
-                    break
+            license_id, resolved_club = _resolve_license_from_search(s, player_name, profile_url)
+            if resolved_club:
+                club = resolved_club
 
         # Fetch gender, email, phone, date of birth from account settings
         gender = ""

@@ -8,6 +8,25 @@
 
 ## [Unreleased]
 
+### Fixed - "license_id required" at registration for players with common surnames
+- **Bug**: Komet player "Linda Yiying Ren Jonsson" could not register (any category, reported on
+  DD-B with partner Alexandr Bateman) — the backend returned `license_id required`. Her login had
+  stored an empty `bwf_license_id`, so `/api/add-player` rejected every registration.
+- **Root cause** (`app.py`, `bwf_login`): after login the code resolved the player's license_id by
+  searching Badminton Sweden by **last name only** and scanning a **single results page**, matching
+  the row whose profile URL equals the logged-in profile. For a common Swedish surname this fails:
+  searching "Jonsson" returns 100 namesakes and Linda is **not on page 1**, so no match → empty
+  license_id in the session. Verified live: last-name "Jonsson" → 100 page-1 results without her;
+  full name "Linda Yiying Ren Jonsson" → exactly 1 hit, `IID04790781`.
+- **Fix**: added `_resolve_license_from_search(sess, player_name, profile_url, max_pages=5)` which
+  searches by **full name first** (usually unique), then falls back to the **last name across
+  several pages**, matching by profile URL, and logs a warning if nothing resolves. `bwf_login` now
+  uses it instead of the inline single-page last-name search.
+- **Tests** (`test_badminton.py`, `TestResolveLicenseFromSearch`, 3 tests): full-name search
+  resolves when last-name page 1 misses (regression — confirmed FAILS against the old
+  last-name/page-1 logic), last-name paging fallback finds a later page, and empty is returned when
+  nothing matches. Tests: Ran 54 tests - OK.
+
 ### Added - Detail-fetch diagnostics + admin "Fix DB" button to remove incomplete tournaments
 - **Context**: After the persistence fix, production logs showed `30 persisted without details due
   to detail-fetch failure` — i.e. EVERY per-tournament detail fetch (dates + event categories) was
