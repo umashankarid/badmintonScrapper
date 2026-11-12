@@ -1533,5 +1533,181 @@ class TestResolveLicenseFromSearch(unittest.TestCase):
         self.assertEqual(club, "")
 
 
+class TestDashboardTournaments(unittest.TestCase):
+    """Tests for the Tournament Dashboard date-range filter endpoint and its
+    range math (_dashboard_date_range)."""
+
+    def setUp(self):
+        import app
+        self.app = app
+        self.orig_t = app.TOURNAMENTS_DB
+        self.test_dir = tempfile.mkdtemp()
+        app.TOURNAMENTS_DB = os.path.join(self.test_dir, "tournaments.db")
+        app.init_tournaments_db()
+        self.client = app.app.test_client()
+
+    def tearDown(self):
+        self.app.TOURNAMENTS_DB = self.orig_t
+        shutil.rmtree(self.test_dir)
+
+    def _add(self, name, start, end):
+        # Use a valid 36-char GUID tail so tournament_id parsing is exercised.
+        import uuid
+        guid = str(uuid.uuid4()).upper()
+        self._last_guid = guid
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute(
+            "INSERT INTO tournaments (tournament_name, tournament_url, competition_start, "
+            "competition_end, date_start, date_end, last_updated) "
+            "VALUES (?,?,?,?,?,?, CURRENT_TIMESTAMP)",
+            (name, f"https://badmintonsweden.tournamentsoftware.com/tournament/{guid}",
+             start, end, start, end),
+        )
+        conn.commit()
+        conn.close()
+        return guid
+
+    # ---- range math ----
+    def test_range_today(self):
+        import datetime
+        ref = datetime.date(2026, 11, 11)  # a Wednesday
+        s, e = self.app._dashboard_date_range("today", ref=ref)
+        self.assertEqual((s, e), ("2026-11-11", "2026-11-11"))
+
+    def test_range_this_week_is_monday_to_sunday(self):
+        import datetime
+        ref = datetime.date(2026, 11, 11)  # Wednesday
+        s, e = self.app._dashboard_date_range("this_week", ref=ref)
+        self.assertEqual((s, e), ("2026-11-09", "2026-11-15"))  # Mon..Sun
+
+    def test_range_last_week(self):
+        import datetime
+        ref = datetime.date(2026, 11, 11)
+        s, e = self.app._dashboard_date_range("last_week", ref=ref)
+        self.assertEqual((s, e), ("2026-11-02", "2026-11-08"))
+
+    def test_range_this_month(self):
+        import datetime
+        ref = datetime.date(2026, 11, 11)
+        s, e = self.app._dashboard_date_range("this_month", ref=ref)
+        self.assertEqual((s, e), ("2026-11-01", "2026-11-30"))
+
+    def test_range_last_month_handles_january(self):
+        import datetime
+        ref = datetime.date(2027, 1, 15)
+        s, e = self.app._dashboard_date_range("last_month", ref=ref)
+        self.assertEqual((s, e), ("2026-12-01", "2026-12-31"))
+
+    def test_unknown_range_falls_back_to_today(self):
+        import datetime
+        ref = datetime.date(2026, 11, 11)
+        s, e = self.app._dashboard_date_range("bogus", ref=ref)
+        self.assertEqual((s, e), ("2026-11-11", "2026-11-11"))
+
+    # ---- endpoint ----
+    def test_requires_admin(self):
+        resp = self.client.get("/api/dashboard-tournaments?range=this_week")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_endpoint_returns_overlapping_tournaments(self):
+        from datetime import date, timedelta
+        today = date.today()
+        mon = today - timedelta(days=today.weekday())
+        inside = (mon + timedelta(days=2)).isoformat()      # within this week
+        outside = (mon + timedelta(days=40)).isoformat()     # well outside
+        self._add("ThisWeek Cup", inside, inside)
+        guid = self._last_guid
+        self._add("Far Future Cup", outside, outside)
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        data = self.client.get("/api/dashboard-tournaments?range=this_week").get_json()
+        self.assertTrue(data["success"])
+        names = {t["name"] for t in data["tournaments"]}
+        self.assertIn("ThisWeek Cup", names)
+        self.assertNotIn("Far Future Cup", names)
+        # tournament_id (GUID) is surfaced for the live lookups
+        tw = next(t for t in data["tournaments"] if t["name"] == "ThisWeek Cup")
+        self.assertEqual(tw["tournament_id"], guid)
+
+    def test_multiday_tournament_overlapping_window_edge(self):
+        """A multi-day tournament that starts before the window but ends inside it is included."""
+        from datetime import date, timedelta
+        today = date.today()
+        mon = today - timedelta(days=today.weekday())
+        start = (mon - timedelta(days=3)).isoformat()  # previous week
+        end = (mon + timedelta(days=1)).isoformat()    # into this week
+        self._add("Spanning Cup", start, end)
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        data = self.client.get("/api/dashboard-tournaments?range=this_week").get_json()
+        self.assertIn("Spanning Cup", {t["name"] for t in data["tournaments"]})
+
+
+class TestTournamentClubsKometFlag(unittest.TestCase):
+    """is_komet annotation: trust the tournament's club data first; fall back to
+    the kometPlayers roster only when the club detail is missing/federation-style
+    (international tournaments showing 'Svenska')."""
+
+    def setUp(self):
+        import app
+        self.app = app
+        self.orig_p = app.PLAYERS_DB
+        self.test_dir = tempfile.mkdtemp()
+        app.PLAYERS_DB = os.path.join(self.test_dir, "players.db")
+        app.init_players_db()
+
+    def tearDown(self):
+        self.app.PLAYERS_DB = self.orig_p
+        shutil.rmtree(self.test_dir)
+
+    def _add_komet(self, name):
+        conn = sqlite3.connect(self.app.PLAYERS_DB)
+        conn.execute("INSERT INTO kometPlayers (license_id, name, email) VALUES (?,?,?)",
+                     (name.replace(" ", ""), name, "x@example.com"))
+        conn.commit()
+        conn.close()
+
+    def _players_html(self, rows):
+        # rows: list of (name, club). club may be "" or a federation string.
+        lis = ""
+        for name, club in rows:
+            lis += (f'<li><a href="?player={abs(hash(name))%10000}">{name}</a>'
+                    f'<span>{club}</span></li>')
+        return f'<ul>{lis}</ul>'
+
+    def _call(self, rows):
+        from unittest.mock import patch, MagicMock
+        sess = MagicMock()
+        sess.get.return_value = _FakeResp(self._players_html(rows))
+        sess.post.return_value = _FakeResp("")
+        client = self.app.app.test_client()
+        with patch.object(self.app.ext_requests, "Session", return_value=sess):
+            data = client.get("/api/tournament-clubs?id=ABC").get_json()
+        return {p["name"]: p["is_komet"] for p in data["players"]}
+
+    def test_club_string_komet_is_flagged_without_roster(self):
+        # No roster entry; club string carries the truth.
+        flags = self._call([("Alice Svensson", "BMK Komet")])
+        self.assertTrue(flags["Alice Svensson"])
+
+    def test_real_other_club_not_flagged_even_if_in_roster(self):
+        # Tournament clearly says another club → trust it, do NOT override via roster.
+        self._add_komet("Bob Berg")
+        flags = self._call([("Bob Berg", "Täby BMF")])
+        self.assertFalse(flags["Bob Berg"])
+
+    def test_federation_club_falls_back_to_roster(self):
+        # International tournament shows 'Svenska' → use roster name-match.
+        self._add_komet("Cecilia Dahl")
+        flags = self._call([("Cecilia Dahl", "Svenska"), ("Dan Ek", "Svenska")])
+        self.assertTrue(flags["Cecilia Dahl"])   # in roster
+        self.assertFalse(flags["Dan Ek"])        # not in roster
+
+    def test_empty_club_falls_back_to_roster(self):
+        self._add_komet("Eva Falk")
+        flags = self._call([("Eva Falk", "")])
+        self.assertTrue(flags["Eva Falk"])
+
+
 if __name__ == '__main__':
     unittest.main()

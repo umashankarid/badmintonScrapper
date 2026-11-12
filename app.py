@@ -3005,6 +3005,103 @@ def current_tournaments():
         return jsonify(success=False, error=str(e), tournaments=[])
 
 
+def _dashboard_date_range(range_key, ref=None):
+    """Return (start_date, end_date) inclusive 'YYYY-MM-DD' strings for a named
+    range used by the Tournament Dashboard filter. ``ref`` defaults to today and
+    exists so the logic is unit-testable. Weeks are Monday–Sunday (ISO).
+
+    Supported keys: today, this_week, last_week, this_month, last_month.
+    Unknown keys fall back to 'today'.
+    """
+    from datetime import date, timedelta
+    if ref is None:
+        ref = date.today()
+
+    def _month_bounds(y, m):
+        first = date(y, m, 1)
+        if m == 12:
+            nxt = date(y + 1, 1, 1)
+        else:
+            nxt = date(y, m + 1, 1)
+        return first, nxt - timedelta(days=1)
+
+    if range_key == "this_week":
+        start = ref - timedelta(days=ref.weekday())      # Monday
+        end = start + timedelta(days=6)                  # Sunday
+    elif range_key == "last_week":
+        this_mon = ref - timedelta(days=ref.weekday())
+        start = this_mon - timedelta(days=7)
+        end = start + timedelta(days=6)
+    elif range_key == "this_month":
+        start, end = _month_bounds(ref.year, ref.month)
+    elif range_key == "last_month":
+        if ref.month == 1:
+            start, end = _month_bounds(ref.year - 1, 12)
+        else:
+            start, end = _month_bounds(ref.year, ref.month - 1)
+    else:  # "today" and any unknown key
+        start = end = ref
+
+    return start.isoformat(), end.isoformat()
+
+
+@app.route("/api/dashboard-tournaments", methods=["GET"])
+def dashboard_tournaments():
+    """Admin: list tournaments whose competition/date range overlaps a named
+    date-range window (today / this_week / last_week / this_month / last_month),
+    for the Tournament Dashboard filter. Reuses the same date columns and GUID
+    parsing as /api/current-tournaments.
+    """
+    if not session.get("admin"):
+        return jsonify(success=False, error="Unauthorized"), 401
+
+    import re as _re
+    range_key = request.args.get("range", "today").strip() or "today"
+    win_start, win_end = _dashboard_date_range(range_key)
+    logger.info(f"📺 dashboard-tournaments: range={range_key} window={win_start}..{win_end}")
+
+    try:
+        conn = sqlite3.connect(TOURNAMENTS_DB)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT tournament_name, tournament_url, location,
+                   COALESCE(NULLIF(competition_start,''), NULLIF(date_start,'')) AS start_d,
+                   COALESCE(NULLIF(competition_end,''),   NULLIF(date_end,''))   AS end_d
+            FROM tournaments
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        result = []
+        for name, url, location, start_d, end_d in rows:
+            if not start_d:
+                continue
+            e = end_d or start_d
+            # Overlap test: tournament [start_d, e] intersects [win_start, win_end]
+            if start_d <= win_end and e >= win_start:
+                guid = ""
+                if url:
+                    m = _re.search(r'/tournament/([0-9A-Fa-f-]{36})', url) or _re.search(r'id=([A-Fa-f0-9-]+)', url)
+                    if m:
+                        guid = m.group(1)
+                result.append({
+                    "name": name,
+                    "url": url or "",
+                    "tournament_id": guid,
+                    "location": location or "",
+                    "date_start": start_d,
+                    "date_end": e,
+                })
+        # Most recent first
+        result.sort(key=lambda t: t["date_start"], reverse=True)
+        logger.info(f"📺 dashboard-tournaments: {len(result)} tournament(s) in window")
+        return jsonify(success=True, tournaments=result, range=range_key,
+                       window_start=win_start, window_end=win_end)
+    except Exception as e:
+        logger.error(f"❌ Error in dashboard-tournaments: {e}")
+        return jsonify(success=False, error=str(e), tournaments=[]), 500
+
+
 # ---------------------------------------------------------------------------
 # "My BWF tournaments" — scrape Badminton Sweden to find which upcoming
 # tournaments the logged-in player appears in, directly from the live site.
@@ -7197,6 +7294,16 @@ def tournament_live_page():
     return render_template("tournament-live.html")
 
 
+@app.route("/tournament-dashboard.html")
+def tournament_dashboard_page():
+    """Admin-only radiator display: per-Komet-player board of results/ongoing/upcoming."""
+    if not session.get("admin"):
+        logger.warning("⚠️  Unauthenticated user attempted to access /tournament-dashboard.html")
+        return redirect("/login.html")
+    from flask import render_template
+    return render_template("tournament-dashboard.html")
+
+
 @app.route("/api/search-tournaments", methods=["GET"])
 def search_tournaments():
     """Search tournaments by date range and status."""
@@ -7691,6 +7798,63 @@ def tournament_clubs():
             if key not in seen:
                 seen.add(key)
                 unique_players.append(p)
+
+        # Annotate each player with is_komet, PREFERRING the tournament's own club
+        # data and using the kometPlayers DB roster only as a FALLBACK when the
+        # tournament doesn't carry a usable club detail.
+        #
+        #   1) Club string says "...Komet..."        -> Komet (trust tournament data)
+        #   2) Club string is a real OTHER club       -> NOT Komet (trust tournament data)
+        #   3) Club detail is missing or federation-  -> fall back to the roster
+        #      style (e.g. "Svenska"/"Sweden"/"SWE",     name-match (international
+        #      a nationality rather than a club)         tournaments show this)
+        #
+        # This keeps the DB from overriding a tournament that clearly states a
+        # different club, while still catching our players when the detail is
+        # absent/ambiguous.
+        FEDERATION_HINTS = ("svenska", "sweden", "swe", "sverige", "badminton sweden")
+
+        def _club_is_uninformative(club):
+            if not club:
+                return True
+            cl = club.strip().lower()
+            return cl in FEDERATION_HINTS or cl.rstrip(".") in FEDERATION_HINTS
+
+        roster_needed = any(_club_is_uninformative(p.get("club")) for p in unique_players)
+        komet_names = set()
+        if roster_needed:
+            try:
+                conn_k = sqlite3.connect(PLAYERS_DB)
+                cur_k = conn_k.cursor()
+                cur_k.execute("SELECT name FROM kometPlayers WHERE name IS NOT NULL AND name != ''")
+                for (nm,) in cur_k.fetchall():
+                    komet_names.add(_normalize_name_for_match(nm))
+                cur_k.execute("SELECT name FROM players WHERE club LIKE '%omet%' AND name IS NOT NULL AND name != ''")
+                for (nm,) in cur_k.fetchall():
+                    komet_names.add(_normalize_name_for_match(nm))
+                conn_k.close()
+            except Exception as e:
+                logger.debug(f"Could not load komet names for tournament-clubs: {e}")
+
+        komet_count = 0
+        roster_matched = 0
+        for p in unique_players:
+            club = (p.get("club") or "")
+            if "komet" in club.lower():
+                p["is_komet"] = True                 # (1) tournament data says Komet
+            elif not _club_is_uninformative(club):
+                p["is_komet"] = False                # (2) real other club — trust it
+            else:
+                # (3) no usable club detail — fall back to the roster name-match
+                hit = _normalize_name_for_match(p["name"]) in komet_names
+                p["is_komet"] = hit
+                if hit:
+                    roster_matched += 1
+            if p["is_komet"]:
+                komet_count += 1
+        logger.info(f"🏸 tournament-clubs: {len(unique_players)} players, "
+                    f"{komet_count} Komet ({roster_matched} via roster fallback; "
+                    f"roster_consulted={roster_needed})")
 
         return jsonify(success=True, players=unique_players)
     except Exception as e:

@@ -8,6 +8,37 @@
 
 ## [Unreleased]
 
+### Added - Admin "Tournament Dashboard" radiator display (per-Komet-player board)
+- **Feature**: A new admin tab "📺 Tournament Dashboard" (`/tournament-dashboard.html`, admin-only)
+  that works as a wall/radiator display. Step 1: a date-range filter (Today / This week / Last week
+  / This month / Last month) lists matching tournaments. Step 2: clicking one opens a board with
+  **one column per BMK Komet player**, each showing their 🟢 Ongoing (with court), 🕒 Upcoming
+  (time or "by order of play") and ✅ Finished (result + score) matches. Auto-refreshes every 30s;
+  multi-day tournaments get a day selector. Bilingual labels.
+- **Backend** (`app.py`):
+  - `_dashboard_date_range(range_key, ref=None)` — pure, unit-testable date-window math
+    (weeks Monday–Sunday; `last_month` handles the January→previous-December rollover).
+  - `/api/dashboard-tournaments?range=…` (admin) — tournaments from `tournaments.db` whose
+    competition/date range **overlaps** the window (so multi-day events spanning the window edge are
+    included), reusing the `COALESCE(competition_start,date_start)` columns and GUID parsing from
+    `/api/current-tournaments`. Sorted most-recent-first.
+  - The board reuses the existing `/api/live-matches` (ongoing/upcoming/done + court/time/score) and
+    `/api/tournament-clubs`. No new scraping logic.
+- **Komet detection — tournament-data-first, roster as fallback** (`/api/tournament-clubs`): the
+  player list now returns an `is_komet` flag. It **prefers the tournament's own club string**: if it
+  says "…Komet…" → Komet; if it names a real OTHER club → not Komet (the tournament data is trusted
+  and not overridden). Only when the club detail is **missing or federation-style**
+  (e.g. "Svenska"/"Sweden"/"Sverige" at international tournaments) does it fall back to a
+  `kometPlayers` roster name-match (`_normalize_name_for_match`, same as `live_matches`). The roster
+  DB is only queried when at least one player has an uninformative club, so normal domestic
+  tournaments don't touch it.
+- **Wiring**: Flask route `/tournament-dashboard.html` (render_template, admin-gated) and a
+  "📺 Tournament Dashboard" nav link added to `manage.html` and `current-tournament.html`.
+- **Tests** (`test_badminton.py`): `TestDashboardTournaments` (9 — range math for all five keys +
+  unknown-key fallback, admin-gating, overlap selection incl. a window-edge multi-day case) and
+  `TestTournamentClubsKometFlag` (4 — club "Komet" flagged without the roster, a real other club
+  NOT overridden by the roster, federation/empty club falls back to the roster). Tests: Ran 67 tests - OK.
+
 ### Fixed - "license_id required" at registration for players with common surnames
 - **Bug**: Komet player "Linda Yiying Ren Jonsson" could not register (any category, reported on
   DD-B with partner Alexandr Bateman) — the backend returned `license_id required`. Her login had
