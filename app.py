@@ -3076,10 +3076,35 @@ def dashboard_tournaments():
     try:
         conn = sqlite3.connect(TOURNAMENTS_DB)
         cur = conn.cursor()
-        cur.execute("""
+
+        # Be schema-tolerant: an older tournaments.db may lack competition_start/
+        # competition_end. Detect which date columns exist and build the SELECT
+        # from only those, so the endpoint never 500s on an older deploy.
+        cols = {row[1] for row in cur.execute("PRAGMA table_info(tournaments)").fetchall()}
+        start_cols = [c for c in ("competition_start", "date_start") if c in cols]
+        end_cols = [c for c in ("competition_end", "date_end") if c in cols]
+        logger.info(f"📺 dashboard-tournaments: date cols present start={start_cols} end={end_cols}")
+        if not start_cols:
+            conn.close()
+            logger.error("❌ dashboard-tournaments: tournaments table has no start-date column")
+            return jsonify(success=True, tournaments=[], range=range_key,
+                           window_start=win_start, window_end=win_end,
+                           note="no date columns in tournaments table")
+
+        def _coalesce(colnames):
+            if not colnames:
+                return "''"
+            if len(colnames) == 1:
+                # COALESCE requires >= 2 args; with one column just NULLIF it.
+                return f"NULLIF({colnames[0]},'')"
+            return "COALESCE(" + ", ".join(f"NULLIF({c},'')" for c in colnames) + ")"
+
+        start_expr = _coalesce(start_cols)
+        end_expr = _coalesce(end_cols) if end_cols else start_expr
+        cur.execute(f"""
             SELECT tournament_name, tournament_url, location,
-                   COALESCE(NULLIF(competition_start,''), NULLIF(date_start,'')) AS start_d,
-                   COALESCE(NULLIF(competition_end,''),   NULLIF(date_end,''))   AS end_d
+                   {start_expr} AS start_d,
+                   {end_expr}   AS end_d
             FROM tournaments
         """)
         rows = cur.fetchall()

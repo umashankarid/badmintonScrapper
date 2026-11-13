@@ -118,13 +118,35 @@
             });
             var box = document.getElementById("t-list");
             box.innerHTML = '<p style="color:#666;">Loading...</p>';
+            var url = "/api/dashboard-tournaments?range=" + encodeURIComponent(range);
+            console.log("[dashboard] loadTournaments ->", url);
             try {
-                var data = await (await fetch("/api/dashboard-tournaments?range=" + encodeURIComponent(range))).json();
-                if (!data.success) { box.innerHTML = '<p style="color:#c62828;">' + esc(data.error||"Failed to load") + '</p>'; return; }
-                if (!data.tournaments.length) {
-                    box.innerHTML = '<p style="color:#666;">Inga tävlingar i detta intervall. / No tournaments in this range.</p>';
+                var res = await fetch(url);
+                console.log("[dashboard] response", res.status, res.headers.get("content-type"));
+                var raw = await res.text();
+                var data;
+                try { data = JSON.parse(raw); }
+                catch (pe) {
+                    console.error("[dashboard] non-JSON response:", raw.slice(0, 500));
+                    box.innerHTML = '<p style="color:#c62828;">Server returned a non-JSON response (HTTP ' +
+                        res.status + '). First bytes:</p><pre style="white-space:pre-wrap;color:#c62828;">' +
+                        esc(raw.slice(0, 300)) + '</pre>';
                     return;
                 }
+                if (!res.ok || !data.success) {
+                    console.error("[dashboard] error payload:", data);
+                    box.innerHTML = '<p style="color:#c62828;">HTTP ' + res.status + ' — ' +
+                        esc(data.error || "Failed to load") + '</p>';
+                    return;
+                }
+                if (!data.tournaments || !data.tournaments.length) {
+                    console.log("[dashboard] 0 tournaments for range", range, "window", data.window_start, data.window_end);
+                    box.innerHTML = '<p style="color:#666;">Inga tävlingar i detta intervall (' +
+                        esc(data.window_start||"") + ' → ' + esc(data.window_end||"") +
+                        '). / No tournaments in this range.</p>';
+                    return;
+                }
+                console.log("[dashboard] rendering", data.tournaments.length, "tournaments");
                 box.innerHTML = data.tournaments.map(function(t){
                     var dates = esc(t.date_start) + (t.date_end && t.date_end !== t.date_start ? " → " + esc(t.date_end) : "");
                     if (!t.tournament_id) {
@@ -141,7 +163,8 @@
                            '<p style="color:#0d47a1;font-weight:600;">Open dashboard →</p></div>';
                 }).join("");
             } catch (e) {
-                box.innerHTML = '<p style="color:#c62828;">Error: ' + esc(e.message) + '</p>';
+                console.error("[dashboard] loadTournaments threw:", e);
+                box.innerHTML = '<p style="color:#c62828;">Network/JS error: ' + esc(e.message) + '</p>';
             }
         }
 

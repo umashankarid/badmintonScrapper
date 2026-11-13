@@ -1642,6 +1642,35 @@ class TestDashboardTournaments(unittest.TestCase):
         data = self.client.get("/api/dashboard-tournaments?range=this_week").get_json()
         self.assertIn("Spanning Cup", {t["name"] for t in data["tournaments"]})
 
+    def test_old_schema_without_competition_columns(self):
+        """Regression: on an older tournaments.db lacking competition_start/end the
+        endpoint must NOT 500 — it should fall back to date_start/date_end."""
+        from datetime import date, timedelta
+        # Replace the init'd table with an OLD schema (no competition_* columns).
+        conn = sqlite3.connect(self.app.TOURNAMENTS_DB)
+        conn.execute("DROP TABLE tournaments")
+        conn.execute("""CREATE TABLE tournaments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_url TEXT,
+            tournament_name TEXT, location TEXT, date_start TEXT, date_end TEXT,
+            selected_for_view INTEGER DEFAULT 0)""")
+        today = date.today()
+        mon = today - timedelta(days=today.weekday())
+        inside = (mon + timedelta(days=1)).isoformat()
+        conn.execute("INSERT INTO tournaments (tournament_name, tournament_url, date_start, date_end) "
+                     "VALUES (?,?,?,?)",
+                     ("Old Schema Cup",
+                      "https://badmintonsweden.tournamentsoftware.com/tournament/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+                      inside, inside))
+        conn.commit()
+        conn.close()
+        with self.client.session_transaction() as s:
+            s["admin"] = True
+        resp = self.client.get("/api/dashboard-tournaments?range=this_week")
+        self.assertEqual(resp.status_code, 200)   # must not 500
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        self.assertIn("Old Schema Cup", {t["name"] for t in data["tournaments"]})
+
 
 class TestTournamentClubsKometFlag(unittest.TestCase):
     """is_komet annotation: trust the tournament's club data first; fall back to

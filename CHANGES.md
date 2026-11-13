@@ -8,6 +8,25 @@
 
 ## [Unreleased]
 
+### Fixed - Tournament Dashboard stuck on "Loading…"; schema-tolerant endpoint + diagnostics
+- **Symptom**: after deploy the dashboard filter showed "Loading…" forever for every range.
+- **Backend root cause** (`/api/dashboard-tournaments`): the query hard-coded
+  `competition_start`/`competition_end`. On an older `tournaments.db` that predates those columns
+  the query raised `no such column: competition_start` → HTTP 500. Fix: detect the available date
+  columns via `PRAGMA table_info` and build the `COALESCE/NULLIF` date expression from only the
+  columns that exist (falling back to `date_start`/`date_end`), so the endpoint can't 500 on an
+  older schema. Also fixed a `COALESCE()`-with-one-argument SQL error when only a single date column
+  is present. Logs the detected columns (`📺 dashboard-tournaments: date cols present …`).
+- **Frontend hardening + diagnostics** (`tournament-dashboard.html`): `loadTournaments` now reads the
+  response as text, checks `res.ok`, JSON-parses defensively, and **always renders a visible
+  message** (HTTP status + server error, or the first bytes of a non-JSON body) instead of leaving
+  "Loading…". Every step is `console.log`/`console.error`-ed (prefixed `[dashboard]`) so the exact
+  failure can be copied from the browser console. The empty-range message now shows the computed
+  window dates.
+- **Tests** (`test_badminton.py`): `TestDashboardTournaments.test_old_schema_without_competition_columns`
+  — an older schema (no `competition_*` columns) returns 200 with the tournament via the
+  `date_start`/`date_end` fallback, not a 500. Tests: Ran 71 tests - OK.
+
 ### Fixed - Tournament Dashboard: empty player columns, wrong default day, missing past tournaments
 - **Empty player columns (0/0/0 despite scheduled matches)** — root cause was a NAME-FORMAT
   mismatch: `/api/tournament-clubs` returns players as "Lastname, Firstname"
