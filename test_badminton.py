@@ -1785,5 +1785,43 @@ class TestLiveMatchNameNormalization(unittest.TestCase):
             shutil.rmtree(d)
 
 
+class TestTemplateInlineJsSyntax(unittest.TestCase):
+    """Guard against inline-JS syntax errors in templates (e.g. a duplicated
+    function declaration) that silently abort the whole <script> at load — which
+    made the Tournament Dashboard hang on 'Loading' with no API call. Uses node
+    --check when available; skipped otherwise so CI without node still passes."""
+
+    TEMPLATES = ["tournament-dashboard.html", "current-tournament.html", "tournament-live.html"]
+
+    def _node(self):
+        import shutil as _sh
+        return _sh.which("node")
+
+    def test_inline_scripts_parse(self):
+        import re, subprocess, tempfile, os
+        node = self._node()
+        if not node:
+            self.skipTest("node not available")
+        base = os.path.dirname(os.path.abspath(__file__))
+        for tpl in self.TEMPLATES:
+            path = os.path.join(base, "templates", tpl)
+            if not os.path.exists(path):
+                continue
+            html = open(path, encoding="utf-8").read()
+            for i, m in enumerate(re.finditer(r"<script>(.*?)</script>", html, re.S)):
+                js = m.group(1)
+                if not js.strip():
+                    continue
+                with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+                    f.write(js)
+                    fn = f.name
+                try:
+                    r = subprocess.run([node, "--check", fn], capture_output=True, text=True)
+                    self.assertEqual(r.returncode, 0,
+                                     f"JS syntax error in {tpl} script #{i}:\n{r.stderr}")
+                finally:
+                    os.unlink(fn)
+
+
 if __name__ == '__main__':
     unittest.main()

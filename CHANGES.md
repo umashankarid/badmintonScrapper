@@ -8,6 +8,21 @@
 
 ## [Unreleased]
 
+### Fixed - Tournament Dashboard stuck on "Loading…" — duplicated loadBoard() broke the whole script
+- **Actual root cause** (the real reason it hung after deploy): the dashboard template had a
+  **duplicated `async function loadBoard(day) {` line** (left over from an edit), producing invalid
+  JavaScript. The browser failed to parse the entire inline `<script>`, so `loadTournaments()` was
+  never defined/called — the page stayed on "Loading…" and, tellingly, the server logs showed the
+  page load (`GET /tournament-dashboard.html 200`) but **no `GET /api/dashboard-tournaments` call at
+  all**, which pinpointed a client-side parse failure rather than a backend error. Fix: removed the
+  duplicate line; the script now parses (`node --check` clean) and the filter fires its API call.
+- **Guard added** (`test_badminton.py`, `TestTemplateInlineJsSyntax`): runs `node --check` over the
+  inline `<script>` of the dashboard / current-tournament / tournament-live templates so an
+  inline-JS syntax error fails the test gate instead of silently shipping. Skipped when node isn't
+  available. Tests: Ran 72 tests - OK.
+- (The schema-tolerance + frontend diagnostics from the previous entry remain and are still
+  valuable; they just weren't the cause of this particular hang.)
+
 ### Fixed - Tournament Dashboard stuck on "Loading…"; schema-tolerant endpoint + diagnostics
 - **Symptom**: after deploy the dashboard filter showed "Loading…" forever for every range.
 - **Backend root cause** (`/api/dashboard-tournaments`): the query hard-coded
