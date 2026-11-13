@@ -2738,13 +2738,25 @@ def get_all_bwf_tournaments():
                     f"({detail_failed} persisted without details due to detail-fetch failure)")
         
         # STEP 3: Delete expired tournaments (where date_start < today - can't register after start)
-        from datetime import datetime as dt
+        from datetime import datetime as dt, timedelta as _td
         today = dt.now().strftime("%Y-%m-%d")
+        # Keep recently-finished tournaments so the Tournament Dashboard's past
+        # ranges (last week / last month) still have data. Only prune tournaments
+        # whose END date is older than this retention window. (Previously ANY
+        # tournament with date_start < today was deleted, which wiped last week's
+        # and last month's tournaments from the DB.)
+        RETENTION_DAYS = 60
+        cutoff = (dt.now() - _td(days=RETENTION_DAYS)).strftime("%Y-%m-%d")
         try:
             conn = sqlite3.connect(TOURNAMENTS_DB)
             cur = conn.cursor()
-            # Get tournament names that are expired (for cleaning registrations)
-            cur.execute("SELECT tournament_name FROM tournaments WHERE date_start < ?", (today,))
+            # "Expired" = ended before the retention cutoff. Use end date with a
+            # fallback chain to start date for single-day / missing-end rows.
+            cur.execute("""
+                SELECT tournament_name FROM tournaments
+                WHERE COALESCE(NULLIF(competition_end,''), NULLIF(date_end,''),
+                               NULLIF(competition_start,''), NULLIF(date_start,'')) < ?
+            """, (cutoff,))
             expired_names = [row[0] for row in cur.fetchall()]
             
             if expired_names:
@@ -2756,10 +2768,11 @@ def get_all_bwf_tournaments():
                 cur.execute(f"DELETE FROM tournaments WHERE tournament_name IN ({placeholders})", expired_names)
                 deleted_count = cur.rowcount
                 conn.commit()
-                logger.info(f"🗑️  Deleted {deleted_count} expired tournaments and {reg_deleted} registrations")
+                logger.info(f"🗑️  Pruned {deleted_count} tournaments ended before {cutoff} "
+                            f"(retention {RETENTION_DAYS}d) and {reg_deleted} registrations")
             conn.close()
         except Exception as e:
-            logger.error(f"Error deleting expired tournaments: {e}")
+            logger.error(f"Error pruning expired tournaments: {e}")
         
         # STEP 4: Get updated selection status
         conn = sqlite3.connect(TOURNAMENTS_DB)
@@ -7571,9 +7584,17 @@ def live_matches():
         elif available_days:
             today_compact = _dt.now().strftime("%Y%m%d")
             if today_compact in available_days:
-                selected_day = today_compact
+                selected_day = today_compact           # tournament is happening today
             else:
-                selected_day = available_days[-1]  # most recent day
+                # Today is not a tournament day. If the tournament is in the
+                # FUTURE, show its FIRST (nearest upcoming) day — that's where the
+                # published draw/upcoming matches live. Only when all days are in
+                # the past do we fall back to the most recent day.
+                future_days = [d for d in available_days if d > today_compact]
+                if future_days:
+                    selected_day = future_days[0]      # earliest upcoming day
+                else:
+                    selected_day = available_days[-1]  # most recent past day
 
         # 3) Fetch the chosen day's page (or the default page if no day links)
         if selected_day:
@@ -7839,6 +7860,10 @@ def tournament_clubs():
         komet_count = 0
         roster_matched = 0
         for p in unique_players:
+            # Normalized name ("Lastname, Firstname" -> "firstname lastname"), so
+            # the frontend can reliably attribute matches: the player list uses
+            # "Lastname, Firstname" while match team strings use "Firstname Lastname".
+            p["name_normalized"] = _normalize_name_for_match(p["name"])
             club = (p.get("club") or "")
             if "komet" in club.lower():
                 p["is_komet"] = True                 # (1) tournament data says Komet
@@ -7846,7 +7871,7 @@ def tournament_clubs():
                 p["is_komet"] = False                # (2) real other club — trust it
             else:
                 # (3) no usable club detail — fall back to the roster name-match
-                hit = _normalize_name_for_match(p["name"]) in komet_names
+                hit = p["name_normalized"] in komet_names
                 p["is_komet"] = hit
                 if hit:
                     roster_matched += 1

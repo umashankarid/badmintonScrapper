@@ -148,11 +148,34 @@
         // ---------------- BOARD VIEW ----------------
         function fmtDay(d) { return (d && d.length===8) ? d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6,8) : (d||""); }
 
-        function nameInTeam(playerName, team) {
+        // Normalize a name for matching: "Lastname, Firstname" -> "firstname
+        // lastname", strip "(Komet)" markers and seeding brackets like [1] / [5/8],
+        // collapse whitespace. Must mirror the backend _normalize_name_for_match
+        // so player-list names ("Lastname, Firstname") match the match team
+        // strings ("Firstname Lastname").
+        function normName(s) {
+            if (!s) return "";
+            s = String(s).replace(/\(komet\)/ig, "").replace(/\[[^\]]*\]/g, "");
+            s = s.trim();
+            if (s.indexOf(",") !== -1) {
+                var parts = s.split(",");
+                if (parts.length === 2) s = parts[1].trim() + " " + parts[0].trim();
+            }
+            return s.toLowerCase().replace(/\s+/g, " ").trim();
+        }
+
+        function nameInTeam(player, team) {
             if (!team) return false;
-            // team strings may contain "(Komet)" markers and " / " for doubles.
-            var hay = team.toLowerCase().replace(/\(komet\)/g, "");
-            return hay.indexOf(playerName.toLowerCase()) !== -1;
+            // Prefer the backend-provided normalized name; fall back to normalizing here.
+            var target = (player.name_normalized || normName(player.name || "")).trim();
+            if (!target) return false;
+            // A doubles team is "A / B" — check each side so partners both match.
+            var sides = String(team).split("/");
+            for (var i = 0; i < sides.length; i++) {
+                if (normName(sides[i]) === target) return true;
+            }
+            // Fallback: substring on the whole normalized team (handles odd separators).
+            return normName(team).indexOf(target) !== -1;
         }
 
         function matchHtml(m) {
@@ -179,7 +202,7 @@
         }
 
         function playerColumn(player, matches) {
-            var mine = matches.filter(function(m){ return nameInTeam(player.name, m.team1) || nameInTeam(player.name, m.team2); });
+            var mine = matches.filter(function(m){ return nameInTeam(player, m.team1) || nameInTeam(player, m.team2); });
             var ongoing = mine.filter(function(m){ return m.status==="ongoing"; });
             var upcoming = mine.filter(function(m){ return m.status==="upcoming"; });
             var done = mine.filter(function(m){ return m.status==="done"; });
@@ -199,22 +222,43 @@
         }
 
         async function loadBoard(day) {
+        async function loadBoard(day) {
             document.getElementById("b-name").textContent = tournamentName || "Tournament";
             document.getElementById("b-info").textContent = tournamentInfo || "";
             var board = document.getElementById("board");
             if (!board.children.length) board.innerHTML = '<p style="color:#666;">Loading board…</p>';
 
             try {
-                // Players (Komet, via backend is_komet flag) + matches in parallel.
-                var mUrl = "/api/live-matches?id=" + encodeURIComponent(tournamentId) + (day ? "&date=" + day : "");
-                var cUrl = "/api/tournament-clubs?id=" + encodeURIComponent(tournamentId);
-                var cData = await (await fetch(cUrl)).json();
-                var mData = await (await fetch(mUrl)).json();
-
+                // Komet players (backend is_komet flag).
+                var cData = await (await fetch("/api/tournament-clubs?id=" + encodeURIComponent(tournamentId))).json();
                 var players = ((cData && cData.players) || []).filter(isKometFlag);
-                var matches = (mData && mData.matches) || [];
-                selectedDay = (mData && mData.selected_day) || "";
-                renderDaySelector((mData && mData.days) || []);
+
+                // First call (no explicit day) discovers the day list.
+                var first = await (await fetch("/api/live-matches?id=" + encodeURIComponent(tournamentId) + (day ? "&date=" + day : ""))).json();
+                var days = (first && first.days) || [];
+                renderDaySelector(days);
+
+                var matches = [];
+                if (day) {
+                    // A specific day was picked.
+                    selectedDay = (first && first.selected_day) || day;
+                    matches = (first && first.matches) || [];
+                } else if (days.length > 1) {
+                    // DEFAULT: aggregate ALL days so a player's full
+                    // ongoing/upcoming/finished picture shows at once (a radiator).
+                    selectedDay = "";  // "" means All days
+                    var results = await Promise.all(days.map(function(d){
+                        return fetch("/api/live-matches?id=" + encodeURIComponent(tournamentId) + "&date=" + d)
+                            .then(function(r){ return r.json(); })
+                            .then(function(j){ return (j && j.matches) || []; })
+                            .catch(function(){ return []; });
+                    }));
+                    results.forEach(function(arr){ matches = matches.concat(arr); });
+                } else {
+                    // Single-day tournament.
+                    selectedDay = (first && first.selected_day) || "";
+                    matches = (first && first.matches) || [];
+                }
 
                 if (!players.length) {
                     board.innerHTML = '<p style="color:#666;">No BMK Komet players found in this tournament.</p>';
@@ -223,7 +267,8 @@
                 }
                 var now = new Date();
                 document.getElementById("refresh-note").textContent =
-                    "Auto-refresh 30s · updated " + now.toLocaleTimeString();
+                    (selectedDay ? ("Day " + fmtDay(selectedDay)) : "All days") +
+                    " · auto-refresh 30s · updated " + now.toLocaleTimeString();
             } catch (e) {
                 board.innerHTML = '<p style="color:#c62828;">Could not load dashboard: ' + esc(e.message) + '</p>';
             }
@@ -232,12 +277,16 @@
         function renderDaySelector(days) {
             var box = document.getElementById("day-selector");
             if (!days || days.length < 2) { box.innerHTML = ""; return; }
-            box.innerHTML = '<span style="font-size:0.8em;color:#666;margin-right:6px;">Day:</span>' +
-                days.map(function(d){
-                    var active = d === selectedDay;
-                    return '<button class="daybtn" onclick="pickDay(\'' + d + '\')" style="' +
-                        (active ? 'background:#0d47a1;color:#fff;' : 'background:#eef2f7;color:#0d47a1;') + '">' + fmtDay(d) + '</button>';
-                }).join(" ");
+            var html = '<span style="font-size:0.8em;color:#666;margin-right:6px;">Day:</span>';
+            // "All days" option (default).
+            html += '<button class="daybtn" onclick="pickDay(\'\')" style="' +
+                (!selectedDay ? 'background:#0d47a1;color:#fff;' : 'background:#eef2f7;color:#0d47a1;') + '">All</button> ';
+            html += days.map(function(d){
+                var active = d === selectedDay;
+                return '<button class="daybtn" onclick="pickDay(\'' + d + '\')" style="' +
+                    (active ? 'background:#0d47a1;color:#fff;' : 'background:#eef2f7;color:#0d47a1;') + '">' + fmtDay(d) + '</button>';
+            }).join(" ");
+            box.innerHTML = html;
         }
         function pickDay(d) { selectedDay = d; loadBoard(d); }
 

@@ -1709,5 +1709,52 @@ class TestTournamentClubsKometFlag(unittest.TestCase):
         self.assertTrue(flags["Eva Falk"])
 
 
+class TestLiveMatchNameNormalization(unittest.TestCase):
+    """The player list uses 'Lastname, Firstname' while match team strings use
+    'Firstname Lastname' (+ '(Komet)' markers / seeding brackets). Attribution
+    must normalize both. Regression: a Komet player's scheduled match showed 0
+    because 'umashankar, aadvika' was never a substring of 'Aadvika Umashankar'."""
+
+    def test_normalize_swaps_comma_form(self):
+        import app
+        self.assertEqual(app._normalize_name_for_match("Umashankar, Aadvika"), "aadvika umashankar")
+        self.assertEqual(app._normalize_name_for_match("Aadvika Umashankar"), "aadvika umashankar")
+
+    def test_comma_and_plain_forms_match_each_other(self):
+        import app
+        a = app._normalize_name_for_match("Goyal, Yanvi")
+        b = app._normalize_name_for_match("Yanvi Goyal")
+        self.assertEqual(a, b)
+
+    def test_tournament_clubs_exposes_name_normalized(self):
+        import app
+        from unittest.mock import patch, MagicMock
+        orig_p = app.PLAYERS_DB
+        d = tempfile.mkdtemp()
+        app.PLAYERS_DB = os.path.join(d, "players.db")
+        app.init_players_db()
+        try:
+            # Seed Aadvika in the roster so an international 'Sweden' club resolves.
+            conn = sqlite3.connect(app.PLAYERS_DB)
+            conn.execute("INSERT INTO kometPlayers (license_id, name, email) VALUES (?,?,?)",
+                         ("IID", "Aadvika Umashankar", "x@example.com"))
+            conn.commit(); conn.close()
+
+            html = ('<ul><li><a href="?player=1">Umashankar, Aadvika</a>'
+                    '<span>Sweden</span></li></ul>')
+            sess = MagicMock()
+            sess.get.return_value = _FakeResp(html)
+            sess.post.return_value = _FakeResp("")
+            client = app.app.test_client()
+            with patch.object(app.ext_requests, "Session", return_value=sess):
+                data = client.get("/api/tournament-clubs?id=X").get_json()
+            p = data["players"][0]
+            self.assertEqual(p["name_normalized"], "aadvika umashankar")
+            self.assertTrue(p["is_komet"])  # resolved via roster (club 'Sweden' is federation-style)
+        finally:
+            app.PLAYERS_DB = orig_p
+            shutil.rmtree(d)
+
+
 if __name__ == '__main__':
     unittest.main()

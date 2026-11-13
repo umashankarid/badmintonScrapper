@@ -8,6 +8,32 @@
 
 ## [Unreleased]
 
+### Fixed - Tournament Dashboard: empty player columns, wrong default day, missing past tournaments
+- **Empty player columns (0/0/0 despite scheduled matches)** — root cause was a NAME-FORMAT
+  mismatch: `/api/tournament-clubs` returns players as "Lastname, Firstname"
+  (e.g. "Umashankar, Aadvika") while `/api/live-matches` team strings use "Firstname Lastname"
+  (e.g. "Aadvika Umashankar (Komet)"). The board's substring matcher never matched, so every
+  column showed 0 even though the player had matches. Fix: `/api/tournament-clubs` now returns a
+  `name_normalized` field (via `_normalize_name_for_match`, comma-swapped), and the board's
+  `nameInTeam()` normalizes both sides — swapping "Lastname, Firstname", stripping "(Komet)" and
+  seeding brackets ([1], [5/8]), and matching each doubles side. Verified live on Swedish Youth
+  Games 2026: Aadvika Umashankar and Yanvi Goyal went from 0 → their 2 scheduled matches each.
+- **Wrong default day** — when today isn't a tournament day, `live_matches` defaulted to the LAST
+  day; for a future tournament that's the day with no matches yet, so the board looked empty. Fix:
+  default to the nearest UPCOMING day when the tournament is in the future, else the most recent
+  past day. Verified: Swedish Youth Games (Nov 13–15) now defaults to 20261113 (153 matches) instead
+  of 20261115 (0).
+- **Board now aggregates ALL days by default** (radiator intent) — the board fetches every day and
+  merges, so a player's full ongoing/upcoming/finished picture shows at once; the day selector gains
+  an "All" option plus per-day filtering.
+- **Past tournaments missing from dashboard ranges** — `get_all_bwf_tournaments` deleted every
+  tournament with `date_start < today`, wiping last-week/last-month tournaments so the dashboard's
+  past ranges were empty. Fix: prune by END date against a 60-day retention window
+  (`COALESCE(competition_end, date_end, …) < cutoff`) instead, keeping recently-finished tournaments.
+- **Tests** (`test_badminton.py`, `TestLiveMatchNameNormalization`, 3): normalization swaps the comma
+  form, comma and plain forms match each other, and `/api/tournament-clubs` exposes `name_normalized`
+  (+ roster resolution for an international "Sweden" club). Tests: Ran 70 tests - OK.
+
 ### Added - Admin "Tournament Dashboard" radiator display (per-Komet-player board)
 - **Feature**: A new admin tab "📺 Tournament Dashboard" (`/tournament-dashboard.html`, admin-only)
   that works as a wall/radiator display. Step 1: a date-range filter (Today / This week / Last week
