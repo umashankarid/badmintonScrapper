@@ -35,6 +35,11 @@
         .time { background:#ede7f6; color:#4527a0; border-radius:6px; padding:1px 7px; font-size:0.78em; font-weight:600; }
         .byorder { background:#f3e5f5; color:#6a1b9a; border-radius:6px; padding:1px 7px; font-size:0.72em; }
         .badge-done { background:#eee; color:#666; border-radius:6px; padding:1px 7px; font-size:0.72em; font-weight:700; }
+        .badge-won { background:#2e7d32; color:#fff; border-radius:6px; padding:1px 8px; font-size:0.74em; font-weight:800; letter-spacing:.03em; }
+        .badge-lost { background:#c62828; color:#fff; border-radius:6px; padding:1px 8px; font-size:0.74em; font-weight:800; letter-spacing:.03em; }
+        .m.won-match { border-left:4px solid #2e7d32; background:#eef7ef; }
+        .m.lost-match { border-left:4px solid #c62828; background:#fdecec; }
+        .record { background:#eceff1; color:#37474f; border-radius:10px; padding:1px 8px; font-size:0.78em; font-weight:700; margin-left:6px; }
         .empty { color:#bbb; font-size:0.82em; font-style:italic; }
         .refresh-note { color:#888; font-size:0.8em; }
         .daybtn { width:auto; margin:0; padding:5px 12px; font-size:0.8em; box-shadow:none; }
@@ -239,8 +244,17 @@
             return normName(team).indexOf(target) !== -1;
         }
 
-        function matchHtml(m) {
-            var cls = m.status === "ongoing" ? "ongoing" : (m.status === "upcoming" ? "upcoming" : "done");
+        function matchHtml(m, player) {
+            // Which side is THIS player on? Used to show a player-relative
+            // WON/LOST badge on finished matches (not just who won overall).
+            var onTeam1 = player && nameInTeam(player, m.team1);
+            var onTeam2 = player && nameInTeam(player, m.team2);
+            var playerWon = m.status === "done" && ((onTeam1 && m.team1_won) || (onTeam2 && !m.team1_won));
+            var playerLost = m.status === "done" && ((onTeam1 && !m.team1_won) || (onTeam2 && m.team1_won));
+
+            var cls = m.status === "ongoing" ? "ongoing"
+                    : (m.status === "upcoming" ? "upcoming"
+                    : (playerWon ? "done won-match" : (playerLost ? "done lost-match" : "done")));
             var right = "";
             if (m.status === "ongoing") {
                 right = m.court ? '<span class="court">🏟️ ' + esc(m.court) + '</span>' : '<span class="court">🟢 LIVE</span>';
@@ -249,7 +263,10 @@
                 right = m.start_time ? '<span class="time">🕐 ' + esc(m.start_time) + '</span>'
                                      : '<span class="byorder">⏳ by order</span>';
             } else {
-                right = '<span class="badge-done">✅ done</span>';
+                // Finished: player-relative result badge (green WON / red LOST).
+                if (playerWon)       right = '<span class="badge-won">🟢 WON</span>';
+                else if (playerLost) right = '<span class="badge-lost">🔴 LOST</span>';
+                else                 right = '<span class="badge-done">✅ done</span>';  // couldn't determine side
             }
             var t1won = m.team1_won && m.status === "done";
             var t2won = (!m.team1_won) && m.status === "done";
@@ -268,13 +285,23 @@
             var upcoming = mine.filter(function(m){ return m.status==="upcoming"; });
             var done = mine.filter(function(m){ return m.status==="done"; });
 
+            // Won/lost tally for this player (for the column header summary).
+            var won = 0, lost = 0;
+            done.forEach(function(m){
+                var onTeam1 = nameInTeam(player, m.team1), onTeam2 = nameInTeam(player, m.team2);
+                if ((onTeam1 && m.team1_won) || (onTeam2 && !m.team1_won)) won++;
+                else if ((onTeam1 && !m.team1_won) || (onTeam2 && m.team1_won)) lost++;
+            });
+            var record = (won || lost) ? ' <span class="record">' + won + 'W–' + lost + 'L</span>' : '';
+
             function sect(label, arr, emptyTxt) {
                 return '<div class="sect-label">' + label + ' (' + arr.length + ')</div>' +
-                    (arr.length ? arr.map(matchHtml).join("") : '<div class="empty">' + emptyTxt + '</div>');
+                    (arr.length ? arr.map(function(m){ return matchHtml(m, player); }).join("")
+                                : '<div class="empty">' + emptyTxt + '</div>');
             }
             return '<div class="pcol">' +
                 '<div class="pcol__head"><h3>' + esc(player.name) + '</h3>' +
-                    '<div class="club">' + esc(player.club||"") + '</div></div>' +
+                    '<div class="club">' + esc(player.club||"") + record + '</div></div>' +
                 '<div class="pcol__body">' +
                     sect("🟢 Ongoing", ongoing, "—") +
                     sect("🕒 Upcoming", upcoming, "—") +

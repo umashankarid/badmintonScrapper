@@ -8,6 +8,16 @@
 
 ## [Unreleased]
 
+### Added - Dashboard finished matches show a player-relative WON/LOST badge
+- A finished match in a Komet player's column now shows a **🟢 WON** (green) or **🔴 LOST** (red)
+  badge based on whether THAT player won — not just a generic "✅ done" with a tick on the overall
+  winner. Determined from which side the player is on (team1/team2) vs `team1_won`: playerWon =
+  (onTeam1 && team1_won) || (onTeam2 && !team1_won); playerLost is the inverse. The match card also
+  gets a green/red left border, and each player's column header shows a **W–L record** chip.
+  `matchHtml(m, player)` now takes the player so the badge is column-specific. Verified the win/loss
+  boolean for all four side/winner combinations. Dashboard JS re-validated with `node --check`;
+  Ran 72 tests - OK.
+
 ### Fixed - Tournament Dashboard filter now uses the proven live search (shows past ranges correctly)
 - **Problem**: the dashboard's "last week" / "last month" / "this month" filters showed no (or only
   this-week-ish) tournaments. Root cause: `/api/dashboard-tournaments` read the **local**
