@@ -8,6 +8,26 @@
 
 ## [Unreleased]
 
+### Fixed - Tournament Dashboard filter now uses the proven live search (shows past ranges correctly)
+- **Problem**: the dashboard's "last week" / "last month" / "this month" filters showed no (or only
+  this-week-ish) tournaments. Root cause: `/api/dashboard-tournaments` read the **local**
+  `tournaments.db`, which only holds what the last fetch stored (upcoming, `today → +90d`); past
+  tournaments had been pruned, so past ranges were empty. (The range math itself was verified
+  correct — `this_month` selected the full month — it was the data that was missing.)
+- **Fix** (per the user: "we already have a filter in the Previous Tournaments tab that works
+  well"): the dashboard filter view now calls the SAME endpoint that tab uses,
+  `/api/search-tournaments?start=&end=`, which **live-scrapes Badminton Sweden** for the date range
+  and therefore works for any past/future window independent of the local DB. The range buttons
+  compute start/end dates with the same logic as `results.html` (Sunday-based weeks, calendar
+  months). `/api/search-tournaments` returns the tournament GUID as `id`, which the board uses for
+  the live lookups. Verified live: last-week window (2026-10-31..2026-11-06) returns 5 real
+  tournaments with GUIDs.
+- Reverted the earlier experimental widening of the shared `get_all_bwf_tournaments` fetch window
+  (no longer needed, and it altered a shared code path). The 60-day end-date retention prune from
+  the prior entry is kept. The DB-based `/api/dashboard-tournaments` endpoint and its tests remain
+  (harmless, still covered) but the dashboard no longer depends on them.
+- Tests: Ran 72 tests - OK. Dashboard inline JS re-validated with `node --check`.
+
 ### Fixed - Tournament Dashboard stuck on "Loading…" — duplicated loadBoard() broke the whole script
 - **Actual root cause** (the real reason it hung after deploy): the dashboard template had a
   **duplicated `async function loadBoard(day) {` line** (left over from an edit), producing invalid

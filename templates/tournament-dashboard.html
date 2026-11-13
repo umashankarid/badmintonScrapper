@@ -111,6 +111,36 @@
         function esc(s) { return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
         // ---------------- FILTER VIEW ----------------
+        // Compute [start, end] 'YYYY-MM-DD' for a named range, mirroring the
+        // proven Previous-Tournaments filter (results.html). Weeks are Sun-based
+        // there (getDay()); we keep that so behaviour matches the tab the user
+        // said "works well".
+        function rangeDates(range) {
+            var now = new Date();
+            var start, end;
+            switch (range) {
+                case "today":
+                    start = new Date(now); end = new Date(now); break;
+                case "last_week":
+                    start = new Date(now); start.setDate(now.getDate() - now.getDay() - 7);
+                    end = new Date(start); end.setDate(start.getDate() + 6); break;
+                case "this_week":
+                    start = new Date(now); start.setDate(now.getDate() - now.getDay());
+                    end = new Date(start); end.setDate(start.getDate() + 6); break;
+                case "last_month":
+                    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    end = new Date(now.getFullYear(), now.getMonth(), 0); break;
+                case "this_month":
+                    start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    end = new Date(now.getFullYear(), now.getMonth() + 1, 0); break;
+                default:
+                    start = new Date(now); end = new Date(now);
+            }
+            function iso(d){ return d.getFullYear() + "-" +
+                String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+            return { start: iso(start), end: iso(end) };
+        }
+
         async function loadTournaments(range) {
             currentRange = range;
             document.querySelectorAll(".rangebtn").forEach(function(b){
@@ -118,8 +148,14 @@
             });
             var box = document.getElementById("t-list");
             box.innerHTML = '<p style="color:#666;">Loading...</p>';
-            var url = "/api/dashboard-tournaments?range=" + encodeURIComponent(range);
-            console.log("[dashboard] loadTournaments ->", url);
+            // Use the SAME live endpoint as the Previous Tournaments tab
+            // (/api/search-tournaments), which scrapes Badminton Sweden for the
+            // date range and works for any past/future window — it does not
+            // depend on what's stored in the local tournaments.db.
+            var rd = rangeDates(range);
+            var url = "/api/search-tournaments?start=" + encodeURIComponent(rd.start) +
+                      "&end=" + encodeURIComponent(rd.end);
+            console.log("[dashboard] loadTournaments range=" + range + " ->", url);
             try {
                 var res = await fetch(url);
                 console.log("[dashboard] response", res.status, res.headers.get("content-type"));
@@ -140,26 +176,28 @@
                     return;
                 }
                 if (!data.tournaments || !data.tournaments.length) {
-                    console.log("[dashboard] 0 tournaments for range", range, "window", data.window_start, data.window_end);
+                    console.log("[dashboard] 0 tournaments for", range, rd.start, "→", rd.end);
                     box.innerHTML = '<p style="color:#666;">Inga tävlingar i detta intervall (' +
-                        esc(data.window_start||"") + ' → ' + esc(data.window_end||"") +
+                        esc(rd.start) + ' → ' + esc(rd.end) +
                         '). / No tournaments in this range.</p>';
                     return;
                 }
                 console.log("[dashboard] rendering", data.tournaments.length, "tournaments");
                 box.innerHTML = data.tournaments.map(function(t){
                     var dates = esc(t.date_start) + (t.date_end && t.date_end !== t.date_start ? " → " + esc(t.date_end) : "");
-                    if (!t.tournament_id) {
+                    // /api/search-tournaments returns the GUID as `id`.
+                    var tid = t.id || t.tournament_id || "";
+                    if (!tid) {
                         return '<div class="t-card" style="cursor:default;opacity:0.65;"><h3>' + esc(t.name) + '</h3>' +
                                '<p>📍 ' + esc(t.location||"") + '</p><p>📅 ' + dates + '</p>' +
                                '<p style="color:#c62828;">No live data link available.</p></div>';
                     }
-                    var href = '/tournament-dashboard.html?id=' + encodeURIComponent(t.tournament_id) +
+                    var href = '/tournament-dashboard.html?id=' + encodeURIComponent(tid) +
                                '&name=' + encodeURIComponent(t.name||"") +
                                '&info=' + encodeURIComponent((t.location||"") + " · " + dates);
                     return '<div class="t-card" onclick="window.location.href=\'' + href + '\'">' +
                            '<h3>' + esc(t.name) + '</h3><p>📍 ' + esc(t.location||"") + '</p>' +
-                           '<p>📅 ' + dates + '</p>' +
+                           '<p>📅 ' + dates + '</p>' + (t.status ? '<p>Status: ' + esc(t.status) + '</p>' : '') +
                            '<p style="color:#0d47a1;font-weight:600;">Open dashboard →</p></div>';
                 }).join("");
             } catch (e) {
