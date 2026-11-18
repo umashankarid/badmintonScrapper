@@ -1785,6 +1785,54 @@ class TestLiveMatchNameNormalization(unittest.TestCase):
             shutil.rmtree(d)
 
 
+class TestTournamentNameUrlEncoding(unittest.TestCase):
+    """Tournament names go into query strings as `dbFile=<name>`. Names such as
+    'BSO 2026 U11 & U13MJT' contain '&', which splits an UNENCODED query string:
+    the server then sees dbFile='BSO 2026 U11 ' -> 404 and the registration page
+    loads no categories. Every client-side interpolation must be encoded."""
+
+    NAME = "BSO 2026 U11 & U13MJT"
+
+    def test_endpoint_works_with_ampersand_when_encoded(self):
+        import app
+        from urllib.parse import quote
+        orig = app.TOURNAMENTS_DB
+        d = tempfile.mkdtemp()
+        app.TOURNAMENTS_DB = os.path.join(d, "t.db")
+        try:
+            app.init_tournaments_db()
+            cats = {"singles_levels": ["HS U11"], "doubles_levels": ["HD U11"], "mixed_levels": ["MD U11"],
+                    "doubles_partner": [], "mixed_partner": []}
+            conn = sqlite3.connect(app.TOURNAMENTS_DB)
+            conn.execute("INSERT INTO tournaments (tournament_name, tournament_url, date_start, categories, "
+                         "last_updated) VALUES (?,?,?,?, CURRENT_TIMESTAMP)",
+                         (self.NAME, "https://x/tournament/581E6BB0-E6FD-4567-AE01-8821C73E8313",
+                          "2099-12-05", json.dumps(cats)))
+            conn.commit(); conn.close()
+            client = app.app.test_client()
+            resp = client.get(f"/api/tournament?dbFile={quote(self.NAME)}")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.get_json()["tournament"]["categories"]["singles_levels"], ["HS U11"])
+            # Documents the failure mode the templates must avoid:
+            raw = client.get(f"/api/tournament?dbFile={self.NAME}")
+            self.assertEqual(raw.status_code, 404)
+        finally:
+            app.TOURNAMENTS_DB = orig
+            shutil.rmtree(d)
+
+    def test_templates_never_interpolate_tournament_name_unencoded(self):
+        import re, glob
+        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+        # dbFile=${x} / db=${x} where x is not wrapped in encodeURIComponent(...)
+        bad = re.compile(r"[?&](?:dbFile|db)=\$\{(?!encodeURIComponent\()")
+        offenders = []
+        for path in sorted(glob.glob(os.path.join(base, "*.html"))):
+            for n, line in enumerate(open(path, encoding="utf-8"), 1):
+                if bad.search(line):
+                    offenders.append(f"{os.path.basename(path)}:{n}: {line.strip()[:110]}")
+        self.assertEqual(offenders, [], "unencoded tournament name in URL:\n" + "\n".join(offenders))
+
+
 class TestTemplateInlineJsSyntax(unittest.TestCase):
     """Guard against inline-JS syntax errors in templates (e.g. a duplicated
     function declaration) that silently abort the whole <script> at load — which

@@ -8,6 +8,27 @@
 
 ## [Unreleased]
 
+### Fixed - Registration page loaded no categories for tournaments with '&' in the name
+- **Bug**: `BSO 2026 U11 & U13MJT` showed no Singles/Doubles/Mixed categories on the registration
+  page. The tournament row and its categories were fine in `tournaments.db` (and the events page
+  classifies correctly: HS/DS/MD/HD/DD for U11 and U13 MJT).
+- **Root cause** (`templates/tournament.html`): the page builds `/api/tournament?dbFile=${dbFile}`
+  with the tournament name **unencoded**. The `&` in the name split the query string, so the server
+  received `dbFile="BSO 2026 U11 "` (trailing space), found no tournament and returned 404 — no
+  categories. Reproduced: unencoded request → 404, encoded request → 200 with categories. The same
+  unencoded pattern existed on 6 more calls (`tournament-players` ×4, `tournament-registrations`,
+  `tournament-events`), so player lists, existing registrations and events were also affected for
+  such names. Other tournaments were unaffected only because their names contain no `&`.
+- **Fix**: wrapped every tournament-name interpolation in `encodeURIComponent(...)` — 7 calls in
+  `tournament.html`, plus the `?db=` View link and a `tournament-players` call in
+  `manage-tournaments.html`. (The homepage link already encoded the tournament URL.)
+- **Tests** (`test_badminton.py`, `TestTournamentNameUrlEncoding`, 2): the endpoint returns the
+  categories for an encoded `&` name (and documents the 404 for the raw form); a template guard
+  fails if any `dbFile=${…}` / `db=${…}` in `templates/*.html` isn't wrapped in `encodeURIComponent`
+  (confirmed to FAIL on the 9 offending lines before the fix). Tests: Ran 74 tests - OK.
+- Note: the pre-existing inline JS in `manage-tournaments.html` uses `?.`, which the local Node
+  v12 can't `--check`; it is unrelated to this change and fine in browsers.
+
 ### Added - Dashboard finished matches show a player-relative WON/LOST badge
 - A finished match in a Komet player's column now shows a **🟢 WON** (green) or **🔴 LOST** (red)
   badge based on whether THAT player won — not just a generic "✅ done" with a tick on the overall

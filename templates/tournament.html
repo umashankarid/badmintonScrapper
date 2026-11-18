@@ -243,7 +243,7 @@
         }
 
         async function loadTournamentInfo() {
-            const res = await fetch(`/api/tournament?dbFile=${dbFile}`);
+            const res = await fetch(`/api/tournament?dbFile=${encodeURIComponent(dbFile)}`);
             const data = await res.json();
             if (data.success) {
                 document.getElementById("tournament-name").textContent = data.tournament.name;
@@ -364,7 +364,7 @@
         async function loadPlayers() {
             try {
                 console.log("[loadPlayers] Fetching for dbFile=", dbFile, "page=", currentPage);
-                const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+                const res = await fetch(`/api/tournament-players?dbFile=${encodeURIComponent(dbFile)}&page=1&pageSize=1000`);
                 const data = await res.json();
                 console.log("[loadPlayers] Response:", data.success, "total:", data.total, "players:", data.players && data.players.length);
                 if (!data.success) {
@@ -804,13 +804,13 @@
 
         async function editPlayer(id) {
             // Get the player's registration from tournament_registrations table
-            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+            const res = await fetch(`/api/tournament-players?dbFile=${encodeURIComponent(dbFile)}&page=1&pageSize=1000`);
             const data = await res.json();
             const player = data.players.find(p => p.player_id === id);
             if (!player) return;
 
             // Fetch the detailed registration
-            const regRes = await fetch(`/api/tournament-registrations?dbFile=${dbFile}&license_id=${encodeURIComponent(player.license_id)}`);
+            const regRes = await fetch(`/api/tournament-registrations?dbFile=${encodeURIComponent(dbFile)}&license_id=${encodeURIComponent(player.license_id)}`);
             const regData = await regRes.json();
             if (!regData.success || !regData.registration) return;
             
@@ -1309,7 +1309,7 @@
         });
 
         async function loadAdminLevels() {
-            const evRes = await fetch(`/api/tournament-events?dbFile=${dbFile}`);
+            const evRes = await fetch(`/api/tournament-events?dbFile=${encodeURIComponent(dbFile)}`);
             const evData = await evRes.json();
             if (evData.success) {
                 const container = document.getElementById("admin-levels-container");
@@ -1351,7 +1351,7 @@
         }
 
         async function viewRanking(id) {
-            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+            const res = await fetch(`/api/tournament-players?dbFile=${encodeURIComponent(dbFile)}&page=1&pageSize=1000`);
             const data = await res.json();
             const player = data.players.find(p => p.player_id === id);
             if (!player) return;
@@ -1373,7 +1373,7 @@
         }
 
         async function adminEditPlayer(id) {
-            const res = await fetch(`/api/tournament-players?dbFile=${dbFile}&page=1&pageSize=1000`);
+            const res = await fetch(`/api/tournament-players?dbFile=${encodeURIComponent(dbFile)}&page=1&pageSize=1000`);
             const data = await res.json();
             const player = data.players.find(p => p.player_id === id);
             if (!player) return;
